@@ -133,7 +133,7 @@ pub use capability::{BaseCapability, CapabilityBase};
 pub use instance::{BaseInstance, InstanceBase, InstanceResult};
 
 // workflow 导出
-pub use datastate::{
+pub use workflow::{
     ShardingConfig, ShardType, ShardingManager, MaintenanceResult,
     WorkflowCapability, WorkflowInstance, WorkflowTask,
     SQL_CREATE_WORKFLOW_CAPABILITY, SQL_CREATE_WORKFLOW_INSTANCE, SQL_CREATE_WORKFLOW_TASK,
