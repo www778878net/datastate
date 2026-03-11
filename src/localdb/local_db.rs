@@ -23,6 +23,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use chrono::Local;
+use base::mylogger;
 
 use base::project_path::ProjectPath;
 use crate::datastate::{DATA_ABILITY_LOG_CREATE_SQL};
@@ -508,12 +509,19 @@ impl LocalDB {
     ///
     /// 调用服务器的 mAdd 接口
     /// URL: {api_url}/mAdd
-    /// 请求体: {"sid": sid, "pars": [...], "cols": [...]}
+    /// 请求体: {"sid": sid, "pars": [...], "cols": [...], "mid": id}
+    ///
+    /// # 参数
+    /// - `_table`: 表名（未使用）
+    /// - `api_url`: API 基础 URL
+    /// - `data`: 要上传的数据
+    /// - `cols`: 字段顺序（必须与服务器 colsImp 一致）
     pub fn upload_to_server(
         &self,
         _table: &str,
         api_url: &str,
         data: &HashMap<String, Value>,
+        cols: Option<&[String]>,
     ) -> Result<i32, String> {
         use base::http::HttpHelper;
 
@@ -530,27 +538,206 @@ impl LocalDB {
         };
 
         // 添加 /mAdd 后缀
-        let url = format!("{}/mAdd?sid={}", base_url, sid);
+        let url = format!("{}/mAdd", base_url);
 
-        // 构建 pars 数组（按字段顺序）
-        let cols: Vec<&str> = data.keys().map(|s| s.as_str()).collect();
-        let pars: Vec<Value> = cols.iter()
-            .map(|col| data.get(*col).cloned().unwrap_or(Value::Null))
+        // 确定字段顺序：优先使用传入的 cols，否则使用 data 的 key（不推荐）
+        let field_order: Vec<&str> = if let Some(cols_list) = cols {
+            cols_list.iter().map(|s| s.as_str()).collect()
+        } else {
+            // 警告：HashMap 顺序是随机的，可能导致服务器解析错误
+            data.keys().map(|s| s.as_str()).collect()
+        };
+
+        // 构建 pars 数组（按 cols 顺序）
+        let pars: Vec<Value> = field_order
+            .iter()
+            .map(|col| data.get(*col).cloned().unwrap_or(Value::String(String::new())))
             .collect();
 
-        let request_payload = serde_json::json!({
+        // 构建请求体（与 Python 版本一致）
+        let mut request_payload = serde_json::json!({
             "sid": sid,
             "pars": pars,
-            "cols": cols
+            "cols": field_order
         });
+
+        // 如果 data 中包含 id 字段，传递给服务器复用
+        if let Some(id) = data.get("id") {
+            if let Some(id_str) = id.as_str() {
+                request_payload["mid"] = serde_json::json!(id_str);
+            }
+        }
 
         let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
 
+        // 记录服务器响应
+        let logger = mylogger!();
+        logger.info(&format!("[upload_to_server] 服务器响应: res={}, errmsg={}, data={:?}", 
+            response.res, response.errmsg, response.data));
+
         if response.res != 0 {
-            return Err(response.errmsg);
+            return Err(format!("服务器错误: res={}, errmsg={}", response.res, response.errmsg));
+        }
+
+        // 检查服务器返回的业务错误
+        if let Some(ref resp_data) = response.data {
+            if let Some(back_obj) = resp_data.response.as_object() {
+                logger.info(&format!("[upload_to_server] 业务响应: {:?}", back_obj));
+                if let Some(back_res) = back_obj.get("res") {
+                    if back_res.as_i64().unwrap_or(0) != 0 {
+                        let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
+                        return Err(format!("业务错误: {}", back_errmsg));
+                    }
+                }
+            }
         }
 
         Ok(1)
+    }
+
+    /// 批量上传数据到服务器
+    ///
+    /// # 参数
+    /// - `_table`: 表名（未使用）
+    /// - `api_url`: API 基础 URL
+    /// - `items`: 待同步的数据列表（来自 sync_queue）
+    /// - `cols`: 字段顺序（必须与服务器 colsImp 一致）
+    pub fn upload_batch_to_server(
+        &self,
+        _table: &str,
+        api_url: &str,
+        items: &[crate::data_sync::SyncQueueItem],
+        cols: Option<&[String]>,
+    ) -> Result<i32, String> {
+        use base::http::HttpHelper;
+
+        let sid = self.get_sid();
+        if sid.is_empty() {
+            return Err("配置文件未找到 SID".to_string());
+        }
+
+        if items.is_empty() {
+            return Ok(0);
+        }
+
+        // 确定字段顺序
+        let field_order: Vec<String> = if let Some(cols_list) = cols {
+            cols_list.to_vec()
+        } else {
+            return Err("必须指定 upload_cols 字段顺序".to_string());
+        };
+
+        // 分离 insert 和 update 操作
+        let insert_items: Vec<&crate::data_sync::SyncQueueItem> = items
+            .iter()
+            .filter(|item| item.action == "insert")
+            .collect();
+        let update_items: Vec<&crate::data_sync::SyncQueueItem> = items
+            .iter()
+            .filter(|item| item.action == "update")
+            .collect();
+
+        let mut total_affected = 0;
+
+        // 处理 insert 操作（使用 mAddManyByid）
+        if !insert_items.is_empty() {
+            let mut pars: Vec<Value> = Vec::new();
+            for item in &insert_items {
+                let data: HashMap<String, Value> = serde_json::from_str(&item.data).unwrap_or_default();
+                
+                // 先添加 cols 字段
+                for col in &field_order {
+                    pars.push(data.get(col).cloned().unwrap_or(Value::String(String::new())));
+                }
+                
+                // 最后添加 id（客户端提供的 id）
+                pars.push(Value::String(item.id.clone()));
+            }
+
+            let request_payload = serde_json::json!({
+                "sid": sid,
+                "pars": pars,
+                "cols": field_order
+            });
+
+            let url = format!("{}/mAddManyByid", api_url.trim_end_matches('/'));
+            let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
+
+            let logger = mylogger!();
+            logger.info(&format!("[upload_batch_to_server] mAddManyByid 响应: res={}, errmsg={}", 
+                response.res, response.errmsg));
+
+            if response.res != 0 {
+                return Err(format!("mAddManyByid 服务器错误: {}", response.errmsg));
+            }
+
+            if let Some(ref resp_data) = response.data {
+                if let Some(back_obj) = resp_data.response.as_object() {
+                    if let Some(back_res) = back_obj.get("res") {
+                        if back_res.as_i64().unwrap_or(0) != 0 {
+                            let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
+                            return Err(format!("mAddManyByid 业务错误: {}", back_errmsg));
+                        }
+                    }
+                    if let Some(back) = back_obj.get("back") {
+                        if let Some(count) = back.as_i64() {
+                            total_affected += count as i32;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 处理 update 操作（使用 mUpdateMany）
+        if !update_items.is_empty() {
+            let mut pars: Vec<Value> = Vec::new();
+            for item in &update_items {
+                let data: HashMap<String, Value> = serde_json::from_str(&item.data).unwrap_or_default();
+                
+                // 先添加 cols 字段
+                for col in &field_order {
+                    pars.push(data.get(col).cloned().unwrap_or(Value::String(String::new())));
+                }
+                
+                // 最后添加 idpk（服务器端的主键）
+                pars.push(Value::String(item.id.clone()));
+            }
+
+            let request_payload = serde_json::json!({
+                "sid": sid,
+                "pars": pars,
+                "cols": field_order
+            });
+
+            let url = format!("{}/mUpdateMany", api_url.trim_end_matches('/'));
+            let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
+
+            let logger = mylogger!();
+            logger.info(&format!("[upload_batch_to_server] mUpdateMany 响应: res={}, errmsg={}", 
+                response.res, response.errmsg));
+
+            if response.res != 0 {
+                return Err(format!("mUpdateMany 服务器错误: {}", response.errmsg));
+            }
+
+            if let Some(ref resp_data) = response.data {
+                if let Some(back_obj) = resp_data.response.as_object() {
+                    if let Some(back_res) = back_obj.get("res") {
+                        if back_res.as_i64().unwrap_or(0) != 0 {
+                            let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
+                            return Err(format!("mUpdateMany 业务错误: {}", back_errmsg));
+                        }
+                    }
+                    if let Some(back) = back_obj.get("back") {
+                        if let Some(count) = back.as_i64() {
+                            total_affected += count as i32;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(total_affected)
     }
 }
 

@@ -65,6 +65,9 @@ pub struct TableConfig {
     /// 指定字段顺序
     #[serde(default)]
     pub download_cols: Option<Vec<String>>,
+    /// 上传字段顺序（必须与服务器 colsImp 一致）
+    #[serde(default)]
+    pub upload_cols: Option<Vec<String>>,
     /// 最小待处理数量（用于任务表）
     #[serde(default)]
     pub min_pending: i32,
@@ -220,6 +223,7 @@ impl Default for TableConfig {
             getnumber: default_getnumber(),
             download_condition: None,
             download_cols: None,
+            upload_cols: None,
             min_pending: 0,
             columns: get_system_columns(),  // 默认包含系统字段
             primary_key: default_primary_key(),
