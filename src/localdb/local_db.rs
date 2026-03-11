@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use chrono::Local;
 
 use base::project_path::ProjectPath;
-use crate::datastate::{DATA_ABILITY_PERM_CREATE_SQL, DATA_ABILITY_LOG_CREATE_SQL, DATA_ABILITY_DAILY_CREATE_SQL};
+use crate::datastate::{DATA_ABILITY_LOG_CREATE_SQL};
 use crate::data_sync::{DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL, SYNC_QUEUE_CREATE_SQL};
 
 /// 本地数据库管理类
@@ -112,15 +112,13 @@ impl LocalDB {
         Ok(exists)
     }
 
-    /// 初始化系统表（审计和状态机相关）
+    /// 初始化系统表（���计和状态机相关）
     pub fn init_system_tables(&self) -> Result<(), String> {
         let tables = [
             ("sync_queue", SYNC_QUEUE_CREATE_SQL),
-            ("data_ability_perm", DATA_ABILITY_PERM_CREATE_SQL),
             ("data_state_log", DATA_STATE_LOG_CREATE_SQL),
             ("data_sync_stats", DATA_SYNC_STATS_CREATE_SQL),
             ("data_ability_log", DATA_ABILITY_LOG_CREATE_SQL),
-            ("data_ability_daily", DATA_ABILITY_DAILY_CREATE_SQL),
         ];
 
         for (table_name, create_sql) in tables {
