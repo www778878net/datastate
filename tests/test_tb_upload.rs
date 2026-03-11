@@ -16,6 +16,8 @@ fn get_test_config() -> TableConfig {
         name: "testtb".to_string(),
         apiurl: "http://log.778878.net/apitest/testmenu/testtb".to_string(),
         columns,
+        // 必须指定 upload_cols，与服务器 colsImp 一致
+        upload_cols: Some(vec!["kind".to_string(), "item".to_string(), "data".to_string()]),
         ..Default::default()
     }
 }

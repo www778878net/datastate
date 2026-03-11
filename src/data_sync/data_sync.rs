@@ -154,6 +154,8 @@ pub struct DataSync {
     pub download_condition: Option<serde_json::Value>,
     /// 下载字段
     pub download_cols: Option<Vec<String>>,
+    /// 上传字段顺序（必须与服务器 colsImp 一致）
+    pub upload_cols: Option<Vec<String>>,
 
     /// 初始化下载数量
     pub init_getnumber: i32,
@@ -184,6 +186,7 @@ impl DataSync {
             upload_interval: 300,
             download_condition: None,
             download_cols: None,
+            upload_cols: None,
             init_getnumber: 0,
             getnumber: 2000,
             min_pending: 0,
@@ -206,6 +209,7 @@ impl DataSync {
             upload_interval: config.upload_interval,
             download_condition: config.download_condition.clone(),
             download_cols: config.download_cols.clone(),
+            upload_cols: config.upload_cols.clone(),
             init_getnumber: config.init_getnumber,
             getnumber: config.getnumber,
             min_pending: config.min_pending,
@@ -849,10 +853,10 @@ impl DataSync {
             let data: std::collections::HashMap<String, serde_json::Value> =
                 serde_json::from_str(&item.data).unwrap_or_default();
 
-            // 调用上传 API
+            // 调用上传 API（传入字段顺序）
             let result = self
                 .db
-                .upload_to_server(&self.table_name, &upload_url, &data);
+                .upload_to_server(&self.table_name, &upload_url, &data, self.upload_cols.as_deref());
 
             match result {
                 Ok(1) => {

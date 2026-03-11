@@ -510,11 +510,18 @@ impl LocalDB {
     /// 调用服务器的 mAdd 接口
     /// URL: {api_url}/mAdd
     /// 请求体: {"sid": sid, "pars": [...], "cols": [...], "mid": id}
+    ///
+    /// # 参数
+    /// - `_table`: 表名（未使用）
+    /// - `api_url`: API 基础 URL
+    /// - `data`: 要上传的数据
+    /// - `cols`: 字段顺序（必须与服务器 colsImp 一致）
     pub fn upload_to_server(
         &self,
         _table: &str,
         api_url: &str,
         data: &HashMap<String, Value>,
+        cols: Option<&[String]>,
     ) -> Result<i32, String> {
         use base::http::HttpHelper;
 
@@ -533,17 +540,25 @@ impl LocalDB {
         // 添加 /mAdd 后缀
         let url = format!("{}/mAdd", base_url);
 
-        // 构建 pars 数组（按字段顺序）
-        let cols: Vec<&str> = data.keys().map(|s| s.as_str()).collect();
-        let pars: Vec<Value> = cols.iter()
-            .map(|col| data.get(*col).cloned().unwrap_or(Value::Null))
+        // 确定字段顺序：优先使用传入的 cols，否则使用 data 的 key（不推荐）
+        let field_order: Vec<&str> = if let Some(cols_list) = cols {
+            cols_list.iter().map(|s| s.as_str()).collect()
+        } else {
+            // 警告：HashMap 顺序是随机的，可能导致服务器解析错误
+            data.keys().map(|s| s.as_str()).collect()
+        };
+
+        // 构建 pars 数组（按 cols 顺序）
+        let pars: Vec<Value> = field_order
+            .iter()
+            .map(|col| data.get(*col).cloned().unwrap_or(Value::String(String::new())))
             .collect();
 
         // 构建请求体（与 Python 版本一致）
         let mut request_payload = serde_json::json!({
             "sid": sid,
             "pars": pars,
-            "cols": cols
+            "cols": field_order
         });
 
         // 如果 data 中包含 id 字段，传递给服务器复用
