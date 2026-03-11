@@ -27,7 +27,7 @@ use base::mylogger;
 
 use base::project_path::ProjectPath;
 use crate::datastate::{DATA_ABILITY_LOG_CREATE_SQL};
-use crate::data_sync::{DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL, SYNC_QUEUE_CREATE_SQL};
+use crate::data_sync::{DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL, SYNCLOG_CREATE_SQL};
 
 /// 本地数据库管理类
 #[derive(Debug, Clone)]
@@ -113,10 +113,10 @@ impl LocalDB {
         Ok(exists)
     }
 
-    /// 初始化系统表（���计和状态机相关）
+    /// 初始化系统表（统计和状态机相关）
     pub fn init_system_tables(&self) -> Result<(), String> {
         let tables = [
-            ("sync_queue", SYNC_QUEUE_CREATE_SQL),
+            ("synclog", SYNCLOG_CREATE_SQL),
             ("data_state_log", DATA_STATE_LOG_CREATE_SQL),
             ("data_sync_stats", DATA_SYNC_STATS_CREATE_SQL),
             ("data_ability_log", DATA_ABILITY_LOG_CREATE_SQL),
@@ -595,19 +595,15 @@ impl LocalDB {
         Ok(1)
     }
 
-    /// 批量上传数据到服务器
+    /// 批量上传 synclog 到服务器
     ///
     /// # 参数
-    /// - `_table`: 表名（未使用）
-    /// - `api_url`: API 基础 URL
-    /// - `items`: 待同步的数据列表（来自 sync_queue）
-    /// - `cols`: 字段顺序（必须与服务器 colsImp 一致）
+    /// - `api_url`: API 基础 URL（synclog 的 API 地址）
+    /// - `items`: 待同步的 synclog 列表
     pub fn upload_batch_to_server(
         &self,
-        _table: &str,
         api_url: &str,
-        items: &[crate::data_sync::SyncQueueItem],
-        cols: Option<&[String]>,
+        items: &[crate::data_sync::SynclogItem],
     ) -> Result<i32, String> {
         use base::http::HttpHelper;
 
@@ -620,141 +616,73 @@ impl LocalDB {
             return Ok(0);
         }
 
-        // 确定字段顺序
-        let field_order: Vec<String> = if let Some(cols_list) = cols {
-            cols_list.to_vec()
-        } else {
-            // 从第一条数据的 JSON 中提取字段名作为默认顺序
-            if let Some(first_item) = items.first() {
-                if let Ok(data) = serde_json::from_str::<serde_json::Value>(&first_item.data) {
-                    if let Some(obj) = data.as_object() {
-                        let mut keys: Vec<String> = obj.keys().cloned().collect();
-                        // 确保 id 在最后
-                        keys.retain(|k| k != "id" && k != "idpk");
-                        keys.push("id".to_string());
-                        keys
-                    } else {
-                        return Err("数据格式错误，无法提取字段名".to_string());
+        // 构建 mAddMany 请求
+        // cols: synclog 表的字段
+        let cols = vec![
+            "apisys", "apimicro", "apiobj", "tbname", "action", 
+            "cmdtext", "params", "idrow", "worker", "cmdtextmd5", 
+            "num", "dlong", "downlen", "id", "upby", "uptime", "cid"
+        ];
+
+        let mut pars: Vec<Value> = Vec::new();
+        for item in items {
+            pars.push(Value::String(item.apisys.clone()));
+            pars.push(Value::String(item.apimicro.clone()));
+            pars.push(Value::String(item.apiobj.clone()));
+            pars.push(Value::String(item.tbname.clone()));
+            pars.push(Value::String(item.action.clone()));
+            pars.push(Value::String(item.cmdtext.clone()));
+            pars.push(Value::String(item.params.clone()));
+            pars.push(Value::String(item.idrow.clone()));
+            pars.push(Value::String(item.worker.clone()));
+            pars.push(Value::String(item.cmdtextmd5.clone()));
+            pars.push(Value::Number(item.num.into()));
+            pars.push(Value::Number(item.dlong.into()));
+            pars.push(Value::Number(item.downlen.into()));
+            pars.push(Value::String(item.id.clone()));
+            pars.push(Value::String(item.upby.clone()));
+            pars.push(Value::String(item.uptime.clone()));
+            pars.push(Value::String(item.cid.clone()));
+        }
+
+        let request_payload = serde_json::json!({
+            "sid": sid,
+            "pars": pars,
+            "cols": cols
+        });
+
+        // URL: {api_url}/mAddMany
+        let url = format!("{}/mAddMany", api_url.trim_end_matches('/'));
+
+        let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
+
+        let logger = mylogger!();
+        logger.info(&format!("[upload_batch_to_server] mAddMany 响应: res={}, errmsg={}", 
+            response.res, response.errmsg));
+
+        if response.res != 0 {
+            return Err(format!("服务器错误: {}", response.errmsg));
+        }
+
+        // 检查服务器返回的业务错误
+        if let Some(ref resp_data) = response.data {
+            if let Some(back_obj) = resp_data.response.as_object() {
+                logger.info(&format!("[upload_batch_to_server] 业务响应: {:?}", back_obj));
+                if let Some(back_res) = back_obj.get("res") {
+                    if back_res.as_i64().unwrap_or(0) != 0 {
+                        let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
+                        return Err(format!("业务错误: {}", back_errmsg));
                     }
-                } else {
-                    return Err("数据解析失败，无法提取字段名".to_string());
                 }
-            } else {
-                return Err("没有数据可上传".to_string());
-            }
-        };
-
-        // 分离 insert 和 update 操作
-        let insert_items: Vec<&crate::data_sync::SyncQueueItem> = items
-            .iter()
-            .filter(|item| item.action == "insert")
-            .collect();
-        let update_items: Vec<&crate::data_sync::SyncQueueItem> = items
-            .iter()
-            .filter(|item| item.action == "update")
-            .collect();
-
-        let mut total_affected = 0;
-
-        // 处理 insert 操作（使用 mAddManyByid）
-        if !insert_items.is_empty() {
-            let mut pars: Vec<Value> = Vec::new();
-            for item in &insert_items {
-                let data: HashMap<String, Value> = serde_json::from_str(&item.data).unwrap_or_default();
-                
-                // 先添加 cols 字段
-                for col in &field_order {
-                    pars.push(data.get(col).cloned().unwrap_or(Value::String(String::new())));
-                }
-                
-                // 最后添加 id（客户端提供的 id）
-                pars.push(Value::String(item.id.clone()));
-            }
-
-            let request_payload = serde_json::json!({
-                "sid": sid,
-                "pars": pars,
-                "cols": field_order
-            });
-
-            let url = format!("{}/mAddManyByid", api_url.trim_end_matches('/'));
-            let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
-
-            let logger = mylogger!();
-            logger.info(&format!("[upload_batch_to_server] mAddManyByid 响应: res={}, errmsg={}", 
-                response.res, response.errmsg));
-
-            if response.res != 0 {
-                return Err(format!("mAddManyByid 服务器错误: {}", response.errmsg));
-            }
-
-            if let Some(ref resp_data) = response.data {
-                if let Some(back_obj) = resp_data.response.as_object() {
-                    if let Some(back_res) = back_obj.get("res") {
-                        if back_res.as_i64().unwrap_or(0) != 0 {
-                            let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
-                            return Err(format!("mAddManyByid 业务错误: {}", back_errmsg));
-                        }
-                    }
-                    if let Some(back) = back_obj.get("back") {
-                        if let Some(count) = back.as_i64() {
-                            total_affected += count as i32;
-                        }
+                if let Some(back) = back_obj.get("back") {
+                    if let Some(count) = back.as_i64() {
+                        return Ok(count as i32);
                     }
                 }
             }
         }
 
-        // 处理 update 操作（使用 mUpdateMany）
-        if !update_items.is_empty() {
-            let mut pars: Vec<Value> = Vec::new();
-            for item in &update_items {
-                let data: HashMap<String, Value> = serde_json::from_str(&item.data).unwrap_or_default();
-                
-                // 先添加 cols 字段
-                for col in &field_order {
-                    pars.push(data.get(col).cloned().unwrap_or(Value::String(String::new())));
-                }
-                
-                // 最后添加 idpk（服务器端的主键）
-                pars.push(Value::String(item.id.clone()));
-            }
-
-            let request_payload = serde_json::json!({
-                "sid": sid,
-                "pars": pars,
-                "cols": field_order
-            });
-
-            let url = format!("{}/mUpdateMany", api_url.trim_end_matches('/'));
-            let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
-
-            let logger = mylogger!();
-            logger.info(&format!("[upload_batch_to_server] mUpdateMany 响应: res={}, errmsg={}", 
-                response.res, response.errmsg));
-
-            if response.res != 0 {
-                return Err(format!("mUpdateMany 服务器错误: {}", response.errmsg));
-            }
-
-            if let Some(ref resp_data) = response.data {
-                if let Some(back_obj) = resp_data.response.as_object() {
-                    if let Some(back_res) = back_obj.get("res") {
-                        if back_res.as_i64().unwrap_or(0) != 0 {
-                            let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
-                            return Err(format!("mUpdateMany 业务错误: {}", back_errmsg));
-                        }
-                    }
-                    if let Some(back) = back_obj.get("back") {
-                        if let Some(count) = back.as_i64() {
-                            total_affected += count as i32;
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(total_affected)
+        Ok(items.len() as i32)
     }
 }
 

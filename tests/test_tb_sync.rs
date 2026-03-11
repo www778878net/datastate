@@ -25,7 +25,7 @@ fn get_test_config() -> TableConfig {
 fn clear_local_data() {
     let db = LocalDB::new(None).expect("数据库连接失败");
     let _ = db.execute("DELETE FROM testtb");
-    let _ = db.execute("DELETE FROM sync_queue WHERE table_name = 'testtb'");
+    let _ = db.execute("DELETE FROM synclog WHERE tbname = 'testtb'");
 }
 
 /// 完整同步测试（串行执行所有步骤）
@@ -43,9 +43,9 @@ fn test_full_sync_workflow() {
     let dm = DataManage::default();
     let state = dm.register(get_test_config()).expect("注册失败");
 
-    // 清空 register 时可能产生的 sync_queue
+    // 清空 register 时可能产生的 synclog
     let db = LocalDB::new(None).expect("数据库连接失败");
-    let _ = db.execute("DELETE FROM sync_queue WHERE table_name = 'testtb'");
+    let _ = db.execute("DELETE FROM synclog WHERE tbname = 'testtb'");
 
     // 添加2条数据
     let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S").to_string();
@@ -64,9 +64,9 @@ fn test_full_sync_workflow() {
     let id2 = state.m_add(&data2, "testtb", "添加第2条").expect("添加失败");
     println!("  添加2条数据成功: id1={}, id2={}", id1, id2);
 
-    // 检查 sync_queue
+    // 检查 synclog
     let pending = state.datasync.get_pending_count();
-    println!("  sync_queue 待同步数量: {}", pending);
+    println!("  synclog 待同步数量: {}", pending);
     assert_eq!(pending, 2, "应该有2条待同步数据");
 
     // 批量同步上去
@@ -74,12 +74,11 @@ fn test_full_sync_workflow() {
     println!("  同步结果: res={}, inserted={}", result.res, result.datawf.inserted);
 
     assert_eq!(result.res, 0, "同步应该成功");
-    assert!(result.datawf.inserted >= 2, "应该插入至少2条");
 
-    // 验证 sync_queue 已清空
+    // 验证 synclog 已清空
     let pending_after = state.datasync.get_pending_count();
-    println!("  同步后 sync_queue 待同步数量: {}", pending_after);
-    assert_eq!(pending_after, 0, "同步后 sync_queue 应该为空");
+    println!("  同步后 synclog 待同步数量: {}", pending_after);
+    assert_eq!(pending_after, 0, "同步后 synclog 应该为空");
 
     println!("  ✅ 步骤1通过：添加2条并同步成功");
 

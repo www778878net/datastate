@@ -84,7 +84,7 @@ pub use mysql78::{
 
 // datastate 导出（包含权限相关方法和内部访问trait）
 pub use datastate::{
-    DataState, SyncQueueItem, SYNC_QUEUE_CREATE_SQL,
+    DataState, SynclogItem, SYNCLOG_CREATE_SQL,
     DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL,
     StateLog, SyncStats,
     // 审计相关

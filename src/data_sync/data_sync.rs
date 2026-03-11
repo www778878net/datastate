@@ -15,19 +15,28 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 // ========== 建表 SQL ==========
 
-/// sync_queue 表建表 SQL - 待同步数据队列
-pub const SYNC_QUEUE_CREATE_SQL: &str = r#"
-CREATE TABLE IF NOT EXISTS sync_queue (
+/// synclog 表建表 SQL - 同步日志表（与服务器端一致）
+pub const SYNCLOG_CREATE_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS synclog (
     idpk INTEGER PRIMARY KEY AUTOINCREMENT,
-    id TEXT NOT NULL,
-    idtable TEXT NOT NULL,
-    table_name TEXT NOT NULL,
-    action TEXT NOT NULL,
-    data TEXT NOT NULL DEFAULT '',
+    apisys TEXT NOT NULL DEFAULT 'v1',
+    apimicro TEXT NOT NULL DEFAULT 'iflow',
+    apiobj TEXT NOT NULL DEFAULT 'synclog',
+    tbname TEXT NOT NULL DEFAULT '',
+    action TEXT NOT NULL DEFAULT '',
+    cmdtext TEXT NOT NULL DEFAULT '',
+    params TEXT NOT NULL DEFAULT '[]',
+    idrow TEXT NOT NULL DEFAULT '',
     worker TEXT NOT NULL DEFAULT '',
     synced INTEGER NOT NULL DEFAULT 0,
+    cmdtextmd5 TEXT NOT NULL DEFAULT '',
+    num INTEGER NOT NULL DEFAULT 0,
+    dlong INTEGER NOT NULL DEFAULT 0,
+    downlen INTEGER NOT NULL DEFAULT 0,
+    id TEXT NOT NULL DEFAULT '',
     upby TEXT NOT NULL DEFAULT '',
-    uptime TEXT NOT NULL DEFAULT ''
+    uptime TEXT NOT NULL DEFAULT '',
+    cid TEXT NOT NULL DEFAULT ''
 )
 "#;
 
@@ -64,19 +73,28 @@ CREATE TABLE IF NOT EXISTS data_sync_stats (
 
 // ========== 数据结构 ==========
 
-/// 同步队列项
+/// 同步日志项（与服务器端 synclog 表一致）
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncQueueItem {
+pub struct SynclogItem {
     pub idpk: i64,
-    pub id: String,
-    pub idtable: String,
-    pub table_name: String,
+    pub apisys: String,
+    pub apimicro: String,
+    pub apiobj: String,
+    pub tbname: String,
     pub action: String,
-    pub data: String,
+    pub cmdtext: String,
+    pub params: String,
+    pub idrow: String,
     pub worker: String,
     pub synced: i32,
+    pub cmdtextmd5: String,
+    pub num: i32,
+    pub dlong: i64,
+    pub downlen: i64,
+    pub id: String,
     pub upby: String,
     pub uptime: String,
+    pub cid: String,
 }
 
 /// 状态变更日志
@@ -324,10 +342,14 @@ impl DataSync {
         worker: &str,
     ) -> Result<i64, String> {
         let id = uuid::Uuid::new_v4().to_string();
-        let data_json = serde_json::to_string(data).unwrap_or_default();
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-        let sql = "INSERT INTO sync_queue (id, idtable, table_name, action, data, worker, synced, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)";
+        // 构建 cmdtext 和 params
+        let (cmdtext, params) = self.build_cmdtext_and_params(action, data);
+        let params_json = serde_json::to_string(&params).unwrap_or_default();
+        let cmdtextmd5 = format!("{:x}", md5::compute(&cmdtext));
+
+        let sql = "INSERT INTO synclog (id, apisys, apimicro, apiobj, tbname, action, cmdtext, params, idrow, worker, synced, cmdtextmd5, upby, uptime) VALUES (?, 'v1', 'iflow', 'synclog', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)";
 
         let conn = self.db.get_conn();
         let conn_guard = conn.lock().map_err(|e| e.to_string())?;
@@ -337,23 +359,74 @@ impl DataSync {
                 &sql,
                 rusqlite::params![
                     id,
-                    record_id,
                     &self.table_name,
                     action,
-                    data_json,
+                    cmdtext,
+                    params_json,
+                    record_id,
                     worker,
+                    cmdtextmd5,
                     worker,
                     uptime
                 ],
             )
-            .map_err(|e| format!("插入 sync_queue 失败: {}", e))?;
+            .map_err(|e| format!("插入 synclog 失败: {}", e))?;
 
         Ok(conn_guard.last_insert_rowid())
     }
 
+    /// 构建 SQL 模板和参数
+    fn build_cmdtext_and_params(&self, action: &str, data: &serde_json::Value) -> (String, Vec<serde_json::Value>) {
+        let data_obj = data.as_object().unwrap_or(&serde_json::Map::new());
+        
+        match action {
+            "insert" => {
+                let columns: Vec<&str> = data_obj.keys().map(|s| s.as_str()).collect();
+                let placeholders: Vec<&str> = columns.iter().map(|_| "?").collect();
+                let cmdtext = format!(
+                    "INSERT INTO `{}` ({}) VALUES ({})",
+                    self.table_name,
+                    columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<_>>().join(", "),
+                    placeholders.join(", ")
+                );
+                let params: Vec<serde_json::Value> = columns.iter()
+                    .filter_map(|c| data_obj.get(*c).cloned())
+                    .collect();
+                (cmdtext, params)
+            }
+            "update" => {
+                let mut columns: Vec<&str> = data_obj.keys().map(|s| s.as_str()).collect();
+                columns.retain(|c| *c != "id");
+                let set_clause = columns.iter()
+                    .map(|c| format!("`{}` = ?", c))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let cmdtext = format!(
+                    "UPDATE `{}` SET {} WHERE `id` = ?",
+                    self.table_name, set_clause
+                );
+                let mut params: Vec<serde_json::Value> = columns.iter()
+                    .filter_map(|c| data_obj.get(*c).cloned())
+                    .collect();
+                if let Some(id) = data_obj.get("id") {
+                    params.push(id.clone());
+                }
+                (cmdtext, params)
+            }
+            "delete" => {
+                let cmdtext = format!("UPDATE `{}` SET deleted = 1 WHERE `id` = ?", self.table_name);
+                let params = vec![data_obj.get("id").cloned().unwrap_or(serde_json::Value::Null)];
+                (cmdtext, params)
+            }
+            _ => {
+                (String::new(), Vec::new())
+            }
+        }
+    }
+
     /// 获取待同步的记录数
     pub fn get_pending_count(&self) -> i32 {
-        let sql = "SELECT COUNT(*) FROM sync_queue WHERE table_name = ? AND synced = 0";
+        let sql = "SELECT COUNT(*) FROM synclog WHERE tbname = ? AND synced = 0";
         match self
             .db
             .query(sql, &[&self.table_name as &dyn rusqlite::ToSql])
@@ -382,9 +455,9 @@ impl DataSync {
     }
 
     /// 获取待同步的记录列表
-    pub fn get_pending_items(&self, limit: i32) -> Vec<SyncQueueItem> {
+    pub fn get_pending_items(&self, limit: i32) -> Vec<SynclogItem> {
         let sql = format!(
-            "SELECT idpk, id, idtable, table_name, action, data, worker, synced, upby, uptime FROM sync_queue WHERE table_name = ? AND synced = 0 ORDER BY idpk ASC LIMIT {}",
+            "SELECT idpk, apisys, apimicro, apiobj, tbname, action, cmdtext, params, idrow, worker, synced, cmdtextmd5, num, dlong, downlen, id, upby, uptime, cid FROM synclog WHERE tbname = ? AND synced = 0 ORDER BY idpk ASC LIMIT {}",
             limit
         );
 
@@ -394,49 +467,26 @@ impl DataSync {
         {
             Ok(results) => results
                 .iter()
-                .map(|row| SyncQueueItem {
+                .map(|row| SynclogItem {
                     idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
-                    id: row
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    idtable: row
-                        .get("idtable")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    table_name: row
-                        .get("table_name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    action: row
-                        .get("action")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    data: row
-                        .get("data")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    worker: row
-                        .get("worker")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
+                    apisys: row.get("apisys").and_then(|v| v.as_str()).unwrap_or("v1").to_string(),
+                    apimicro: row.get("apimicro").and_then(|v| v.as_str()).unwrap_or("iflow").to_string(),
+                    apiobj: row.get("apiobj").and_then(|v| v.as_str()).unwrap_or("synclog").to_string(),
+                    tbname: row.get("tbname").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    action: row.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    cmdtext: row.get("cmdtext").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    params: row.get("params").and_then(|v| v.as_str()).unwrap_or("[]").to_string(),
+                    idrow: row.get("idrow").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    worker: row.get("worker").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     synced: row.get("synced").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-                    upby: row
-                        .get("upby")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    uptime: row
-                        .get("uptime")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
+                    cmdtextmd5: row.get("cmdtextmd5").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    num: row.get("num").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+                    dlong: row.get("dlong").and_then(|v| v.as_i64()).unwrap_or(0),
+                    downlen: row.get("downlen").and_then(|v| v.as_i64()).unwrap_or(0),
+                    id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    upby: row.get("upby").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    uptime: row.get("uptime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    cid: row.get("cid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 })
                 .collect(),
             _ => Vec::new(),
@@ -451,7 +501,7 @@ impl DataSync {
 
         let placeholders: Vec<String> = idpk_list.iter().map(|_| "?".to_string()).collect();
         let sql = format!(
-            "UPDATE sync_queue SET synced = 1 WHERE idpk IN ({})",
+            "UPDATE synclog SET synced = 1 WHERE idpk IN ({})",
             placeholders.join(", ")
         );
 
@@ -882,7 +932,7 @@ impl DataSync {
 
     /// 执行一次上传
     ///
-    /// 将本地待同步数据批量上传到服务器（使用 mAddMany）
+    /// 将本地 synclog 批量上传到服务器
     pub fn upload_once(&self) -> SyncResult {
         if self.table_name.is_empty() {
             return SyncResult {
@@ -903,20 +953,11 @@ impl DataSync {
             };
         }
 
-        // 构造上传 URL（去掉末尾的 /get，添加 /mAddMany）
-        let upload_url = if self.apiurl.ends_with("/get") {
-            self.apiurl.trim_end_matches("/get").to_string()
-        } else {
-            self.apiurl.trim_end_matches('/').to_string()
-        };
+        // synclog API 地址
+        let synclog_url = "http://log.778878.net/apiworkflow/workflow/synclog";
 
         // 批量上传
-        let result = self.db.upload_batch_to_server(
-            &self.table_name,
-            &upload_url,
-            &pending_items,
-            self.upload_cols.as_deref(),
-        );
+        let result = self.db.upload_batch_to_server(synclog_url, &pending_items);
 
         match result {
             Ok(count) => {
@@ -1088,20 +1129,20 @@ pub fn add_to_sync_queue(
     data: &serde_json::Value,
     worker: &str,
 ) -> Result<i64, String> {
-    let sync_queue = DataSync::new(table_name);
-    sync_queue.add_to_queue(record_id, action, data, worker)
+    let synclog = DataSync::new(table_name);
+    synclog.add_to_queue(record_id, action, data, worker)
 }
 
 /// 获取待同步的记录数
 pub fn get_pending_count(table_name: &str) -> i32 {
-    let sync_queue = DataSync::new(table_name);
-    sync_queue.get_pending_count()
+    let synclog = DataSync::new(table_name);
+    synclog.get_pending_count()
 }
 
 /// 获取待同步的记录列表
-pub fn get_pending_items(table_name: &str, limit: i32) -> Vec<SyncQueueItem> {
-    let sync_queue = DataSync::new(table_name);
-    sync_queue.get_pending_items(limit)
+pub fn get_pending_items(table_name: &str, limit: i32) -> Vec<SynclogItem> {
+    let synclog = DataSync::new(table_name);
+    synclog.get_pending_items(limit)
 }
 
 /// 记录状态变更日志
@@ -1112,14 +1153,14 @@ pub fn log_status_change(
     reason: &str,
     worker: &str,
 ) -> Result<(), String> {
-    let sync_queue = DataSync::new(table_name);
-    sync_queue.log_status_change(old_status, new_status, reason, worker)
+    let synclog = DataSync::new(table_name);
+    synclog.log_status_change(old_status, new_status, reason, worker)
 }
 
 /// 获取状态变更日志
 pub fn get_status_logs(table_name: &str, limit: i32) -> Vec<StateLog> {
-    let sync_queue = DataSync::new(table_name);
-    sync_queue.get_status_logs(limit)
+    let synclog = DataSync::new(table_name);
+    synclog.get_status_logs(limit)
 }
 
 /// 更新同步统计
@@ -1131,8 +1172,8 @@ pub fn update_sync_stats(
     failed: i32,
     worker: &str,
 ) -> Result<(), String> {
-    let sync_queue = DataSync::new(table_name);
-    sync_queue.update_sync_stats(downloaded, updated, skipped, failed, worker)
+    let synclog = DataSync::new(table_name);
+    synclog.update_sync_stats(downloaded, updated, skipped, failed, worker)
 }
 
 /// 获取同步统计
