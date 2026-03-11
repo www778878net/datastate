@@ -624,7 +624,24 @@ impl LocalDB {
         let field_order: Vec<String> = if let Some(cols_list) = cols {
             cols_list.to_vec()
         } else {
-            return Err("必须指定 upload_cols 字段顺序".to_string());
+            // 从第一条数据的 JSON 中提取字段名作为默认顺序
+            if let Some(first_item) = items.first() {
+                if let Ok(data) = serde_json::from_str::<serde_json::Value>(&first_item.data) {
+                    if let Some(obj) = data.as_object() {
+                        let mut keys: Vec<String> = obj.keys().cloned().collect();
+                        // 确保 id 在最后
+                        keys.retain(|k| k != "id" && k != "idpk");
+                        keys.push("id".to_string());
+                        keys
+                    } else {
+                        return Err("数据格式错误，无法提取字段名".to_string());
+                    }
+                } else {
+                    return Err("数据解析失败，无法提取字段名".to_string());
+                }
+            } else {
+                return Err("没有数据可上传".to_string());
+            }
         };
 
         // 分离 insert 和 update 操作
