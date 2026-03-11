@@ -678,7 +678,11 @@ impl DataSync {
         }
 
         if is_first_download && self.init_getnumber > 0 {
+            // 限制下载数量
             self.download_paginated(self.init_getnumber, self.getnumber)
+        } else if is_first_download {
+            // init_getnumber == 0 表示无限制下载
+            self.download_paginated(i32::MAX, self.getnumber)
         } else {
             let getnumber = if self.getnumber > 0 { self.getnumber } else { 50 };
             self.download_single_page(getnumber, 0)
