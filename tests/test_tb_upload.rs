@@ -154,11 +154,24 @@ fn test_sync_to_server() {
 fn test_sync_once() {
     println!("\n=== 测试完整同步流程 ===");
 
-    let dm = DataManage::default();
-    let _state = dm.register(get_test_config()).expect("注册失败");
+    // 先清空本地数据
+    clear_local_data();
 
-    // 执行一次同步
-    println!("执行 sync_once...");
+    let dm = DataManage::default();
+    let state = dm.register(get_test_config()).expect("注册失败");
+
+    // register 时会自动首次下载
+    println!("注册完成，检查本地数据...");
+    
+    // 检查本地记录数
+    let count = state.count("testtb", "查询本地记录数").unwrap_or(0);
+    println!("本地 testtb 记录数: {}", count);
+    
+    // 验证下载成功
+    assert!(count > 0, "下载后本地应该有数据");
+    
+    // 执行一次同步（可能因为时间间隔不够而跳过）
+    println!("\n执行 sync_once...");
     let result = dm.sync_once();
     println!("sync_once 完成!");
     println!("  res: {}", result.res);
