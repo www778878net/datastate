@@ -121,6 +121,23 @@ impl DataState {
         self.audit.check_permission("count", caller, summary)?;
         self.datasync.count()
     }
+
+    /// 执行任意 SQL 查询（支持完整 SQL 拼接）
+    /// - 权限检查：验证caller是否有权限调用此方法
+    /// - 审计日志：通过log_action_with_count记录操作摘要
+    pub fn do_get(&self, sql: &str, params: &[&dyn rusqlite::ToSql], caller: &str, summary: &str) -> Result<Vec<HashMap<String, Value>>, String> {
+        self.audit.check_permission("do_get", caller, summary)?;
+        self.datasync.do_get(sql, params)
+    }
+
+    /// 执行任意 SQL 更新（支持完整 SQL 拼接）
+    /// - 权限检查：验证caller是否有权限调用此方法
+    /// - 审计日志：通过log_action_with_count记录操作摘要
+    /// - 返回影响的行数
+    pub fn do_m(&self, sql: &str, params: &[&dyn rusqlite::ToSql], caller: &str, summary: &str) -> Result<usize, String> {
+        self.audit.check_permission("do_m", caller, summary)?;
+        self.datasync.do_m(sql, params)
+    }
 }
 
 impl Default for DataState {

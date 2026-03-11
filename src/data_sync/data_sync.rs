@@ -1118,6 +1118,17 @@ impl DataSync {
     pub fn count(&self) -> Result<i32, String> {
         self.db.count(&self.table_name)
     }
+
+    /// 执行任意 SQL 查询（支持完整 SQL 拼接）
+    pub fn do_get(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<std::collections::HashMap<String, serde_json::Value>>, String> {
+        self.db.query(sql, params)
+    }
+
+    /// 执行任意 SQL 更新（支持完整 SQL 拼接）
+    /// 返回影响的行数
+    pub fn do_m(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<usize, String> {
+        self.db.execute_with_params_affected(sql, params)
+    }
 }
 
 // ========== 独立函数（供外部直接使用） ==========
