@@ -87,11 +87,10 @@ pub use datastate::{
     DataState, SyncQueueItem, SYNC_QUEUE_CREATE_SQL,
     DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL,
     StateLog, SyncStats,
-    // 能力层权限（二级权限）
-    register_ability, register_ability_simple, check_ability_permission,
-    log_ability_call, get_ability_daily_stats, DATASTATE_AUDIT_CREATE_SQL, DATA_ABILITY_PERM_CREATE_SQL, DATA_ABILITY_LOG_CREATE_SQL,
-    DATA_ABILITY_DAILY_CREATE_SQL, AbilityPerm, AbilityLog, AbilityDaily,
-    DataAudit, // 导出 DataAudit 以使用其关联函数
+    // 审计相关
+    DataAudit, DATA_ABILITY_LOG_CREATE_SQL, AbilityLog,
+    AuditLogDataState, AuditLogRecord, AUDIT_LOG_CREATE_SQL,
+    AuditPermDataState, AuditPermRecord, AUDIT_PERM_CREATE_SQL,
 };
 
 // localdb 导出（⚠️ 内部使用）

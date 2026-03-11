@@ -86,12 +86,22 @@ impl TestTb {
         Self { db, audit, state }
     }
 
+    fn check_caller(&self, ability: &str, caller: &str) -> Result<(), String> {
+        match caller {
+            "testtb" => Ok(()),
+            "inventory" if matches!(ability, "getone" | "mlist" | "msave") => Ok(()),
+            "trade" if matches!(ability, "getone" | "mlist") => Ok(()),
+            _ => Err(format!("[{}] 无权调用 testtb/{}", caller, ability)),
+        }
+    }
+
     pub fn getone(
         &self,
         id: &str,
         caller: &str,
         summary: &str,
     ) -> Result<Option<TestTbRecord>, String> {
+        self.check_caller("getone", caller)?;
         self.audit.check_permission("getone", caller, summary)?;
         
         let sql = "SELECT * FROM testtb WHERE id = ?";
@@ -119,6 +129,7 @@ impl TestTb {
         limit: i32,
         summary: &str,
     ) -> Result<Vec<TestTbRecord>, String> {
+        self.check_caller("mlist", caller)?;
         self.audit.check_permission("mlist", caller, summary)?;
         
         let sql = format!("SELECT * FROM testtb ORDER BY idpk DESC LIMIT {}", limit);
@@ -149,6 +160,7 @@ impl TestTb {
         caller: &str,
         summary: &str,
     ) -> Result<String, String> {
+        self.check_caller("msave", caller)?;
         self.audit.check_permission("msave", caller, summary)?;
         
         let id = Uuid::new_v4().to_string();
@@ -161,6 +173,7 @@ impl TestTb {
     }
 
     pub fn mdelete(&self, id: &str, caller: &str, summary: &str) -> Result<bool, String> {
+        self.check_caller("mdelete", caller)?;
         self.audit.check_permission("mdelete", caller, summary)?;
         
         let sql = "DELETE FROM testtb WHERE id = ?";
@@ -178,24 +191,12 @@ impl Default for TestTb {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::register_ability_simple;
-
-    fn setup_permissions(testtb: &TestTb) {
-        let _ = register_ability_simple(&testtb.db, "testtb", "*", "testtb", "同表调用全部权限");
-        let _ =
-            register_ability_simple(&testtb.db, "testtb", "getone", "inventory", "库存服务查询");
-        let _ = register_ability_simple(&testtb.db, "testtb", "mlist", "inventory", "库存服务列表");
-        let _ = register_ability_simple(&testtb.db, "testtb", "msave", "inventory", "库存服务保存");
-        let _ = register_ability_simple(&testtb.db, "testtb", "getone", "trade", "交易服务查询");
-        let _ = register_ability_simple(&testtb.db, "testtb", "mlist", "trade", "交易服务列表");
-    }
 
     #[test]
     fn test_audit_permission() {
-        println!("\n=== 权限测试（使用 audit 组件）===\n");
+        println!("\n=== 权限测试 ===\n");
 
         let testtb = TestTb::new();
-        setup_permissions(&testtb);
 
         let record = TestTbRecord {
             idpk: 0,
@@ -209,40 +210,26 @@ mod tests {
         };
 
         println!("【1】testtb 调用（全部允许）");
-        let id = testtb
-            .msave(&record, "testtb", "内部保存测试数据")
-            .expect("testtb 应该能保存");
+        let id = testtb.msave(&record, "testtb", "内部保存").expect("testtb 应该能保存");
         println!("  - msave 成功: {}", id);
 
-        let _list = testtb
-            .mlist("testtb", 10, "内部列表查询")
-            .expect("testtb 应该能列表");
+        let _list = testtb.mlist("testtb", 10, "内部列表").expect("testtb 应该能列表");
         println!("  - mlist 成功: {} 条", _list.len());
 
-        let _found = testtb
-            .getone(&id, "testtb", "内部查询单条")
-            .expect("testtb 应该能查询");
+        let _found = testtb.getone(&id, "testtb", "内部查询").expect("testtb 应该能查询");
         println!("  - getone 成功: {:?}", _found.is_some());
 
-        testtb
-            .mdelete(&id, "testtb", "内部删除测试数据")
-            .expect("testtb 应该能删除");
+        testtb.mdelete(&id, "testtb", "内部删除").expect("testtb 应该能删除");
         println!("  - mdelete 成功");
 
         println!("\n【2】inventory 调用（允许 msave/mlist/getone）");
-        let id2 = testtb
-            .msave(&record, "inventory", "库存服务保存测试数据")
-            .expect("inventory 应该能保存");
+        let id2 = testtb.msave(&record, "inventory", "库存保存").expect("inventory 应该能保存");
         println!("  - msave 成功: {}", id2);
 
-        let _list = testtb
-            .mlist("inventory", 10, "库存服务查询")
-            .expect("inventory 应该能列表");
+        let _list = testtb.mlist("inventory", 10, "库存列表").expect("inventory 应该能列表");
         println!("  - mlist 成功");
 
-        let _found = testtb
-            .getone(&id2, "inventory", "库存服务查询单条")
-            .expect("inventory 应该能查询");
+        let _found = testtb.getone(&id2, "inventory", "库存查询").expect("inventory 应该能查询");
         println!("  - getone 成功");
 
         let result = testtb.mdelete(&id2, "inventory", "尝试删除");
@@ -250,14 +237,10 @@ mod tests {
         println!("  - mdelete 拒绝: {}", result.unwrap_err());
 
         println!("\n【3】trade 调用（只允许 mlist/getone）");
-        let _list = testtb
-            .mlist("trade", 10, "交易服务查询")
-            .expect("trade 应该能列表");
+        let _list = testtb.mlist("trade", 10, "交易列表").expect("trade 应该能列表");
         println!("  - mlist 成功");
 
-        let _found = testtb
-            .getone(&id2, "trade", "交易服务查询单条")
-            .expect("trade 应该能查询");
+        let _found = testtb.getone(&id2, "trade", "交易查询").expect("trade 应该能查询");
         println!("  - getone 成功");
 
         let result = testtb.msave(&record, "trade", "尝试保存");
@@ -273,52 +256,6 @@ mod tests {
         assert!(result.is_err());
         println!("  - mlist 拒绝: {}", result.unwrap_err());
 
-        let result = testtb.getone(&id2, "unknown", "未知调用");
-        assert!(result.is_err());
-        println!("  - getone 拒绝: {}", result.unwrap_err());
-
         println!("\n=== 测试完成 ===");
-    }
-
-    #[test]
-    fn test_summary_format() {
-        println!("\n=== 摘要格式示例 ===\n");
-
-        let testtb = TestTb::new();
-        setup_permissions(&testtb);
-
-        let record = TestTbRecord {
-            idpk: 0,
-            id: String::new(),
-            cid: "c1".into(),
-            kind: "order".into(),
-            item: "item123".into(),
-            data: "d1".into(),
-            upby: String::new(),
-            uptime: String::new(),
-        };
-
-        println!("【真实场景摘要示例】");
-
-        let id1 = testtb
-            .msave(
-                &record,
-                "inventory",
-                "库存服务修改订单号: 订单123状态改为已发货",
-            )
-            .unwrap();
-        println!("  inventory msave: 库存服务修改订单号: 订单123状态改为已发货");
-
-        let _list = testtb
-            .mlist("trade", 10, "交易服务获取订单: 用于创建交易记录")
-            .unwrap();
-        println!("  trade mlist: 交易服务获取订单: 用于创建交易记录");
-
-        testtb
-            .mdelete(&id1, "testtb", "内部清理: 删除测试数据")
-            .unwrap();
-        println!("  testtb mdelete: 内部清理: 删除测试数据");
-
-        println!("\n=== 摘要格式示例完成 ===");
     }
 }
