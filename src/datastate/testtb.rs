@@ -213,43 +213,23 @@ impl TestTb {
         caller: &str,
         summary: &str,
     ) -> Result<String, String> {
+        self.audit.check_permission("msave", caller, summary)?;
+        
         let id = Uuid::new_v4().to_string();
-        let id_clone = id.clone();
-        let record_cid = record.cid.clone();
-        let record_kind = record.kind.clone();
-        let record_item = record.item.clone();
-        let record_data = record.data.clone();
-        let caller_owned = caller.to_string();
-
-        self.audit.do_action_with_count(
-            &self.db,
-            "msave",
-            caller,
-            &format!("{} | id={}, kind={}", summary, id, record.kind),
-            || {
-                let sql = "INSERT INTO testtb (id, cid, kind, item, data, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))";
-                self.db.execute_with_params(
-                    sql,
-                    &[&id_clone, &record_cid, &record_kind, &record_item, &record_data, &caller_owned],
-                )?;
-                Ok(id)
-            },
-        )
+        let sql = "INSERT INTO testtb (id, cid, kind, item, data, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))";
+        self.db.execute_with_params(
+            sql,
+            &[&id, &record.cid, &record.kind, &record.item, &record.data, &caller],
+        )?;
+        Ok(id)
     }
 
     pub fn mdelete(&self, id: &str, caller: &str, summary: &str) -> Result<bool, String> {
-        let id_owned = id.to_string();
-        self.audit.do_action_with_count(
-            &self.db,
-            "mdelete",
-            caller,
-            &format!("{} | id={}", summary, id),
-            || {
-                let sql = "DELETE FROM testtb WHERE id = ?";
-                self.db.execute_with_params(sql, &[&id_owned])?;
-                Ok(true)
-            },
-        )
+        self.audit.check_permission("mdelete", caller, summary)?;
+        
+        let sql = "DELETE FROM testtb WHERE id = ?";
+        self.db.execute_with_params(sql, &[&id])?;
+        Ok(true)
     }
 }
 
