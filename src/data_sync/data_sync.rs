@@ -20,13 +20,14 @@ pub const SYNC_QUEUE_CREATE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS sync_queue (
     idpk INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL,
+    idtable TEXT NOT NULL,
     table_name TEXT NOT NULL,
     action TEXT NOT NULL,
     data TEXT NOT NULL DEFAULT '',
     worker TEXT NOT NULL DEFAULT '',
-    created_at REAL NOT NULL DEFAULT 0,
     synced INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(id)
+    upby TEXT NOT NULL DEFAULT '',
+    uptime TEXT NOT NULL DEFAULT ''
 )
 "#;
 
@@ -34,11 +35,13 @@ CREATE TABLE IF NOT EXISTS sync_queue (
 pub const DATA_STATE_LOG_CREATE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS data_state_log (
     idpk INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL,
     table_name TEXT NOT NULL,
     old_status TEXT NOT NULL DEFAULT '',
     new_status TEXT NOT NULL DEFAULT '',
     reason TEXT NOT NULL DEFAULT '',
-    changed_at REAL NOT NULL DEFAULT 0
+    upby TEXT NOT NULL DEFAULT '',
+    uptime TEXT NOT NULL DEFAULT ''
 )
 "#;
 
@@ -46,12 +49,15 @@ CREATE TABLE IF NOT EXISTS data_state_log (
 pub const DATA_SYNC_STATS_CREATE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS data_sync_stats (
     idpk INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL,
     table_name TEXT NOT NULL,
     downloaded INTEGER NOT NULL DEFAULT 0,
     updated INTEGER NOT NULL DEFAULT 0,
     skipped INTEGER NOT NULL DEFAULT 0,
     failed INTEGER NOT NULL DEFAULT 0,
-    stat_date TEXT NOT NULL,  -- YYYY-MM-DD
+    stat_date TEXT NOT NULL,
+    upby TEXT NOT NULL DEFAULT '',
+    uptime TEXT NOT NULL DEFAULT '',
     UNIQUE(table_name, stat_date)
 )
 "#;
@@ -63,35 +69,42 @@ CREATE TABLE IF NOT EXISTS data_sync_stats (
 pub struct SyncQueueItem {
     pub idpk: i64,
     pub id: String,
+    pub idtable: String,
     pub table_name: String,
-    pub action: String, // insert, update, delete
-    pub data: String,   // JSON
+    pub action: String,
+    pub data: String,
     pub worker: String,
-    pub created_at: f64,
     pub synced: i32,
+    pub upby: String,
+    pub uptime: String,
 }
 
 /// 状态变更日志
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateLog {
     pub idpk: i64,
+    pub id: String,
     pub table_name: String,
     pub old_status: String,
     pub new_status: String,
     pub reason: String,
-    pub changed_at: f64,
+    pub upby: String,
+    pub uptime: String,
 }
 
 /// 同步统计
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncStats {
     pub idpk: i64,
+    pub id: String,
     pub table_name: String,
     pub downloaded: i32,
     pub updated: i32,
     pub skipped: i32,
     pub failed: i32,
     pub stat_date: String,
+    pub upby: String,
+    pub uptime: String,
 }
 
 /// 同步结果
@@ -306,10 +319,11 @@ impl DataSync {
         data: &serde_json::Value,
         worker: &str,
     ) -> Result<i64, String> {
+        let id = uuid::Uuid::new_v4().to_string();
         let data_json = serde_json::to_string(data).unwrap_or_default();
-        let created_at = Self::current_time();
+        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-        let sql = "INSERT INTO sync_queue (id, table_name, action, data, worker, created_at, synced) VALUES (?, ?, ?, ?, ?, ?, 0)";
+        let sql = "INSERT INTO sync_queue (id, idtable, table_name, action, data, worker, synced, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)";
 
         let conn = self.db.get_conn();
         let conn_guard = conn.lock().map_err(|e| e.to_string())?;
@@ -318,12 +332,14 @@ impl DataSync {
             .execute(
                 &sql,
                 rusqlite::params![
+                    id,
                     record_id,
                     &self.table_name,
                     action,
                     data_json,
                     worker,
-                    created_at
+                    worker,
+                    uptime
                 ],
             )
             .map_err(|e| format!("插入 sync_queue 失败: {}", e))?;
@@ -364,7 +380,7 @@ impl DataSync {
     /// 获取待同步的记录列表
     pub fn get_pending_items(&self, limit: i32) -> Vec<SyncQueueItem> {
         let sql = format!(
-            "SELECT idpk, id, table_name, action, data, worker, created_at, synced FROM sync_queue WHERE table_name = ? AND synced = 0 ORDER BY created_at ASC LIMIT {}",
+            "SELECT idpk, id, idtable, table_name, action, data, worker, synced, upby, uptime FROM sync_queue WHERE table_name = ? AND synced = 0 ORDER BY idpk ASC LIMIT {}",
             limit
         );
 
@@ -378,6 +394,11 @@ impl DataSync {
                     idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
                     id: row
                         .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    idtable: row
+                        .get("idtable")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string(),
@@ -401,11 +422,17 @@ impl DataSync {
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string(),
-                    created_at: row
-                        .get("created_at")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0),
                     synced: row.get("synced").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+                    upby: row
+                        .get("upby")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    uptime: row
+                        .get("uptime")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                 })
                 .collect(),
             _ => Vec::new(),
@@ -439,9 +466,11 @@ impl DataSync {
         old_status: &str,
         new_status: &str,
         reason: &str,
+        worker: &str,
     ) -> Result<(), String> {
-        let changed_at = Self::current_time();
-        let sql = "INSERT INTO data_state_log (table_name, old_status, new_status, reason, changed_at) VALUES (?, ?, ?, ?, ?)";
+        let id = uuid::Uuid::new_v4().to_string();
+        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let sql = "INSERT INTO data_state_log (id, table_name, old_status, new_status, reason, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, ?)";
 
         let conn = self.db.get_conn();
         let conn_guard = conn.lock().map_err(|e| e.to_string())?;
@@ -449,7 +478,7 @@ impl DataSync {
         conn_guard
             .execute(
                 sql,
-                rusqlite::params![&self.table_name, old_status, new_status, reason, changed_at],
+                rusqlite::params![id, &self.table_name, old_status, new_status, reason, worker, uptime],
             )
             .map_err(|e| format!("记录状态变更日志失败: {}", e))?;
 
@@ -459,7 +488,7 @@ impl DataSync {
     /// 获取状态变更日志
     pub fn get_status_logs(&self, limit: i32) -> Vec<StateLog> {
         let sql = format!(
-            "SELECT idpk, table_name, old_status, new_status, reason, changed_at FROM data_state_log WHERE table_name = ? ORDER BY changed_at DESC LIMIT {}",
+            "SELECT idpk, id, table_name, old_status, new_status, reason, upby, uptime FROM data_state_log WHERE table_name = ? ORDER BY idpk DESC LIMIT {}",
             limit
         );
 
@@ -471,6 +500,11 @@ impl DataSync {
                 .iter()
                 .map(|row| StateLog {
                     idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
+                    id: row
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     table_name: row
                         .get("table_name")
                         .and_then(|v| v.as_str())
@@ -491,10 +525,16 @@ impl DataSync {
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string(),
-                    changed_at: row
-                        .get("changed_at")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0),
+                    upby: row
+                        .get("upby")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    uptime: row
+                        .get("uptime")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                 })
                 .collect(),
             _ => Vec::new(),
@@ -510,16 +550,21 @@ impl DataSync {
         updated: i32,
         skipped: i32,
         failed: i32,
+        worker: &str,
     ) -> Result<(), String> {
+        let id = uuid::Uuid::new_v4().to_string();
         let today = Local::now().format("%Y-%m-%d").to_string();
+        let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let sql = r#"
-            INSERT INTO data_sync_stats (table_name, downloaded, updated, skipped, failed, stat_date)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO data_sync_stats (id, table_name, downloaded, updated, skipped, failed, stat_date, upby, uptime)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(table_name, stat_date) DO UPDATE SET
                 downloaded = downloaded + excluded.downloaded,
                 updated = updated + excluded.updated,
                 skipped = skipped + excluded.skipped,
-                failed = failed + excluded.failed
+                failed = failed + excluded.failed,
+                upby = excluded.upby,
+                uptime = excluded.uptime
         "#;
 
         let conn = self.db.get_conn();
@@ -529,12 +574,15 @@ impl DataSync {
             .execute(
                 sql,
                 rusqlite::params![
+                    id,
                     &self.table_name,
                     downloaded,
                     updated,
                     skipped,
                     failed,
-                    today
+                    today,
+                    worker,
+                    uptime
                 ],
             )
             .map_err(|e| format!("更新同步统计失败: {}", e))?;
@@ -545,7 +593,7 @@ impl DataSync {
     /// 获取同步统计
     pub fn get_sync_stats(&self, days: i32) -> Vec<SyncStats> {
         let sql = format!(
-            "SELECT idpk, table_name, downloaded, updated, skipped, failed, stat_date FROM data_sync_stats WHERE table_name = ? ORDER BY stat_date DESC LIMIT {}",
+            "SELECT idpk, id, table_name, downloaded, updated, skipped, failed, stat_date, upby, uptime FROM data_sync_stats WHERE table_name = ? ORDER BY stat_date DESC LIMIT {}",
             days
         );
 
@@ -557,6 +605,11 @@ impl DataSync {
                 .iter()
                 .map(|row| SyncStats {
                     idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
+                    id: row
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     table_name: row
                         .get("table_name")
                         .and_then(|v| v.as_str())
@@ -568,6 +621,16 @@ impl DataSync {
                     failed: row.get("failed").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
                     stat_date: row
                         .get("stat_date")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    upby: row
+                        .get("upby")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    uptime: row
+                        .get("uptime")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string(),
@@ -1050,9 +1113,10 @@ pub fn log_status_change(
     old_status: &str,
     new_status: &str,
     reason: &str,
+    worker: &str,
 ) -> Result<(), String> {
     let sync_queue = DataSync::new(table_name);
-    sync_queue.log_status_change(old_status, new_status, reason)
+    sync_queue.log_status_change(old_status, new_status, reason, worker)
 }
 
 /// 获取状态变更日志
@@ -1068,9 +1132,10 @@ pub fn update_sync_stats(
     updated: i32,
     skipped: i32,
     failed: i32,
+    worker: &str,
 ) -> Result<(), String> {
     let sync_queue = DataSync::new(table_name);
-    sync_queue.update_sync_stats(downloaded, updated, skipped, failed)
+    sync_queue.update_sync_stats(downloaded, updated, skipped, failed, worker)
 }
 
 /// 获取同步统计
