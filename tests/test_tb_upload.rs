@@ -1,6 +1,7 @@
 //! testtb 上传测试
 //!
 //! 测试 DataSync 的 CRUD 方法（m_add, m_save, m_del）
+//! 测试同步到服务器
 
 use database::{DataManage, TableConfig, get_system_columns, DataState};
 use std::collections::HashMap;
@@ -86,4 +87,64 @@ fn test_query_methods() {
         }
         Err(e) => println!("get_all 失败: {}", e),
     }
+}
+
+/// 测试同步到服务器
+#[test]
+fn test_sync_to_server() {
+    println!("\n=== 测试同步到服务器 ===");
+
+    let dm = DataManage::default();
+    let state = dm.register(get_test_config()).expect("注册失败");
+
+    // 先插入一条数据
+    let mut data = HashMap::new();
+    data.insert("kind".to_string(), Value::String("sync_test".to_string()));
+    data.insert("item".to_string(), Value::String("sync_item".to_string()));
+    data.insert("data".to_string(), Value::String("同步测试数据".to_string()));
+
+    let _id = match state.m_add(&data, "testtb", "插入待同步数据") {
+        Ok(id) => {
+            println!("插入成功，id: {}", id);
+            id
+        }
+        Err(e) => {
+            println!("插入失败: {}", e);
+            return;
+        }
+    };
+
+    // 检查 sync_queue 中有待同步数据
+    let pending = state.datasync.get_pending_count();
+    println!("sync_queue 待同步数量: {}", pending);
+
+    // 执行同步
+    println!("\n开始同步到服务器...");
+    let result = state.datasync.upload_once();
+    println!("同步结果: res={}, errmsg={}", result.res, result.errmsg);
+    println!("  插入: {} 条", result.datawf.inserted);
+    println!("  更新: {} 条", result.datawf.updated);
+    println!("  跳过: {} 条", result.datawf.skipped);
+
+    // 再次检查 sync_queue
+    let pending_after = state.datasync.get_pending_count();
+    println!("同步后 sync_queue 待同步数量: {}", pending_after);
+}
+
+/// 测试完整同步流程（下载 + 上传）
+#[test]
+fn test_sync_once() {
+    println!("\n=== 测试完整同步流程 ===");
+
+    let dm = DataManage::default();
+    let _state = dm.register(get_test_config()).expect("注册失败");
+
+    // 执行一次同步
+    println!("执行 sync_once...");
+    let result = dm.sync_once();
+    println!("sync_once 完成!");
+    println!("  res: {}", result.res);
+    println!("  errmsg: {}", result.errmsg);
+    println!("  插入: {} 条", result.datawf.inserted);
+    println!("  更新: {} 条", result.datawf.updated);
 }
