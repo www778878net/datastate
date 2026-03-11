@@ -955,7 +955,7 @@ impl DataSync {
         }
 
         // synclog API 地址
-        let synclog_url = "http://log.778878.net/apiworkflow/workflow/synclog";
+        let synclog_url = "http://log.778878.net/apiapisvc/backsvc/synclog";
 
         // 批量上传
         let result = self.db.upload_batch_to_server(synclog_url, &pending_items);
