@@ -38,7 +38,7 @@ fn call_replay_batch() -> Result<i32, String> {
         return Err("配置文件未找到 SID".to_string());
     }
 
-    let url = "http://log.778878.net/apisvc/backsvc/synclog/replayBatch";
+    let url = "http://log.778878.net/apisvc/backsvc/synclog/syncReplay";
     let request_payload = serde_json::json!({
         "sid": sid,
         "limit": 100,
