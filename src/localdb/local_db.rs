@@ -595,7 +595,7 @@ impl LocalDB {
         Ok(1)
     }
 
-    /// 批量上传数据到服务器（使用 mAddManyByid）
+    /// 批量上传数据到服务器
     ///
     /// # 参数
     /// - `_table`: 表名（未使用）
@@ -627,62 +627,117 @@ impl LocalDB {
             return Err("必须指定 upload_cols 字段顺序".to_string());
         };
 
-        // 构建 pars 数组（所有记录展平为一维数组）
-        // mAddManyByid 格式：每行 = cols 字段 + id
-        let mut pars: Vec<Value> = Vec::new();
-        for item in items {
-            let data: HashMap<String, Value> = serde_json::from_str(&item.data).unwrap_or_default();
-            
-            // 先添加 cols 字段
-            for col in &field_order {
-                pars.push(data.get(col).cloned().unwrap_or(Value::String(String::new())));
+        // 分离 insert 和 update 操作
+        let insert_items: Vec<&crate::data_sync::SyncQueueItem> = items
+            .iter()
+            .filter(|item| item.action == "insert")
+            .collect();
+        let update_items: Vec<&crate::data_sync::SyncQueueItem> = items
+            .iter()
+            .filter(|item| item.action == "update")
+            .collect();
+
+        let mut total_affected = 0;
+
+        // 处理 insert 操作（使用 mAddManyByid）
+        if !insert_items.is_empty() {
+            let mut pars: Vec<Value> = Vec::new();
+            for item in &insert_items {
+                let data: HashMap<String, Value> = serde_json::from_str(&item.data).unwrap_or_default();
+                
+                // 先添加 cols 字段
+                for col in &field_order {
+                    pars.push(data.get(col).cloned().unwrap_or(Value::String(String::new())));
+                }
+                
+                // 最后添加 id（客户端提供的 id）
+                pars.push(Value::String(item.id.clone()));
             }
-            
-            // 最后添加 id
-            pars.push(Value::String(item.id.clone()));
-        }
 
-        // 构建请求体
-        let request_payload = serde_json::json!({
-            "sid": sid,
-            "pars": pars,
-            "cols": field_order
-        });
+            let request_payload = serde_json::json!({
+                "sid": sid,
+                "pars": pars,
+                "cols": field_order
+            });
 
-        // URL: {api_url}/mAddManyByid
-        let url = format!("{}/mAddManyByid", api_url.trim_end_matches('/'));
+            let url = format!("{}/mAddManyByid", api_url.trim_end_matches('/'));
+            let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
 
-        let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
+            let logger = mylogger!();
+            logger.info(&format!("[upload_batch_to_server] mAddManyByid 响应: res={}, errmsg={}", 
+                response.res, response.errmsg));
 
-        // 记录服务器响应
-        let logger = mylogger!();
-        logger.info(&format!("[upload_batch_to_server] 服务器响应: res={}, errmsg={}, data={:?}", 
-            response.res, response.errmsg, response.data));
+            if response.res != 0 {
+                return Err(format!("mAddManyByid 服务器错误: {}", response.errmsg));
+            }
 
-        if response.res != 0 {
-            return Err(format!("服务器错误: res={}, errmsg={}", response.res, response.errmsg));
-        }
-
-        // 检查服务器返回的业务错误
-        if let Some(ref resp_data) = response.data {
-            if let Some(back_obj) = resp_data.response.as_object() {
-                logger.info(&format!("[upload_batch_to_server] 业务响应: {:?}", back_obj));
-                if let Some(back_res) = back_obj.get("res") {
-                    if back_res.as_i64().unwrap_or(0) != 0 {
-                        let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
-                        return Err(format!("业务错误: {}", back_errmsg));
+            if let Some(ref resp_data) = response.data {
+                if let Some(back_obj) = resp_data.response.as_object() {
+                    if let Some(back_res) = back_obj.get("res") {
+                        if back_res.as_i64().unwrap_or(0) != 0 {
+                            let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
+                            return Err(format!("mAddManyByid 业务错误: {}", back_errmsg));
+                        }
+                    }
+                    if let Some(back) = back_obj.get("back") {
+                        if let Some(count) = back.as_i64() {
+                            total_affected += count as i32;
+                        }
                     }
                 }
-                // 返回影响的行数
-                if let Some(back) = back_obj.get("back") {
-                    if let Some(count) = back.as_i64() {
-                        return Ok(count as i32);
+            }
+        }
+
+        // 处理 update 操作（使用 mUpdateMany）
+        if !update_items.is_empty() {
+            let mut pars: Vec<Value> = Vec::new();
+            for item in &update_items {
+                let data: HashMap<String, Value> = serde_json::from_str(&item.data).unwrap_or_default();
+                
+                // 先添加 cols 字段
+                for col in &field_order {
+                    pars.push(data.get(col).cloned().unwrap_or(Value::String(String::new())));
+                }
+                
+                // 最后添加 idpk（服务器端的主键）
+                pars.push(Value::String(item.id.clone()));
+            }
+
+            let request_payload = serde_json::json!({
+                "sid": sid,
+                "pars": pars,
+                "cols": field_order
+            });
+
+            let url = format!("{}/mUpdateMany", api_url.trim_end_matches('/'));
+            let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
+
+            let logger = mylogger!();
+            logger.info(&format!("[upload_batch_to_server] mUpdateMany 响应: res={}, errmsg={}", 
+                response.res, response.errmsg));
+
+            if response.res != 0 {
+                return Err(format!("mUpdateMany 服务器错误: {}", response.errmsg));
+            }
+
+            if let Some(ref resp_data) = response.data {
+                if let Some(back_obj) = resp_data.response.as_object() {
+                    if let Some(back_res) = back_obj.get("res") {
+                        if back_res.as_i64().unwrap_or(0) != 0 {
+                            let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
+                            return Err(format!("mUpdateMany 业务错误: {}", back_errmsg));
+                        }
+                    }
+                    if let Some(back) = back_obj.get("back") {
+                        if let Some(count) = back.as_i64() {
+                            total_affected += count as i32;
+                        }
                     }
                 }
             }
         }
 
-        Ok(items.len() as i32)
+        Ok(total_affected)
     }
 }
 
