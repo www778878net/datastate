@@ -1121,8 +1121,8 @@ impl DataSync {
 
 // ========== 独立函数（供外部直接使用） ==========
 
-/// 添加记录到同步队列
-pub fn add_to_sync_queue(
+/// 添加记录到同步日志
+pub fn add_to_synclog(
     table_name: &str,
     record_id: &str,
     action: &str,

@@ -3,7 +3,7 @@
 //! 管理所有表的同步状态
 //! 只负责：验证、日志、统计
 
-use crate::datastate::{DataState, SYNC_QUEUE_CREATE_SQL};
+use crate::datastate::{DataState, SYNCLOG_CREATE_SQL};
 use crate::data_sync::{DataSync, SyncResult};
 use crate::localdb::LocalDB;
 use crate::sync_config::TableConfig;

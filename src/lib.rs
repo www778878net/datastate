@@ -99,7 +99,7 @@ pub use localdb::LocalDB;
 // data_sync 导出（同步组件）
 pub use data_sync::{
     DataSync, SyncResult as SyncResultSync, SyncData as SyncDataSync,
-    add_to_sync_queue, get_pending_count, get_pending_items,
+    add_to_synclog, get_pending_count, get_pending_items,
     log_status_change, get_status_logs, update_sync_stats, get_sync_stats,
 };
 
