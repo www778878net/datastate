@@ -595,12 +595,12 @@ impl LocalDB {
         Ok(1)
     }
 
-    /// 批量上传数据到服务器（使用 mAddMany）
+    /// 批量上传数据到服务器（使用 mMany）
     ///
     /// # 参数
     /// - `_table`: 表名（未使用）
     /// - `api_url`: API 基础 URL
-    /// - `items`: 待同步的数据列表
+    /// - `items`: 待同步的数据列表（来自 sync_queue）
     /// - `cols`: 字段顺序（必须与服务器 colsImp 一致）
     pub fn upload_batch_to_server(
         &self,
@@ -620,31 +620,41 @@ impl LocalDB {
             return Ok(0);
         }
 
-        // 确定字段顺序
-        let field_order: Vec<&str> = if let Some(cols_list) = cols {
-            cols_list.iter().map(|s| s.as_str()).collect()
+        // 确定字段顺序（cols + idpk）
+        let mut field_order: Vec<String> = if let Some(cols_list) = cols {
+            cols_list.to_vec()
         } else {
             return Err("必须指定 upload_cols 字段顺序".to_string());
         };
 
         // 构建 pars 数组（所有记录展平为一维数组）
+        // 每条记录：idpk + cols 字段
         let mut pars: Vec<Value> = Vec::new();
         for item in items {
             let data: HashMap<String, Value> = serde_json::from_str(&item.data).unwrap_or_default();
+            
+            // 第一列是 idpk（来自 row_id）
+            pars.push(Value::String(item.id.clone()));
+            
+            // 后续列是 cols 字段
             for col in &field_order {
-                pars.push(data.get(*col).cloned().unwrap_or(Value::String(String::new())));
+                pars.push(data.get(col).cloned().unwrap_or(Value::String(String::new())));
             }
         }
+
+        // cols 需要加上 idpk 作为第一列
+        let mut full_cols: Vec<String> = vec!["idpk".to_string()];
+        full_cols.extend(field_order.clone());
 
         // 构建请求体
         let request_payload = serde_json::json!({
             "sid": sid,
             "pars": pars,
-            "cols": field_order
+            "cols": full_cols
         });
 
-        // URL: {api_url}/mAddMany
-        let url = format!("{}/mAddMany", api_url.trim_end_matches('/'));
+        // URL: {api_url}/mMany
+        let url = format!("{}/mMany", api_url.trim_end_matches('/'));
 
         let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
 
