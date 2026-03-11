@@ -8,6 +8,7 @@
 use database::{DataManage, TableConfig, get_system_columns, LocalDB};
 use std::collections::HashMap;
 use serde_json::Value;
+use base::http::HttpHelper;
 
 fn get_test_config() -> TableConfig {
     let mut columns = get_system_columns();
@@ -27,6 +28,40 @@ fn clear_local_data() {
     let db = LocalDB::new(None).expect("数据库连接失败");
     let _ = db.execute("DELETE FROM testtb");
     let _ = db.execute("DELETE FROM synclog WHERE tbname = 'testtb'");
+}
+
+/// 调用服务器端 replayBatch 回放日志
+fn call_replay_batch() -> Result<i32, String> {
+    let db = LocalDB::new(None).expect("数据库连接失败");
+    let sid = db.get_sid();
+    if sid.is_empty() {
+        return Err("配置文件未找到 SID".to_string());
+    }
+
+    let url = "http://log.778878.net/apisvc/backsvc/synclog/replayBatch";
+    let request_payload = serde_json::json!({
+        "sid": sid,
+        "limit": 100,
+        "maxBatches": 10
+    });
+
+    let response = HttpHelper::post(url, None, Some(&request_payload), None, false, None, 120, 0);
+    println!("  replayBatch 响应: res={}, errmsg={}", response.res, response.errmsg);
+
+    if response.res != 0 {
+        return Err(response.errmsg);
+    }
+
+    // 解析返回结果
+    if let Some(ref resp_data) = response.data {
+        if let Some(back) = resp_data.response.get("back") {
+            if let Some(processed) = back.get("processed") {
+                return Ok(processed.as_i64().unwrap_or(0) as i32);
+            }
+        }
+    }
+
+    Ok(0)
 }
 
 /// 完整同步测试（串行执行所有步骤）
@@ -81,6 +116,10 @@ fn test_full_sync_workflow() {
     println!("  同步后 synclog 待同步数量: {}", pending_after);
     assert_eq!(pending_after, 0, "同步后 synclog 应该为空");
 
+    // 调用 replayBatch 回放日志
+    let processed = call_replay_batch().expect("replayBatch 失败");
+    println!("  replayBatch 处理了 {} 条记录", processed);
+
     println!("  ✅ 步骤1通过：添加2条并同步成功");
 
     // ===== 步骤2：修改数据，同步到服务器 =====
@@ -120,6 +159,10 @@ fn test_full_sync_workflow() {
     let pending_after = state.datasync.get_pending_count();
     println!("  同步后 synclog 待同步数量: {}", pending_after);
     assert_eq!(pending_after, 0, "同步后 synclog 应该为空");
+
+    // 调用 replayBatch 回放日志
+    let processed = call_replay_batch().expect("replayBatch 失败");
+    println!("  replayBatch 处理了 {} 条记录", processed);
 
     println!("  ✅ 步骤2通过：修改并同步成功");
 

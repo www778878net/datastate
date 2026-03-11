@@ -470,6 +470,11 @@ impl DataManage {
             }
         }
 
+        // 所有表同步完成后，调用服务器端 replayBatch 回放日志
+        if total_inserted > 0 || total_updated > 0 {
+            let _ = self.call_replay_batch();
+        }
+
         SyncResult {
             res: 0,
             errmsg: String::new(),
@@ -482,6 +487,42 @@ impl DataManage {
                 errors: None,
             },
         }
+    }
+
+    /// 调用服务器端 replayBatch 回放日志
+    fn call_replay_batch(&self) -> Result<i32, String> {
+        use base::http::HttpHelper;
+
+        let sid = self.db.get_sid();
+        if sid.is_empty() {
+            return Err("配置文件未找到 SID".to_string());
+        }
+
+        let url = "http://log.778878.net/apisvc/backsvc/synclog/replayBatch";
+        let request_payload = serde_json::json!({
+            "sid": sid
+        });
+
+        let response = HttpHelper::post(url, None, Some(&request_payload), None, false, None, 30, 2);
+
+        let logger = mylogger!();
+        logger.info(&format!("[DataManage] replayBatch 响应: res={}, errmsg={}", 
+            response.res, response.errmsg));
+
+        if response.res != 0 {
+            return Err(response.errmsg);
+        }
+
+        // 解析返回结果
+        if let Some(ref resp_data) = response.data {
+            if let Some(back) = resp_data.response.get("back") {
+                if let Some(processed) = back.get("processed") {
+                    return Ok(processed.as_i64().unwrap_or(0) as i32);
+                }
+            }
+        }
+
+        Ok(0)
     }
 }
 

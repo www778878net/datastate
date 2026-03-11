@@ -432,7 +432,7 @@ impl LocalDB {
     }
 
     /// 从配置文件读取 SID
-    fn get_sid(&self) -> String {
+    pub fn get_sid(&self) -> String {
         if let Ok(path) = ProjectPath::find() {
             if let Some(sid) = path.read_ini_value("user7788", "sid") {
                 // 跳过占位符
