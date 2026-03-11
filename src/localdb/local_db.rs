@@ -594,6 +594,90 @@ impl LocalDB {
 
         Ok(1)
     }
+
+    /// 批量上传数据到服务器（使用 mAddMany）
+    ///
+    /// # 参数
+    /// - `_table`: 表名（未使用）
+    /// - `api_url`: API 基础 URL
+    /// - `items`: 待同步的数据列表
+    /// - `cols`: 字段顺序（必须与服务器 colsImp 一致）
+    pub fn upload_batch_to_server(
+        &self,
+        _table: &str,
+        api_url: &str,
+        items: &[crate::data_sync::SyncQueueItem],
+        cols: Option<&[String]>,
+    ) -> Result<i32, String> {
+        use base::http::HttpHelper;
+
+        let sid = self.get_sid();
+        if sid.is_empty() {
+            return Err("配置文件未找到 SID".to_string());
+        }
+
+        if items.is_empty() {
+            return Ok(0);
+        }
+
+        // 确定字段顺序
+        let field_order: Vec<&str> = if let Some(cols_list) = cols {
+            cols_list.iter().map(|s| s.as_str()).collect()
+        } else {
+            return Err("必须指定 upload_cols 字段顺序".to_string());
+        };
+
+        // 构建 pars 数组（所有记录展平为一维数组）
+        let mut pars: Vec<Value> = Vec::new();
+        for item in items {
+            let data: HashMap<String, Value> = serde_json::from_str(&item.data).unwrap_or_default();
+            for col in &field_order {
+                pars.push(data.get(*col).cloned().unwrap_or(Value::String(String::new())));
+            }
+        }
+
+        // 构建请求体
+        let request_payload = serde_json::json!({
+            "sid": sid,
+            "pars": pars,
+            "cols": field_order
+        });
+
+        // URL: {api_url}/mAddMany
+        let url = format!("{}/mAddMany", api_url.trim_end_matches('/'));
+
+        let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
+
+        // 记录服务器响应
+        let logger = mylogger!();
+        logger.info(&format!("[upload_batch_to_server] 服务器响应: res={}, errmsg={}, data={:?}", 
+            response.res, response.errmsg, response.data));
+
+        if response.res != 0 {
+            return Err(format!("服务器错误: res={}, errmsg={}", response.res, response.errmsg));
+        }
+
+        // 检查服务器返回的业务错误
+        if let Some(ref resp_data) = response.data {
+            if let Some(back_obj) = resp_data.response.as_object() {
+                logger.info(&format!("[upload_batch_to_server] 业务响应: {:?}", back_obj));
+                if let Some(back_res) = back_obj.get("res") {
+                    if back_res.as_i64().unwrap_or(0) != 0 {
+                        let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
+                        return Err(format!("业务错误: {}", back_errmsg));
+                    }
+                }
+                // 返回影响的行数
+                if let Some(back) = back_obj.get("back") {
+                    if let Some(count) = back.as_i64() {
+                        return Ok(count as i32);
+                    }
+                }
+            }
+        }
+
+        Ok(items.len() as i32)
+    }
 }
 
 #[cfg(test)]

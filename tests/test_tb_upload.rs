@@ -110,35 +110,31 @@ fn test_sync_to_server() {
     let dm = DataManage::default();
     let state = dm.register(get_test_config()).expect("注册失败");
 
-    // 使用唯一的时间戳作为 kind，避免重复
+    // 使用唯一的时间戳作为 kind 前缀，避免重复
     let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S").to_string();
-    let unique_kind = format!("sync_test_{}", timestamp);
 
-    // 先插入一条数据
-    let mut data = HashMap::new();
-    data.insert("kind".to_string(), Value::String(unique_kind.clone()));
-    data.insert("item".to_string(), Value::String("sync_item".to_string()));
-    data.insert("data".to_string(), Value::String("同步测试数据".to_string()));
+    // 批量插入 5 条数据
+    println!("\n批量插入 5 条数据...");
+    for i in 1..=5 {
+        let mut data = HashMap::new();
+        data.insert("kind".to_string(), Value::String(format!("batch_{}_{}", timestamp, i)));
+        data.insert("item".to_string(), Value::String(format!("item_{}", i)));
+        data.insert("data".to_string(), Value::String(format!("批量测试数据 {}", i)));
 
-    let id = match state.m_add(&data, "testtb", "插入待同步数据") {
-        Ok(id) => {
-            println!("插入成功，id: {}", id);
-            id
+        match state.m_add(&data, "testtb", &format!("批量插入第{}条", i)) {
+            Ok(id) => println!("  插入第 {} 条成功，id: {}", i, id),
+            Err(e) => println!("  插入第 {} 条失败: {}", i, e),
         }
-        Err(e) => {
-            println!("插入失败: {}", e);
-            return;
-        }
-    };
+    }
 
     // 检查 sync_queue 中有待同步数据
     let pending = state.datasync.get_pending_count();
-    println!("sync_queue 待同步数量: {}", pending);
+    println!("\nsync_queue 待同步数量: {}", pending);
 
     // 执行同步
     println!("\n开始同步到服务器...");
     let result = state.datasync.upload_once();
-    println!("同步结果: res={}, errmsg={}", result.res, result.errmsg);
+    println!("\n同步结果: res={}, errmsg={}", result.res, result.errmsg);
     println!("  插入: {} 条", result.datawf.inserted);
     println!("  更新: {} 条", result.datawf.updated);
     println!("  跳过: {} 条", result.datawf.skipped);
@@ -149,7 +145,7 @@ fn test_sync_to_server() {
 
     // 验证同步成功
     if result.datawf.inserted > 0 {
-        println!("✅ 同步成功！插入了 {} 条数据", result.datawf.inserted);
+        println!("\n✅ 同步成功！插入了 {} 条数据到服务器", result.datawf.inserted);
     }
 }
 

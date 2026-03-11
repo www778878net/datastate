@@ -815,7 +815,7 @@ impl DataSync {
 
     /// 执行一次上传
     ///
-    /// 将本地待同步数据上传到服务器
+    /// 将本地待同步数据批量上传到服务器（使用 mAddMany）
     pub fn upload_once(&self) -> SyncResult {
         if self.table_name.is_empty() {
             return SyncResult {
@@ -836,60 +836,49 @@ impl DataSync {
             };
         }
 
-        // 构造上传 URL（去掉末尾的 /get）
+        // 构造上传 URL（去掉末尾的 /get，添加 /mAddMany）
         let upload_url = if self.apiurl.ends_with("/get") {
             self.apiurl.trim_end_matches("/get").to_string()
         } else {
             self.apiurl.trim_end_matches('/').to_string()
         };
 
-        let mut inserted = 0;
-        let mut updated = 0;
-        let mut failed = 0;
-        let mut synced_ids: Vec<i64> = Vec::new();
+        // 批量上传
+        let result = self.db.upload_batch_to_server(
+            &self.table_name,
+            &upload_url,
+            &pending_items,
+            self.upload_cols.as_deref(),
+        );
 
-        for item in &pending_items {
-            // 解析 JSON 数据
-            let data: std::collections::HashMap<String, serde_json::Value> =
-                serde_json::from_str(&item.data).unwrap_or_default();
-
-            // 调用上传 API（传入字段顺序）
-            let result = self
-                .db
-                .upload_to_server(&self.table_name, &upload_url, &data, self.upload_cols.as_deref());
-
-            match result {
-                Ok(1) => {
-                    // 成功
-                    if item.action == "insert" {
-                        inserted += 1;
-                    } else {
-                        updated += 1;
-                    }
-                    synced_ids.push(item.idpk);
+        match result {
+            Ok(count) => {
+                // 标记所有记录为已同步
+                let synced_ids: Vec<i64> = pending_items.iter().map(|item| item.idpk).collect();
+                if !synced_ids.is_empty() {
+                    let _ = self.mark_synced(&synced_ids);
                 }
-                Ok(_) | Err(_) => {
-                    failed += 1;
+
+                SyncResult {
+                    res: 0,
+                    errmsg: String::new(),
+                    datawf: SyncData {
+                        inserted: count,
+                        updated: 0,
+                        skipped: 0,
+                        failed: Some(0),
+                        total: Some(count),
+                        errors: None,
+                    },
                 }
             }
-        }
-
-        // 标记已同步
-        if !synced_ids.is_empty() {
-            let _ = self.mark_synced(&synced_ids);
-        }
-
-        SyncResult {
-            res: if failed > 0 { -1 } else { 0 },
-            errmsg: String::new(),
-            datawf: SyncData {
-                inserted,
-                updated,
-                skipped: failed,
-                failed: Some(failed),
-                total: Some((inserted + updated + failed) as i32),
-                errors: None,
-            },
+            Err(e) => {
+                SyncResult {
+                    res: -1,
+                    errmsg: e,
+                    datawf: SyncData::default(),
+                }
+            }
         }
     }
 
