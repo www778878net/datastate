@@ -53,7 +53,7 @@ impl DataManage {
             logger,
         };
         // 确保 sync_queue 表存在
-        manager.ensure_sync_queue()?;
+        manager.ensure_synclog()?;
         Ok(manager)
     }
 
@@ -62,10 +62,10 @@ impl DataManage {
         &DATA_MANAGE
     }
 
-    /// 确保 sync_queue 表存在
-    fn ensure_sync_queue(&self) -> Result<(), String> {
-        if !self.db.table_exists("sync_queue")? {
-            self.db.execute(SYNC_QUEUE_CREATE_SQL)?;
+    /// 确保 synclog 表存在
+    fn ensure_synclog(&self) -> Result<(), String> {
+        if !self.db.table_exists("synclog")? {
+            self.db.execute(SYNCLOG_CREATE_SQL)?;
         }
         Ok(())
     }

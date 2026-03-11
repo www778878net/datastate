@@ -617,11 +617,11 @@ impl LocalDB {
         }
 
         // 构建 mAddMany 请求
-        // cols: synclog 表的字段
+        // cols: synclog 表的字段（与服务器端 colsImp 一致）
         let cols = vec![
             "apisys", "apimicro", "apiobj", "tbname", "action", 
-            "cmdtext", "params", "idrow", "worker", "cmdtextmd5", 
-            "num", "dlong", "downlen", "id", "upby", "uptime", "cid"
+            "cmdtext", "params", "idrow", "worker", "synced",
+            "cmdtextmd5", "num", "dlong", "downlen"
         ];
 
         let mut pars: Vec<Value> = Vec::new();
@@ -635,14 +635,11 @@ impl LocalDB {
             pars.push(Value::String(item.params.clone()));
             pars.push(Value::String(item.idrow.clone()));
             pars.push(Value::String(item.worker.clone()));
+            pars.push(Value::Number(item.synced.into()));
             pars.push(Value::String(item.cmdtextmd5.clone()));
             pars.push(Value::Number(item.num.into()));
             pars.push(Value::Number(item.dlong.into()));
             pars.push(Value::Number(item.downlen.into()));
-            pars.push(Value::String(item.id.clone()));
-            pars.push(Value::String(item.upby.clone()));
-            pars.push(Value::String(item.uptime.clone()));
-            pars.push(Value::String(item.cid.clone()));
         }
 
         let request_payload = serde_json::json!({

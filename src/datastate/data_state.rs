@@ -138,7 +138,7 @@ mod tests {
     use super::*;
     use crate::data_sync::{SyncData, SyncResult};
     use crate::datastate::{
-        AbilityPerm, DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL, SYNC_QUEUE_CREATE_SQL,
+        AbilityPerm, DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL, SYNCLOG_CREATE_SQL,
     };
     use std::sync::Arc;
 
@@ -253,8 +253,8 @@ mod tests {
 
             // 创建测试表
             conn_guard
-                .execute(SYNC_QUEUE_CREATE_SQL, [])
-                .expect("创建 sync_queue 表失败");
+                .execute(SYNCLOG_CREATE_SQL, [])
+                .expect("创建 synclog 表失败");
             conn_guard
                 .execute(DATA_STATE_LOG_CREATE_SQL, [])
                 .expect("创建 data_state_log 表失败");
