@@ -24,9 +24,9 @@ pub use crate::data_sync::{
 pub use crate::dataaudit::{
     // 能力权限（微服务对微服务，精确到函数级别）
     register_ability, register_ability_simple, check_ability_permission,
-    get_ability_perm, list_abilities, log_ability_call, get_ability_logs,
-    get_ability_daily_stats, DATASTATE_AUDIT_CREATE_SQL, DATA_ABILITY_PERM_CREATE_SQL, DATA_ABILITY_LOG_CREATE_SQL,
+    log_ability_call, get_ability_daily_stats, DATASTATE_AUDIT_CREATE_SQL, DATA_ABILITY_PERM_CREATE_SQL, DATA_ABILITY_LOG_CREATE_SQL,
     DATA_ABILITY_DAILY_CREATE_SQL, AbilityPerm, AbilityLog, AbilityDaily,
+    DataAudit, // 导出 DataAudit 以使用其关联函数
 };
 
 // 新的DataState组件（审计日志和权限表作为datastate管理）

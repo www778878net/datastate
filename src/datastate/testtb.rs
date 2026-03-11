@@ -92,60 +92,25 @@ impl TestTb {
         caller: &str,
         summary: &str,
     ) -> Result<Option<TestTbRecord>, String> {
-        let id_owned = id.to_string();
-        self.audit.do_action_with_count(
-            &self.db,
-            "getone",
-            caller,
-            &format!("{} | id={}", summary, id),
-            || {
-                let sql = "SELECT * FROM testtb WHERE id = ?";
-                match self.db.query(sql, &[&id_owned as &dyn rusqlite::ToSql]) {
-                    Ok(rows) if !rows.is_empty() => {
-                        let row = &rows[0];
-                        Ok(Some(TestTbRecord {
-                            idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
-                            id: row
-                                .get("id")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            cid: row
-                                .get("cid")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            kind: row
-                                .get("kind")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            item: row
-                                .get("item")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            data: row
-                                .get("data")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            upby: row
-                                .get("upby")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            uptime: row
-                                .get("uptime")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                        }))
-                    }
-                    _ => Ok(None),
-                }
-            },
-        )
+        self.audit.check_permission("getone", caller, summary)?;
+        
+        let sql = "SELECT * FROM testtb WHERE id = ?";
+        match self.db.query(sql, &[&id as &dyn rusqlite::ToSql]) {
+            Ok(rows) if !rows.is_empty() => {
+                let row = &rows[0];
+                Ok(Some(TestTbRecord {
+                    idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
+                    id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    cid: row.get("cid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    kind: row.get("kind").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    item: row.get("item").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    data: row.get("data").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    upby: row.get("upby").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    uptime: row.get("uptime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                }))
+            }
+            _ => Ok(None),
+        }
     }
 
     pub fn mlist(
@@ -154,57 +119,28 @@ impl TestTb {
         limit: i32,
         summary: &str,
     ) -> Result<Vec<TestTbRecord>, String> {
-        self.audit
-            .do_action_with_count(&self.db, "mlist", caller, summary, || {
-                let sql = format!("SELECT * FROM testtb ORDER BY idpk DESC LIMIT {}", limit);
-                match self.db.query(&sql, &[]) {
-                    Ok(rows) => {
-                        let result: Vec<TestTbRecord> = rows
-                            .iter()
-                            .map(|row| TestTbRecord {
-                                idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
-                                id: row
-                                    .get("id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                cid: row
-                                    .get("cid")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                kind: row
-                                    .get("kind")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                item: row
-                                    .get("item")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                data: row
-                                    .get("data")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                upby: row
-                                    .get("upby")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                uptime: row
-                                    .get("uptime")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                            })
-                            .collect();
-                        Ok(result)
-                    }
-                    _ => Ok(Vec::new()),
-                }
-            })
+        self.audit.check_permission("mlist", caller, summary)?;
+        
+        let sql = format!("SELECT * FROM testtb ORDER BY idpk DESC LIMIT {}", limit);
+        match self.db.query(&sql, &[]) {
+            Ok(rows) => {
+                let result: Vec<TestTbRecord> = rows
+                    .iter()
+                    .map(|row| TestTbRecord {
+                        idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
+                        id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        cid: row.get("cid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        kind: row.get("kind").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        item: row.get("item").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        data: row.get("data").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        upby: row.get("upby").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        uptime: row.get("uptime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    })
+                    .collect();
+                Ok(result)
+            }
+            _ => Ok(Vec::new()),
+        }
     }
 
     pub fn msave(

@@ -89,9 +89,9 @@ pub use datastate::{
     StateLog, SyncStats,
     // 能力层权限（二级权限）
     register_ability, register_ability_simple, check_ability_permission,
-    get_ability_perm, list_abilities, log_ability_call, get_ability_logs,
-    get_ability_daily_stats, DATASTATE_AUDIT_CREATE_SQL, DATA_ABILITY_PERM_CREATE_SQL, DATA_ABILITY_LOG_CREATE_SQL,
+    log_ability_call, get_ability_daily_stats, DATASTATE_AUDIT_CREATE_SQL, DATA_ABILITY_PERM_CREATE_SQL, DATA_ABILITY_LOG_CREATE_SQL,
     DATA_ABILITY_DAILY_CREATE_SQL, AbilityPerm, AbilityLog, AbilityDaily,
+    DataAudit, // 导出 DataAudit 以使用其关联函数
 };
 
 // localdb 导出（⚠️ 内部使用）
