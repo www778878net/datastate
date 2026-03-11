@@ -459,7 +459,7 @@ impl LocalDB {
             return Err("配置文件未找到 SID".to_string());
         }
 
-        let url = format!("{}/get", api_url);
+        let url = api_url.to_string();
 
         let mut request_payload = serde_json::json!({
             "sid": sid,
@@ -515,7 +515,7 @@ impl LocalDB {
         }
 
         // 构建 URL
-        let url = format!("{}/set?sid={}", api_url, sid);
+        let url = format!("{}/mAdd?sid={}", api_url, sid);
 
         // 调用 API
         let params = vec![
