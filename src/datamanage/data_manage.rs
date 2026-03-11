@@ -680,6 +680,7 @@ mod tests {
             "steam_scan_queue",
             api_url,
             getnumber,
+            0,  // getstart
             Some(&download_condition),
         );
 
