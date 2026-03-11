@@ -23,6 +23,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use chrono::Local;
+use base::mylogger;
 
 use base::project_path::ProjectPath;
 use crate::datastate::{DATA_ABILITY_LOG_CREATE_SQL};
@@ -508,7 +509,7 @@ impl LocalDB {
     ///
     /// 调用服务器的 mAdd 接口
     /// URL: {api_url}/mAdd
-    /// 请求体: {"sid": sid, "pars": [...], "cols": [...]}
+    /// 请求体: {"sid": sid, "pars": [...], "cols": [...], "mid": id}
     pub fn upload_to_server(
         &self,
         _table: &str,
@@ -530,7 +531,7 @@ impl LocalDB {
         };
 
         // 添加 /mAdd 后缀
-        let url = format!("{}/mAdd?sid={}", base_url, sid);
+        let url = format!("{}/mAdd", base_url);
 
         // 构建 pars 数组（按字段顺序）
         let cols: Vec<&str> = data.keys().map(|s| s.as_str()).collect();
@@ -538,16 +539,42 @@ impl LocalDB {
             .map(|col| data.get(*col).cloned().unwrap_or(Value::Null))
             .collect();
 
-        let request_payload = serde_json::json!({
+        // 构建请求体（与 Python 版本一致）
+        let mut request_payload = serde_json::json!({
             "sid": sid,
             "pars": pars,
             "cols": cols
         });
 
+        // 如果 data 中包含 id 字段，传递给服务器复用
+        if let Some(id) = data.get("id") {
+            if let Some(id_str) = id.as_str() {
+                request_payload["mid"] = serde_json::json!(id_str);
+            }
+        }
+
         let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
 
+        // 记录服务器响应
+        let logger = mylogger!();
+        logger.info(&format!("[upload_to_server] 服务器响应: res={}, errmsg={}, data={:?}", 
+            response.res, response.errmsg, response.data));
+
         if response.res != 0 {
-            return Err(response.errmsg);
+            return Err(format!("服务器错误: res={}, errmsg={}", response.res, response.errmsg));
+        }
+
+        // 检查服务器返回的业务错误
+        if let Some(ref resp_data) = response.data {
+            if let Some(back_obj) = resp_data.response.as_object() {
+                logger.info(&format!("[upload_to_server] 业务响应: {:?}", back_obj));
+                if let Some(back_res) = back_obj.get("res") {
+                    if back_res.as_i64().unwrap_or(0) != 0 {
+                        let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
+                        return Err(format!("业务错误: {}", back_errmsg));
+                    }
+                }
+            }
         }
 
         Ok(1)
