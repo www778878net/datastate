@@ -459,7 +459,12 @@ impl LocalDB {
             return Err("配置文件未找到 SID".to_string());
         }
 
-        let url = api_url.to_string();
+        // 自动添加 /get 后缀（与 Python 版本一致）
+        let url = if api_url.ends_with("/get") {
+            api_url.to_string()
+        } else {
+            format!("{}/get", api_url)
+        };
 
         let mut request_payload = serde_json::json!({
             "sid": sid,
@@ -499,7 +504,11 @@ impl LocalDB {
         Ok(Vec::new())
     }
 
-    /// 上传本地数据到服务器
+    /// 上传本地数据到服务器（与 Python 版本一致）
+    ///
+    /// 调用服务器的 mAdd 接口
+    /// URL: {api_url}/mAdd
+    /// 请求体: {"sid": sid, "pars": [...], "cols": [...]}
     pub fn upload_to_server(
         &self,
         _table: &str,
@@ -508,24 +517,34 @@ impl LocalDB {
     ) -> Result<i32, String> {
         use base::http::HttpHelper;
 
-        // 自动获取 SID
         let sid = self.get_sid();
         if sid.is_empty() {
             return Err("配置文件未找到 SID".to_string());
         }
 
-        // 构建 URL
-        let url = format!("{}/mAdd?sid={}", api_url, sid);
+        // 移除 /get 后缀（如果有）
+        let base_url = if api_url.ends_with("/get") {
+            &api_url[..api_url.len() - 4]
+        } else {
+            api_url
+        };
 
-        // 调用 API
-        let params = vec![
-            ("data".to_string(), serde_json::to_string(data).unwrap_or_default()),
-        ];
-        let params_ref: Vec<(&str, &str)> = params.iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
+        // 添加 /mAdd 后缀
+        let url = format!("{}/mAdd?sid={}", base_url, sid);
+
+        // 构建 pars 数组（按字段顺序）
+        let cols: Vec<&str> = data.keys().map(|s| s.as_str()).collect();
+        let pars: Vec<Value> = cols.iter()
+            .map(|col| data.get(*col).cloned().unwrap_or(Value::Null))
             .collect();
 
-        let response = HttpHelper::post(&url, Some(&params_ref), None, None, false, None, 30, 2);
+        let request_payload = serde_json::json!({
+            "sid": sid,
+            "pars": pars,
+            "cols": cols
+        });
+
+        let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
 
         if response.res != 0 {
             return Err(response.errmsg);
