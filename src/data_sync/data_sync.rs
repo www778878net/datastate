@@ -257,10 +257,10 @@ impl DataSync {
         let conn = db.get_conn();
         let conn_guard = conn.lock().map_err(|e| e.to_string())?;
 
-        // 创建同步队列表
+        // 创建同步日志表
         conn_guard
-            .execute(SYNC_QUEUE_CREATE_SQL, [])
-            .map_err(|e| format!("创建同步队列表失败: {}", e))?;
+            .execute(SYNCLOG_CREATE_SQL, [])
+            .map_err(|e| format!("创建同步日志表失败: {}", e))?;
 
         // 创建状态变更日志表
         conn_guard
@@ -377,7 +377,8 @@ impl DataSync {
 
     /// 构建 SQL 模板和参数
     fn build_cmdtext_and_params(&self, action: &str, data: &serde_json::Value) -> (String, Vec<serde_json::Value>) {
-        let data_obj = data.as_object().unwrap_or(&serde_json::Map::new());
+        let empty_map = serde_json::Map::new();
+        let data_obj = data.as_object().unwrap_or(&empty_map);
         
         match action {
             "insert" => {
