@@ -43,6 +43,9 @@ impl DataManage {
         let db = LocalDB::default_instance()?;
         let logger = mylogger!();
 
+        // 初始化系统表
+        db.init_system_tables()?;
+
         let manager = Self {
             states: Arc::new(RwLock::new(HashMap::new())),
             db: Arc::new(db),
