@@ -9,6 +9,7 @@
 //! 3. data_sync_stats - 同步统计（按天）
 
 use crate::localdb::LocalDB;
+use base::project_path::ProjectPath;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -1049,49 +1050,92 @@ impl DataSync {
 
     // ========== 基础 CRUD 方法（自动写 sync_queue） ==========
 
-    /// 插入记录（自动写 sync_queue）
-    pub fn m_add(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
-        let id = uuid::Uuid::new_v4().to_string();
-        let mut record_with_id = record.clone();
-        record_with_id.insert("id".to_string(), serde_json::json!(id));
+    /// 从配置文件读取 cid
+    fn get_cid() -> String {
+        ProjectPath::find()
+            .ok()
+            .and_then(|p| p.read_ini_value("user7788", "uid"))
+            .or_else(|| {
+                ProjectPath::find()
+                    .ok()
+                    .and_then(|p| p.read_ini_value("DEFAULT", "sid"))
+            })
+            .unwrap_or_else(|| "default".to_string())
+    }
 
-        self.db.insert(&self.table_name, &record_with_id)?;
-        self.add_to_queue(&id, "insert", &serde_json::to_value(&record_with_id).unwrap_or_default(), "auto")?;
+    /// 从配置文件读取 uname (作为 upby)
+    fn get_uname() -> String {
+        ProjectPath::find()
+            .ok()
+            .and_then(|p| p.read_ini_value("user7788", "uname"))
+            .or_else(|| {
+                ProjectPath::find()
+                    .ok()
+                    .and_then(|p| p.read_ini_value("DEFAULT", "uname"))
+            })
+            .unwrap_or_else(|| "system".to_string())
+    }
+
+    /// 插入记录（自动写 sync_queue）
+    /// - 自动设置 id、cid、upby、uptime
+    pub fn m_add(&self, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str) -> Result<String, String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let cid = Self::get_cid();
+        let upby = if !caller.is_empty() { caller.to_string() } else { Self::get_uname() };
+        
+        let mut record_with_meta = record.clone();
+        record_with_meta.insert("id".to_string(), serde_json::json!(id));
+        record_with_meta.insert("cid".to_string(), serde_json::json!(cid));
+        record_with_meta.insert("upby".to_string(), serde_json::json!(upby));
+        record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
+
+        self.db.insert(&self.table_name, &record_with_meta)?;
+        self.add_to_queue(&id, "insert", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &upby)?;
 
         Ok(id)
     }
 
     /// 更新记录（自动写 sync_queue）
-    pub fn m_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<bool, String> {
-        let updated = self.db.update(&self.table_name, id, record)?;
+    /// - 自动设置 upby、uptime
+    pub fn m_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str) -> Result<bool, String> {
+        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let upby = if !caller.is_empty() { caller.to_string() } else { Self::get_uname() };
+        
+        let mut record_with_meta = record.clone();
+        record_with_meta.insert("upby".to_string(), serde_json::json!(upby.clone()));
+        record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
+
+        let updated = self.db.update(&self.table_name, id, &record_with_meta)?;
         if updated {
-            self.add_to_queue(id, "update", &serde_json::to_value(record).unwrap_or_default(), "auto")?;
+            self.add_to_queue(id, "update", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &upby)?;
         }
         Ok(updated)
     }
 
     /// 保存记录（存在更新，不存在插入）
-    pub fn m_save(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
+    pub fn m_save(&self, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str) -> Result<String, String> {
         if let Some(id_value) = record.get("id") {
             if let Some(id) = id_value.as_str() {
                 if !id.is_empty() {
                     let sql = format!("SELECT id FROM {} WHERE id = ?", self.table_name);
                     let exists = self.db.query(&sql, &[&id])?;
                     if !exists.is_empty() {
-                        self.m_update(id, record)?;
+                        self.m_update(id, record, caller)?;
                         return Ok(id.to_string());
                     }
                 }
             }
         }
-        self.m_add(record)
+        self.m_add(record, caller)
     }
 
     /// 删除记录（自动写 sync_queue）
-    pub fn m_del(&self, id: &str) -> Result<bool, String> {
+    pub fn m_del(&self, id: &str, caller: &str) -> Result<bool, String> {
+        let upby = if !caller.is_empty() { caller.to_string() } else { Self::get_uname() };
         let sql = format!("DELETE FROM {} WHERE id = ?", self.table_name);
         self.db.execute_with_params(&sql, &[&id])?;
-        self.add_to_queue(id, "delete", &serde_json::json!({"id": id}), "auto")?;
+        self.add_to_queue(id, "delete", &serde_json::json!({"id": id}), &upby)?;
         Ok(true)
     }
 

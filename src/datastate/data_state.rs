@@ -58,18 +58,20 @@ impl DataState {
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
     /// - 自动写 sync_queue：产生待同步记录
+    /// - 自动设置 id、cid、upby、uptime
     pub fn m_add(&self, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
         self.audit.check_permission("m_add", caller, summary)?;
-        self.datasync.m_add(record)
+        self.datasync.m_add(record, caller)
     }
 
     /// 更新记录
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
     /// - 自动写 sync_queue：产生待同步记录
+    /// - 自动设置 upby、uptime
     pub fn m_update(&self, id: &str, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<bool, String> {
         self.audit.check_permission("m_update", caller, summary)?;
-        self.datasync.m_update(id, record)
+        self.datasync.m_update(id, record, caller)
     }
 
     /// 保存记录（存在更新，不存在插入）
@@ -78,7 +80,7 @@ impl DataState {
     /// - 自动写 sync_queue：产生待同步记录
     pub fn m_save(&self, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
         self.audit.check_permission("m_save", caller, summary)?;
-        self.datasync.m_save(record)
+        self.datasync.m_save(record, caller)
     }
 
     /// 删除记录
@@ -87,7 +89,7 @@ impl DataState {
     /// - 自动写 sync_queue：产生待同步记录
     pub fn m_del(&self, id: &str, caller: &str, summary: &str) -> Result<bool, String> {
         self.audit.check_permission("m_del", caller, summary)?;
-        self.datasync.m_del(id)
+        self.datasync.m_del(id, caller)
     }
 
     /// 查询记录
