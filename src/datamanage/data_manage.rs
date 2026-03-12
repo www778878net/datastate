@@ -250,6 +250,11 @@ impl DataManage {
         &self.db
     }
 
+    /// 获取数据库 Arc 引用
+    pub fn db_arc(&self) -> Arc<LocalDB> {
+        self.db.clone()
+    }
+
     /// 从 sync_key 提取表名
     fn extract_table_name(&self, sync_key: &str) -> String {
         match sync_key.rfind('_') {
