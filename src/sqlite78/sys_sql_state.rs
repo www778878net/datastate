@@ -23,16 +23,10 @@ CREATE TABLE IF NOT EXISTS sys_sql (
     downlen INTEGER NOT NULL DEFAULT 0,
     upby TEXT NOT NULL DEFAULT '',
     cmdtextmd5 TEXT NOT NULL DEFAULT '',
-    uptime DATETIME NOT NULL,
+    uptime TEXT NOT NULL DEFAULT '',
     idpk INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL,
-    remark TEXT NOT NULL DEFAULT '',
-    remark2 TEXT NOT NULL DEFAULT '',
-    remark3 TEXT NOT NULL DEFAULT '',
-    remark4 TEXT NOT NULL DEFAULT '',
-    remark5 TEXT NOT NULL DEFAULT '',
-    remark6 TEXT NOT NULL DEFAULT '',
-    UNIQUE(apisys, apimicro, apiobj, cmdtext),
+    UNIQUE(cmdtextmd5),
     UNIQUE(id)
 )
 "#;
