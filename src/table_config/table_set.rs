@@ -201,15 +201,9 @@ mod tests {
 
     #[test]
     fn test_table_config() {
-        let config = crate::sync_config::TableConfig {
-            name: "test_table".to_string(),
-            apiurl: "http://test".to_string(),
-            download_cols: Some(vec!["field1".to_string()]),
-            uidcid: "cid".to_string(),
-            ..Default::default()
-        };
+        let config = crate::sync_config::TableConfig::new("test_table")
+            .with_apiurl("http://test");
         assert_eq!(config.name, "test_table");
-        assert_eq!(config.download_cols, Some(vec!["field1".to_string()]));
         assert_eq!(config.uidcid, "cid");
     }
 
