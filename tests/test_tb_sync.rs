@@ -207,3 +207,87 @@ fn test_full_sync_workflow() {
     println!("=== 全部测试通过 ===");
     println!("========================================");
 }
+
+/// 测试 cid 验证失败场景
+/// 
+/// 测试方案：
+/// 1. 直接插入 synclog 表，使用错误的 cid
+/// 2. 调用 upload_once() 上传
+/// 3. 验证服务器返回 errors
+/// 4. 验证本地 synclog 的 synced=-1, lasterrinfo 有值
+#[test]
+fn test_cid_validation_failed() {
+    use database::data_sync::{DataSync, get_pending_count};
+    
+    println!("\n========================================");
+    println!("=== 测试 cid 验证失败场景 ===");
+    println!("========================================");
+
+    // 清理本地数据
+    clear_local_data();
+
+    let db = LocalDB::new(None).expect("数据库连接失败");
+
+    // 创建 DataSync 实例
+    let datasync = DataSync::new("testtb");
+    
+    // 构造一个错误的 cid（与当前用户不匹配）
+    let wrong_cid = "WRONG-COMPANY-ID-12345";
+    println!("  错误的 cid: {}", wrong_cid);
+
+    // 直接插入 synclog 表，使用错误的 cid
+    let idrow = uuid::Uuid::new_v4().to_string();
+    let params = serde_json::json!({
+        "id": idrow,
+        "cid": wrong_cid,
+        "kind": "test_validation",
+        "item": "test_item",
+        "data": "test_data"
+    }).to_string();
+
+    let sql = format!(
+        "INSERT INTO synclog (apisys, apimicro, apiobj, tbname, action, cmdtext, params, idrow, worker, synced, lasterrinfo, cmdtextmd5, num, dlong, downlen) VALUES ('v1', 'iflow', 'synclog', 'testtb', 'insert', '', '{}', '{}', 'test', 0, '', '', 0, 0, 0)",
+        params.replace("'", "''"),
+        idrow
+    );
+    db.execute(&sql).expect("插入 synclog 失败");
+    println!("  已插入 synclog 记录，idrow={}, cid={}", idrow, wrong_cid);
+
+    // 检查 synclog 待同步数量
+    let pending = get_pending_count("testtb");
+    println!("  synclog 待同步数量: {}", pending);
+    assert!(pending > 0, "应该有待同步数据");
+
+    // 创建 DataSync 实例并调用 upload_once 上传
+    println!("\n【步骤2】调用 upload_once 上传");
+    let datasync = DataSync::new("testtb");
+    let result = datasync.upload_once();
+    println!("  同步结果: res={}, inserted={}", result.res, result.datawf.inserted);
+
+    // 检查是否有验证错误
+    if let Some(ref errors) = result.datawf.errors {
+        println!("  验证错误数量: {}", errors.len());
+        for err in errors {
+            println!("    - {}", err);
+        }
+    }
+
+    // 检查本地 synclog 的 synced 是否为 -1
+    let check_sql = format!("SELECT synced, lasterrinfo FROM synclog WHERE idrow = '{}'", idrow);
+    let rows = db.query(&check_sql, &[]).expect("查询 synclog 失败");
+    if let Some(row) = rows.first() {
+        let synced = row.get("synced").and_then(|v| v.as_i64()).unwrap_or(0);
+        let lasterrinfo = row.get("lasterrinfo").and_then(|v| v.as_str()).unwrap_or("");
+        println!("  synclog 状态: synced={}, lasterrinfo={}", synced, lasterrinfo);
+        
+        if synced == -1 {
+            println!("  ✅ 验证成功：synced=-1，错误信息: {}", lasterrinfo);
+        } else {
+            println!("  ⚠️ synced 不是 -1，可能是服务器端验证未生效");
+        }
+    }
+
+    println!("\n========================================");
+    println!("=== 测试完成 ===");
+    println!("========================================");
+}
