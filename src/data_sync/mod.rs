@@ -8,11 +8,9 @@ mod data_sync;
 pub use data_sync::{
     DataSync, SynclogItem, SyncStats, StateLog,
     SYNCLOG_CREATE_SQL, DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL,
-    SyncResult, SyncData,
-    // 独立函数
+    SyncResult, SyncData, SyncValidationError,
     add_to_synclog, get_pending_count, get_pending_items,
     log_status_change, get_status_logs, update_sync_stats, get_sync_stats,
 };
 
-// 别名：DataSyncQueue = DataSync
 pub use data_sync::DataSync as DataSyncQueue;

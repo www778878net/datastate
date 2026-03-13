@@ -600,11 +600,15 @@ impl LocalDB {
     /// # 参数
     /// - `api_url`: API 基础 URL（synclog 的 API 地址）
     /// - `items`: 待同步的 synclog 列表
+    /// 
+    /// # 返回
+    /// - `inserted`: 成功插入数量
+    /// - `errors`: 验证失败的记录列表
     pub fn upload_batch_to_server(
         &self,
         api_url: &str,
         items: &[crate::data_sync::SynclogItem],
-    ) -> Result<i32, String> {
+    ) -> Result<(i32, Vec<crate::data_sync::SyncValidationError>), String> {
         use base::http::HttpHelper;
 
         let sid = self.get_sid();
@@ -613,11 +617,9 @@ impl LocalDB {
         }
 
         if items.is_empty() {
-            return Ok(0);
+            return Ok((0, Vec::new()));
         }
 
-        // 构建 mAddMany 请求
-        // cols: synclog 表的字段（与服务器端 colsImp 一致）
         let cols = vec![
             "apisys", "apimicro", "apiobj", "tbname", "action", 
             "cmdtext", "params", "idrow", "worker", "synced",
@@ -648,7 +650,6 @@ impl LocalDB {
             "cols": cols
         });
 
-        // URL: {api_url}/mAddMany
         let url = format!("{}/mAddMany", api_url.trim_end_matches('/'));
 
         let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
@@ -661,25 +662,45 @@ impl LocalDB {
             return Err(format!("服务器错误: {}", response.errmsg));
         }
 
-        // 检查服务器返回的业务错误
+        let mut inserted = items.len() as i32;
+        let mut errors: Vec<crate::data_sync::SyncValidationError> = Vec::new();
+
         if let Some(ref resp_data) = response.data {
             if let Some(back_obj) = resp_data.response.as_object() {
                 logger.info(&format!("[upload_batch_to_server] 业务响应: {:?}", back_obj));
+                
                 if let Some(back_res) = back_obj.get("res") {
                     if back_res.as_i64().unwrap_or(0) != 0 {
                         let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
                         return Err(format!("业务错误: {}", back_errmsg));
                     }
                 }
+                
                 if let Some(back) = back_obj.get("back") {
-                    if let Some(count) = back.as_i64() {
-                        return Ok(count as i32);
+                    if let Some(back_obj) = back.as_object() {
+                        if let Some(count) = back_obj.get("batches").and_then(|v| v.as_i64()) {
+                            inserted = count as i32;
+                        }
+                        
+                        if let Some(err_list) = back_obj.get("errors").and_then(|v| v.as_array()) {
+                            for (idx, err) in err_list.iter().enumerate() {
+                                if let Some(err_obj) = err.as_object() {
+                                    errors.push(crate::data_sync::SyncValidationError {
+                                        index: err_obj.get("index").and_then(|v| v.as_i64()).unwrap_or(idx as i64) as i32,
+                                        idrow: err_obj.get("idrow").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                        error: err_obj.get("error").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                    });
+                                }
+                            }
+                        }
+                    } else if let Some(count) = back.as_i64() {
+                        inserted = count as i32;
                     }
                 }
             }
         }
 
-        Ok(items.len() as i32)
+        Ok((inserted, errors))
     }
 }
 

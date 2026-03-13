@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS synclog (
     idrow TEXT NOT NULL DEFAULT '',
     worker TEXT NOT NULL DEFAULT '',
     synced INTEGER NOT NULL DEFAULT 0,
+    lasterrinfo TEXT NOT NULL DEFAULT '',
     cmdtextmd5 TEXT NOT NULL DEFAULT '',
     num INTEGER NOT NULL DEFAULT 0,
     dlong INTEGER NOT NULL DEFAULT 0,
@@ -146,6 +147,14 @@ pub struct SyncData {
     pub total: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<Vec<String>>,
+}
+
+/// 同步验证错误信息（服务器返回）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncValidationError {
+    pub index: i32,
+    pub idrow: String,
+    pub error: String,
 }
 
 // ========== DataSync 组件 ==========
@@ -940,6 +949,7 @@ impl DataSync {
     /// 执行一次上传
     ///
     /// 将本地 synclog 批量上传到服务器
+    /// 验证失败的记录会被标记为 synced=-1 并记录错误信息
     pub fn upload_once(&self) -> SyncResult {
         if self.table_name.is_empty() {
             return SyncResult {
@@ -949,7 +959,6 @@ impl DataSync {
             };
         }
 
-        // 获取待同步数据
         let pending_items = self.get_pending_items(100);
 
         if pending_items.is_empty() {
@@ -960,30 +969,41 @@ impl DataSync {
             };
         }
 
-        // synclog API 地址
         let synclog_url = "http://log.778878.net/apisvc/backsvc/synclog";
 
-        // 批量上传
         let result = self.db.upload_batch_to_server(synclog_url, &pending_items);
 
         match result {
-            Ok(count) => {
-                // 标记所有记录为已同步
+            Ok((inserted, errors)) => {
                 let synced_ids: Vec<i64> = pending_items.iter().map(|item| item.idpk).collect();
+                
                 if !synced_ids.is_empty() {
                     let _ = self.mark_synced(&synced_ids);
+                }
+
+                let failed_count = errors.len() as i32;
+                let error_messages: Vec<String> = errors.iter().map(|e| format!("{}: {}", e.idrow, e.error)).collect();
+                
+                if !errors.is_empty() {
+                    for err in &errors {
+                        let _ = self.db.execute(&format!(
+                            "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
+                            err.error.replace("'", "''"),
+                            err.idrow
+                        ));
+                    }
                 }
 
                 SyncResult {
                     res: 0,
                     errmsg: String::new(),
                     datawf: SyncData {
-                        inserted: count,
+                        inserted,
                         updated: 0,
                         skipped: 0,
-                        failed: Some(0),
-                        total: Some(count),
-                        errors: None,
+                        failed: Some(failed_count),
+                        total: Some(pending_items.len() as i32),
+                        errors: if error_messages.is_empty() { None } else { Some(error_messages) },
                     },
                 }
             }
