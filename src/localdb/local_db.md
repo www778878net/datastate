@@ -3,11 +3,14 @@
 ## 管理员指示
 - 本文档描述 LocalDB 模块的设计和实现
 - 禁止把代码写在 mod.rs, lib.rs，应该在子模块中实现
+- **LocalDB 应该只通过 DataState 及其组件（DataSync/DataAudit）访问，禁止直接使用**
+- 直接访问 LocalDB 会绕过审计和权限控制
 
 ## 第一性目的
 - SQLite 本地数据库封装
 - 提供 Local-First 存储的本地封装
 - 支持基本的 CRUD 操作
+- 为 DataManage 等上层组件提供数据库访问能力
 
 ## 完成标准
 - 数据库连接成功创建
