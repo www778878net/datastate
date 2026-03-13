@@ -10,7 +10,49 @@
 - SQLite 本地数据库封装
 - 提供 Local-First 存储的本地封装
 - 支持基本的 CRUD 操作
-- 为 DataManage 等上层组件提供数据库访问能力
+- 为 DataState 及其组件提供数据库访问能力
+- **提供 SQL 效率统计和慢查询警告功能**
+
+## 完成标准
+- 数据库连接成功
+- CRUD 操作正常
+- SQL 效率统计功能正常
+- 慢查询警告功能正常
+
+## 配置选项
+| 选项 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| is_log | bool | false | 是否记录警告日志（调试跟踪、错误记录） |
+| is_count | bool | false | 是否统计 SQL 效率 |
+
+## 统计表
+### sys_sql 表（SQL 效率统计）
+| 字段 | 说明 |
+|------|------|
+| cmdtext | SQL 语句 |
+| cmdtextmd5 | SQL MD5（去重） |
+| num | 执行次数 |
+| dlong | 总耗时（毫秒） |
+| downlen | 下行数据量 |
+
+### sys_warn 表（调试跟踪、错误记录）
+| 字段 | 说明 |
+|------|------|
+| kind | 日志类型（debug_xxx, err_xxx） |
+| apimicro | 微服务名 |
+| apiobj | API对象名 |
+| content | 日志内容 |
+| upby | 操作者 |
+
+## 方法
+- `add_warn(kind, apimicro, apiobj, content, upby)` - 记录警告日志
+- `add_debug(apimicro, apiobj, content)` - 记录调试日志
+- `add_error(apimicro, apiobj, content)` - 记录错误日志
+
+## 报表方法
+报表方法在 `sys_sql_state.rs` 中实现：
+- `get_slow_sql(min_dlong, limit)` - 获取慢 SQL 列表
+- `get_hot_sql(min_num, limit)` - 获取高频 SQL 列表
 
 ## 完成标准
 - 数据库连接成功创建

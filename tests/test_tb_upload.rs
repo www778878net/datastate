@@ -93,7 +93,7 @@ fn test_query_methods() {
 
 /// 清空本地 testtb 表和 sync_queue
 fn clear_local_data() {
-    let db = LocalDB::new(None).expect("数据库连接失败");
+    let db = LocalDB::new(None, None).expect("数据库连接失败");
     let _ = db.execute("DELETE FROM testtb");
     let _ = db.execute("DELETE FROM sync_queue WHERE table_name = 'testtb'");
     println!("已清空本地 testtb 表和 sync_queue");

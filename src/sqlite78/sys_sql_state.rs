@@ -61,9 +61,9 @@ impl SysSqlSqliteState {
     /// 记录 SQL 执行统计
     pub fn log_sql(&self, data: &SysSqlData, up: &UpInfo) -> Result<(), String> {
         // 插入或忽略
-        let insert_sql = "INSERT OR IGNORE INTO sys_sql(id,cid,apisys,apimicro,apiobj,cmdtext,uname,num,dlong,downlen,upby,cmdtextmd5,uptime,remark,remark2,remark3,remark4,remark5,remark6) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        let insert_sql = "INSERT OR IGNORE INTO sys_sql(id,cid,apisys,apimicro,apiobj,cmdtext,uname,num,dlong,downlen,upby,cmdtextmd5,uptime) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
-        let params: [&dyn rusqlite::ToSql; 19] = [
+        let params: [&dyn rusqlite::ToSql; 13] = [
             &data.id,
             &data.cid,
             &data.apisys,
@@ -77,12 +77,6 @@ impl SysSqlSqliteState {
             &data.upby,
             &data.cmdtextmd5,
             &data.uptime,
-            &data.remark,
-            &data.remark2,
-            &data.remark3,
-            &data.remark4,
-            &data.remark5,
-            &data.remark6,
         ];
 
         self.db.do_m_add(insert_sql, &params, up)?;

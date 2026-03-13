@@ -25,14 +25,14 @@ fn get_test_config() -> TableConfig {
 }
 
 fn clear_local_data() {
-    let db = LocalDB::new(None).expect("数据库连接失败");
+    let db = LocalDB::new(None, None).expect("数据库连接失败");
     let _ = db.execute("DELETE FROM testtb");
     let _ = db.execute("DELETE FROM synclog WHERE tbname = 'testtb'");
 }
 
 /// 调用服务器端 replayBatch 回放日志
 fn call_replay_batch() -> Result<i32, String> {
-    let db = LocalDB::new(None).expect("数据库连接失败");
+    let db = LocalDB::new(None, None).expect("数据库连接失败");
     let sid = db.get_sid();
     if sid.is_empty() {
         return Err("配置文件未找到 SID".to_string());
@@ -80,7 +80,7 @@ fn test_full_sync_workflow() {
     let state = dm.register(get_test_config()).expect("注册失败");
 
     // 清空 register 时可能产生的 synclog
-    let db = LocalDB::new(None).expect("数据库连接失败");
+    let db = LocalDB::new(None, None).expect("数据库连接失败");
     let _ = db.execute("DELETE FROM synclog WHERE tbname = 'testtb'");
 
     // 添加2条数据
@@ -226,7 +226,7 @@ fn test_cid_validation_failed() {
     // 清理本地数据
     clear_local_data();
 
-    let db = LocalDB::new(None).expect("数据库连接失败");
+    let db = LocalDB::new(None, None).expect("数据库连接失败");
 
     // 创建 DataSync 实例
     let datasync = DataSync::new("testtb");

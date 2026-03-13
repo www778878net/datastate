@@ -223,8 +223,8 @@ impl DataSync {
     pub fn new(table_name: &str) -> Self {
         Self {
             table_name: table_name.to_string(),
-            db: LocalDB::new(None)
-                .unwrap_or_else(|_| LocalDB::new(Some("data.db")).expect("创建数据库失败")),
+            db: LocalDB::new(None, None)
+                .unwrap_or_else(|_| LocalDB::new(Some("data.db"), None).expect("创建数据库失败")),
             apiurl: String::new(),
             download_interval: 300,
             upload_interval: 300,
@@ -247,8 +247,8 @@ impl DataSync {
         let table_name = Self::extract_table_name(&config.apiurl);
         Self {
             table_name: table_name.to_string(),
-            db: LocalDB::new(None)
-                .unwrap_or_else(|_| LocalDB::new(Some("data.db")).expect("创建数据库失败")),
+            db: LocalDB::new(None, None)
+                .unwrap_or_else(|_| LocalDB::new(Some("data.db"), None).expect("创建数据库失败")),
             apiurl: config.apiurl.clone(),
             download_interval: config.download_interval,
             upload_interval: config.upload_interval,
@@ -1307,7 +1307,7 @@ mod tests {
 
     #[test]
     fn test_init_tables() {
-        let db = LocalDB::new(None).expect("创建数据库失败");
+        let db = LocalDB::new(None, None).expect("创建数据库失败");
         DataSync::init_tables(&db).expect("初始化表失败");
 
         // 验证表是否创建成功

@@ -17,7 +17,7 @@
 //!
 //! ⚠️  注意: 禁止传入其他路径，必须使用默认路径！
 
-use rusqlite::{Connection, Row, Rows};
+use rusqlite::{Connection, Row, Rows, params};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -29,23 +29,42 @@ use base::project_path::ProjectPath;
 use crate::datastate::{DATA_ABILITY_LOG_CREATE_SQL};
 use crate::data_sync::{DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL, SYNCLOG_CREATE_SQL};
 
+/// LocalDB 配置
+#[derive(Debug, Clone)]
+pub struct LocalDBConfig {
+    /// 是否记录警告日志（调试跟踪、错误记录）
+    pub is_log: bool,
+    /// 是否统计 SQL 效率
+    pub is_count: bool,
+}
+
+impl Default for LocalDBConfig {
+    fn default() -> Self {
+        Self {
+            is_log: false,
+            is_count: true,
+        }
+    }
+}
+
 /// 本地数据库管理类
 #[derive(Debug, Clone)]
 pub struct LocalDB {
     conn: Arc<Mutex<Connection>>,
     db_path: PathBuf,
+    config: LocalDBConfig,
 }
 
 impl Default for LocalDB {
     fn default() -> Self {
-        Self::new(None).unwrap_or_else(|_| {
+        Self::new(None, None).unwrap_or_else(|_| {
             panic!("Failed to create default LocalDB")
         })
     }
 }
 
 impl LocalDB {
-    pub fn new(db_path: Option<&str>) -> Result<Self, String> {
+    pub fn new(db_path: Option<&str>, config: Option<LocalDBConfig>) -> Result<Self, String> {
         let path = if let Some(p) = db_path {
             PathBuf::from(p)
         } else {
@@ -66,14 +85,19 @@ impl LocalDB {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=30000;")
             .map_err(|e| format!("设置 PRAGMA 失败: {}", e))?;
 
+        let config = config.unwrap_or_default();
+
+        // sys_sql 和 sys_warn 表由 sqlite78::creat_tb() 创建，这里不再重复创建
+
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
             db_path: path,
+            config,
         })
     }
 
     pub fn default_instance() -> Result<Self, String> {
-        Self::new(None)
+        Self::new(None, None)
     }
 
     /// 获取按天分表的表名
@@ -268,6 +292,9 @@ impl LocalDB {
 
     /// 查询数据
     pub fn query(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<HashMap<String, Value>>, String> {
+        use std::time::Instant;
+        let start = Instant::now();
+
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
         let mut stmt = conn.prepare(sql)
@@ -281,7 +308,19 @@ impl LocalDB {
         let rows = stmt.query(params)
             .map_err(|e| format!("查询失败: {}", e))?;
 
-        Self::process_rows(rows, &column_names)
+        let result = Self::process_rows(rows, &column_names)?;
+
+        let elapsed = start.elapsed().as_millis() as i64;
+        let downlen = result.len() as i64;
+
+        // 记录 SQL 统计（直接执行，避免死锁）
+        if self.config.is_count {
+            if let Err(e) = Self::do_save_sql_log(&conn, "", sql, elapsed, downlen) {
+                eprintln!("[LocalDB] save_sql_log 失败: {}", e);
+            }
+        }
+
+        Ok(result)
     }
 
     /// 处理查询结果
@@ -323,9 +362,20 @@ impl LocalDB {
 
     /// 执行 SQL
     pub fn execute(&self, sql: &str) -> Result<(), String> {
+        use std::time::Instant;
+        let start = Instant::now();
+
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(sql, [])
             .map_err(|e| format!("执行失败: {}", e))?;
+
+        let elapsed = start.elapsed().as_millis() as i64;
+
+        // 记录 SQL 统计（直接执行，避免死锁）
+        if self.config.is_count {
+            let _ = Self::do_save_sql_log(&conn, "", sql, elapsed, 0);
+        }
+
         Ok(())
     }
 
@@ -703,6 +753,90 @@ impl LocalDB {
 
         Ok((inserted, errors))
     }
+
+    /// 记录 SQL 执行统计（静态方法，避免死锁）
+    ///
+    /// # 参数
+    /// - `conn`: 数据库连接
+    /// - `apiobj`: 表名（对象名）
+    /// - `cmdtext`: SQL 语句
+    /// - `dlong`: 执行时间（毫秒）
+    /// - `downlen`: 下行数据量
+    fn do_save_sql_log(conn: &Connection, apiobj: &str, cmdtext: &str, dlong: i64, downlen: i64) -> Result<(), String> {
+        let cmdtextmd5 = format!("{:x}", md5::compute(cmdtext.as_bytes()));
+        let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let id = format!("{}{:06x}", 
+            Local::now().format("%Y%m%d%H%M%S"),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos() % 0xFFFFFF)
+                .unwrap_or(0)
+        );
+
+        let sql = r#"
+            INSERT INTO sys_sql (id, apiobj, cmdtext, cmdtextmd5, num, dlong, downlen, uptime)
+            VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(cmdtextmd5) DO UPDATE SET 
+                num = num + 1,
+                dlong = dlong + ?,
+                downlen = downlen + ?
+        "#;
+
+        conn.execute(&sql, params![
+            &id,
+            &apiobj,
+            &cmdtext,
+            &cmdtextmd5,
+            &dlong,
+            &downlen,
+            &uptime,
+            &dlong,
+            &downlen,
+        ]).map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    /// 记录警告日志（调试跟踪、错误记录）
+    ///
+    /// # 参数
+    /// - `kind`: 日志类型（如 debug_xxx, err_xxx）
+    /// - `apimicro`: 微服务名
+    /// - `apiobj`: API对象名
+    /// - `content`: 日志内容
+    /// - `upby`: 操作者
+    pub fn add_warn(&self, kind: &str, apimicro: &str, apiobj: &str, content: &str, upby: &str) {
+        if !self.config.is_log {
+            return;
+        }
+
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let id = format!("{}{:06x}", 
+            Local::now().format("%Y%m%d%H%M%S"),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos() % 0xFFFFFF)
+                .unwrap_or(0)
+        );
+
+        let sql = "INSERT INTO sys_warn (id, kind, apimicro, apiobj, content, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        let _ = conn.execute(&sql, params![&id, &kind, &apimicro, &apiobj, &content, &upby, &uptime]);
+    }
+
+    /// 记录调试日志（简化版）
+    pub fn add_debug(&self, apimicro: &str, apiobj: &str, content: &str) {
+        self.add_warn(&format!("debug_{}", apimicro), apimicro, apiobj, content, "");
+    }
+
+    /// 记录错误日志（简化版）
+    pub fn add_error(&self, apimicro: &str, apiobj: &str, content: &str) {
+        self.add_warn(&format!("err_{}", apimicro), apimicro, apiobj, content, "");
+    }
 }
 
 #[cfg(test)]
@@ -740,7 +874,7 @@ mod tests {
     #[test]
     fn test_new_database() {
         let db_path = get_test_db_path();
-        let db = LocalDB::new(Some(&db_path));
+        let db = LocalDB::new(Some(&db_path), None);
         assert!(db.is_ok(), "数据库连接应该成功");
 
         let db = db.unwrap();
@@ -755,7 +889,7 @@ mod tests {
 
     #[test]
     fn test_table_exists() {
-        let db = LocalDB::new(Some(&get_test_db_path())).expect("数据库连接失败");
+        let db = LocalDB::new(Some(&get_test_db_path()), None).expect("数据库连接失败");
         let exists = db.table_exists("non_existent_table_12345");
         assert!(exists.is_ok(), "查询表存在应该成功");
         assert!(!exists.unwrap(), "不存在的表应该返回 false");
@@ -776,7 +910,7 @@ mod tests {
 
     #[test]
     fn test_download_from_server() {
-        let db = LocalDB::new(None).expect("数据库连接失败");
+        let db = LocalDB::new(None, None).expect("数据库连接失败");
         let result = db.download_from_server("testtb", "http://api.example.com/testtb", 10, 0, None);
         assert!(result.is_ok() || result.is_err()); // 测试结果
     }

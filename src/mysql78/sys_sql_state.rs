@@ -58,7 +58,7 @@ impl SysSqlMysqlState {
     /// 记录 SQL 执行统计
     pub fn log_sql(&self, data: &SysSqlData, up: &MysqlUpInfo) -> Result<(), String> {
         // MySQL 使用 ON DUPLICATE KEY UPDATE
-        let sql = "INSERT INTO sys_sql(id,cid,apisys,apimicro,apiobj,cmdtext,uname,num,dlong,downlen,upby,cmdtextmd5,uptime,remark,remark2,remark3,remark4,remark5,remark6) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE num=num+1,dlong=dlong+?,downlen=downlen+?";
+        let sql = "INSERT INTO sys_sql(id,cid,apisys,apimicro,apiobj,cmdtext,uname,num,dlong,downlen,upby,cmdtextmd5,uptime) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE num=num+1,dlong=dlong+?,downlen=downlen+?";
 
         let params = vec![
             serde_json::json!(data.id),
@@ -74,12 +74,6 @@ impl SysSqlMysqlState {
             serde_json::json!(data.upby),
             serde_json::json!(data.cmdtextmd5),
             serde_json::json!(data.uptime),
-            serde_json::json!(data.remark),
-            serde_json::json!(data.remark2),
-            serde_json::json!(data.remark3),
-            serde_json::json!(data.remark4),
-            serde_json::json!(data.remark5),
-            serde_json::json!(data.remark6),
             serde_json::json!(data.dlong),
             serde_json::json!(data.downlen),
         ];
