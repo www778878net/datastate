@@ -88,6 +88,10 @@ pub struct TableConfig {
     /// 保留天数（0=永久保留，>0=自动清理过期表）
     #[serde(default)]
     pub retention_days: i32,
+
+    /// 隔离字段类型：cid(默认)=公司隔离, uid=用户隔离, 空=公共表
+    #[serde(default = "default_uidcid")]
+    pub uidcid: String,
 }
 
 fn default_download_interval() -> i64 { 300 }
@@ -95,12 +99,14 @@ fn default_upload_interval() -> i64 { 300 }
 fn default_init_getnumber() -> i32 { 0 }
 fn default_getnumber() -> i32 { 2000 }
 fn default_primary_key() -> String { "id".to_string() }
+fn default_uidcid() -> String { "cid".to_string() }
 
 /// 获取系统字段（所有表都有的基础字段）
 pub fn get_system_columns() -> HashMap<String, String> {
     let mut cols = HashMap::new();
     cols.insert("idpk".to_string(), "INTEGER NOT NULL DEFAULT 0".to_string());
     cols.insert("id".to_string(), "TEXT NOT NULL PRIMARY KEY".to_string());
+    cols.insert("cid".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
     cols.insert("upby".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
     cols.insert("uptime".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
     cols.insert("username".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
@@ -108,7 +114,6 @@ pub fn get_system_columns() -> HashMap<String, String> {
     cols.insert("worker".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
     cols.insert("devicename".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
     cols.insert("userinfo".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
-    cols.insert("cid".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
     cols.insert("created_at".to_string(), "REAL NOT NULL DEFAULT 0".to_string());
     cols.insert("updated_at".to_string(), "REAL NOT NULL DEFAULT 0".to_string());
     cols.insert("deleted".to_string(), "INTEGER NOT NULL DEFAULT 0".to_string());
@@ -225,11 +230,12 @@ impl Default for TableConfig {
             download_cols: None,
             upload_cols: None,
             min_pending: 0,
-            columns: get_system_columns(),  // 默认包含系统字段
+            columns: get_system_columns(),
             primary_key: default_primary_key(),
             indexes: Vec::new(),
             partition_by_day: false,
             retention_days: 0,
+            uidcid: default_uidcid(),
         }
     }
 }

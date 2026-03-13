@@ -196,6 +196,9 @@ pub struct DataSync {
     /// 最小待处理数量
     pub min_pending: i32,
 
+    /// 隔离字段类型：cid=公司隔离, uid=用户隔离
+    pub uidcid: String,
+
     /// 上次下载时间
     pub last_download: f64,
     /// 上次上传时间
@@ -222,6 +225,7 @@ impl DataSync {
             init_getnumber: 0,
             getnumber: 2000,
             min_pending: 0,
+            uidcid: "cid".to_string(),
             last_download: 0.0,
             last_upload: 0.0,
             error_message: String::new(),
@@ -245,6 +249,7 @@ impl DataSync {
             init_getnumber: config.init_getnumber,
             getnumber: config.getnumber,
             min_pending: config.min_pending,
+            uidcid: config.uidcid.clone(),
             last_download: 0.0,
             last_upload: 0.0,
             error_message: String::new(),
@@ -1054,13 +1059,16 @@ impl DataSync {
     fn get_cid() -> String {
         ProjectPath::find()
             .ok()
+            .and_then(|p| p.read_ini_value("user7788", "cid"))
+            .unwrap_or_else(|| "GUEST000-8888-8888-8888-GUEST00GUEST".to_string())
+    }
+
+    /// 从配置文件读取 uid
+    fn get_uid() -> String {
+        ProjectPath::find()
+            .ok()
             .and_then(|p| p.read_ini_value("user7788", "uid"))
-            .or_else(|| {
-                ProjectPath::find()
-                    .ok()
-                    .and_then(|p| p.read_ini_value("DEFAULT", "sid"))
-            })
-            .unwrap_or_else(|| "default".to_string())
+            .unwrap_or_else(|| String::new())
     }
 
     /// 从配置文件读取 uname (作为 upby)
@@ -1078,16 +1086,22 @@ impl DataSync {
 
     /// 插入记录（自动写 sync_queue）
     /// - 自动设置 id、cid、upby、uptime
+    /// - 根据 uidcid 配置决定 cid 字段写入公司ID还是用户ID
     pub fn m_add(&self, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str) -> Result<String, String> {
         let id = uuid::Uuid::new_v4().to_string();
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let cid = Self::get_cid();
+        let cid_value = match self.uidcid.as_str() {
+            "uid" => Self::get_uid(),
+            _ => Self::get_cid(),
+        };
         let upby = if !caller.is_empty() { caller.to_string() } else { Self::get_uname() };
         
         let mut record_with_meta = record.clone();
         record_with_meta.insert("id".to_string(), serde_json::json!(id));
-        record_with_meta.insert("cid".to_string(), serde_json::json!(cid));
-        record_with_meta.insert("upby".to_string(), serde_json::json!(upby));
+        if !cid_value.is_empty() {
+            record_with_meta.insert("cid".to_string(), serde_json::json!(cid_value));
+        }
+        record_with_meta.insert("upby".to_string(), serde_json::json!(upby.clone()));
         record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
 
         self.db.insert(&self.table_name, &record_with_meta)?;
@@ -1097,12 +1111,20 @@ impl DataSync {
     }
 
     /// 更新记录（自动写 sync_queue）
-    /// - 自动设置 upby、uptime
+    /// - 自动设置 cid、upby、uptime
+    /// - 根据 uidcid 配置决定 cid 字段写入公司ID还是用户ID
     pub fn m_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str) -> Result<bool, String> {
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let cid_value = match self.uidcid.as_str() {
+            "uid" => Self::get_uid(),
+            _ => Self::get_cid(),
+        };
         let upby = if !caller.is_empty() { caller.to_string() } else { Self::get_uname() };
         
         let mut record_with_meta = record.clone();
+        if !cid_value.is_empty() {
+            record_with_meta.insert("cid".to_string(), serde_json::json!(cid_value));
+        }
         record_with_meta.insert("upby".to_string(), serde_json::json!(upby.clone()));
         record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
 
