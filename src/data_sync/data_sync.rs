@@ -1463,7 +1463,7 @@ mod tests {
         // 2.3 验证状态变更日志（通过DataState.datasync）
         let result = state
             .datasync
-            .log_status_change("idle", "working", "test demo");
+            .log_status_change("idle", "working", "test demo", "test_worker");
         assert!(result.is_ok(), "log_status_change 调用失败");
         tester
             .logger
@@ -1475,7 +1475,7 @@ mod tests {
             .detail(&format!("get_status_logs 返回 {} 条记录", logs.len()));
 
         // 2.4 验证同步统计（通过DataState.datasync）
-        let result = state.datasync.update_sync_stats(5, 3, 2, 1);
+        let result = state.datasync.update_sync_stats(5, 3, 2, 1, "test_worker");
         assert!(result.is_ok(), "update_sync_stats 调用失败");
         tester
             .logger
@@ -1515,7 +1515,7 @@ mod tests {
         tester.logger.detail("Step4: 验证独立函数");
 
         // 使用独立函数添加同步队列
-        let idpk2 = add_to_sync_queue(
+        let idpk2 = add_to_synclog(
             &unique_table,
             "test-002",
             "update",
@@ -1524,7 +1524,7 @@ mod tests {
         )
         .expect("独立函数添加同步队列失败");
         tester.logger.detail(&format!(
-            "独立函数 add_to_sync_queue 成功，idpk = {}",
+            "独立函数 add_to_synclog 成功，idpk = {}",
             idpk2
         ));
 

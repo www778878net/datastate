@@ -161,6 +161,7 @@ impl TableConfigManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TableConfig;
 
     #[test]
     fn test_uidcid() {
@@ -200,16 +201,16 @@ mod tests {
 
     #[test]
     fn test_table_config() {
-        let config = TableConfig {
-            cols_imp: vec!["ip".to_string()],
-            uidcid: UidCid::Cid,
-            apisys: "apitest".to_string(),
-            apimicro: "testmenu".to_string(),
+        let config = crate::sync_config::TableConfig {
+            name: "test_table".to_string(),
+            apiurl: "http://test".to_string(),
+            download_cols: Some(vec!["field1".to_string()]),
+            uidcid: "cid".to_string(),
+            ..Default::default()
         };
-
-        let ts = config.to_table_set("sys_ip");
-        assert_eq!(ts.tbname, "sys_ip");
-        assert_eq!(ts.uidcid, UidCid::Cid);
+        assert_eq!(config.name, "test_table");
+        assert_eq!(config.download_cols, Some(vec!["field1".to_string()]));
+        assert_eq!(config.uidcid, "cid");
     }
 
     #[test]

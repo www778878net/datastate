@@ -157,9 +157,8 @@ mod tests {
     use super::*;
     use crate::data_sync::{SyncData, SyncResult};
     use crate::datastate::{
-        AbilityPerm, DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL, SYNCLOG_CREATE_SQL,
+        DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL, SYNCLOG_CREATE_SQL,
     };
-    use std::sync::Arc;
 
     #[test]
     fn test_sync_data_default() {
@@ -182,33 +181,13 @@ mod tests {
     }
 
     #[test]
-    fn test_ability_perm_structure() {
-        let perm = AbilityPerm {
-            idpk: 1,
-            id: "test-id".to_string(),
-            cid: "test-cid".to_string(),
-            uid: "test-uid".to_string(),
-            tablename: "testtb".to_string(),
-            ability: "test_ability".to_string(),
-            caller: "test_caller".to_string(),
-            description: "test desc".to_string(),
-            upby: "test_upby".to_string(),
-            uptime: "".to_string(),
-        };
-
-        assert_eq!(perm.tablename, "testtb");
-        assert_eq!(perm.ability, "test_ability");
-    }
-
-    #[test]
     fn test_ability_id_generation() {
-        // 测试业务主键 id 是如何生成的（通过 UUID）
         use uuid::Uuid;
 
         let id = Uuid::new_v4().to_string();
 
         assert!(!id.is_empty());
-        assert_eq!(id.len(), 36); // UUID 输出 36 字符（包含4个横杠）
+        assert_eq!(id.len(), 36);
     }
 
     /// DEMO 测试: 验证 DataState 组合 DataSync 功能
@@ -295,7 +274,7 @@ mod tests {
         tester.logger.detail("步骤2: 验证 log_status_change 方法");
         let result = state
             .datasync
-            .log_status_change("idle", "working", "test reason");
+            .log_status_change("idle", "working", "test reason", "test_worker");
         assert!(result.is_ok(), "log_status_change 调用失败: {:?}", result);
         tester.logger.detail("log_status_change 调用成功");
 
@@ -311,7 +290,7 @@ mod tests {
 
         // 4. 验证 update_sync_stats 方法
         tester.logger.detail("步骤4: 验证 update_sync_stats 方法");
-        let result = state.datasync.update_sync_stats(10, 5, 2, 1);
+        let result = state.datasync.update_sync_stats(10, 5, 2, 1, "test_worker");
         assert!(result.is_ok(), "update_sync_stats 调用失败: {:?}", result);
         tester.logger.detail("update_sync_stats 调用成功");
 
