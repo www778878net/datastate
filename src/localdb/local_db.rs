@@ -623,7 +623,7 @@ impl LocalDB {
         let cols = vec![
             "apisys", "apimicro", "apiobj", "tbname", "action", 
             "cmdtext", "params", "idrow", "worker", "synced",
-            "cmdtextmd5", "num", "dlong", "downlen"
+            "lasterrinfo", "cmdtextmd5", "num", "dlong", "downlen"
         ];
 
         let mut pars: Vec<Value> = Vec::new();
@@ -638,6 +638,7 @@ impl LocalDB {
             pars.push(Value::String(item.idrow.clone()));
             pars.push(Value::String(item.worker.clone()));
             pars.push(Value::Number(item.synced.into()));
+            pars.push(Value::String(String::new())); // lasterrinfo - 空字符串
             pars.push(Value::String(item.cmdtextmd5.clone()));
             pars.push(Value::Number(item.num.into()));
             pars.push(Value::Number(item.dlong.into()));
