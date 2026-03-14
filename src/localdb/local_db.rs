@@ -361,9 +361,7 @@ impl LocalDB {
             let result_json = serde_json::to_string(&result).unwrap_or_default();
             let params_str = Self::params_to_string(params);
             let content = format!("{} c:{} v{}", result_json, sql, params_str);
-            if let Err(e) = Self::do_add_warn(&conn, &self.config.uid, "debug_local", "", "", &content, &self.config.upby) {
-                eprintln!("[LocalDB] add_warn 失败: {}", e);
-            }
+        let _ = Self::do_add_warn(&conn, &self.config.cid, "debug_local", &self.config.apisys, &self.config.apimicro, "", &content, &self.config.upby);
         }
 
         Ok(result)
@@ -468,7 +466,7 @@ impl LocalDB {
         // 记录调试日志
         if self.config.is_log {
             let content = format!("rows_affected={} c:{}", result, sql);
-            if let Err(e) = Self::do_add_warn(&conn, &self.config.uid, "debug_local", "", "", &content, &self.config.upby) {
+            if let Err(e) = Self::do_add_warn(&conn, &self.config.cid, "debug_local", &self.config.apisys, &self.config.apimicro, "", &content, &self.config.upby) {
                 eprintln!("[LocalDB] add_warn 失败: {}", e);
             }
         }
@@ -953,12 +951,12 @@ impl LocalDB {
     /// - `apiobj`: API对象名
     /// - `content`: 日志内容
     /// - `upby`: 操作者
-    fn do_add_warn(conn: &Connection, cid: &str, kind: &str, apimicro: &str, apiobj: &str, content: &str, upby: &str) -> Result<(), String> {
+    fn do_add_warn(conn: &Connection, cid: &str, kind: &str, apisys: &str, apimicro: &str, apiobj: &str, content: &str, upby: &str) -> Result<(), String> {
         let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let id = uuid::Uuid::new_v4().to_string();
 
-        let sql = "INSERT INTO sys_warn (id, cid, kind, apimicro, apiobj, content, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        conn.execute(&sql, params![&id, &cid, &kind, &apimicro, &apiobj, &content, &upby, &uptime])
+        let sql = "INSERT INTO sys_warn (id, cid, kind, apisys, apimicro, apiobj, content, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        conn.execute(&sql, params![&id, &cid, &kind, &apisys, &apimicro, &apiobj, &content, &upby, &uptime])
             .map_err(|e| e.to_string())?;
 
         Ok(())
@@ -968,11 +966,12 @@ impl LocalDB {
     ///
     /// # 参数
     /// - `kind`: 日志类型（如 debug_xxx, err_xxx）
+    /// - `apisys`: 系统名
     /// - `apimicro`: 微服务名
     /// - `apiobj`: API对象名
     /// - `content`: 日志内容
     /// - `upby`: 操作者
-    pub fn add_warn(&self, kind: &str, apimicro: &str, apiobj: &str, content: &str, upby: &str) {
+    pub fn add_warn(&self, kind: &str, apisys: &str, apimicro: &str, apiobj: &str, content: &str, upby: &str) {
         if !self.config.is_log {
             return;
         }
@@ -982,27 +981,19 @@ impl LocalDB {
             Err(_) => return,
         };
 
-        let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let id = format!("{}{:06x}", 
-            Local::now().format("%Y%m%d%H%M%S"),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.subsec_nanos() % 0xFFFFFF)
-                .unwrap_or(0)
-        );
-
-        let sql = "INSERT INTO sys_warn (id, kind, apimicro, apiobj, content, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        let _ = conn.execute(&sql, params![&id, &kind, &apimicro, &apiobj, &content, &upby, &uptime]);
+        let _ = Self::do_add_warn(&conn, &self.config.cid, kind, apisys, apimicro, apiobj, content, upby);
     }
 
+}
+
     /// 记录调试日志（简化版）
-    pub fn add_debug(&self, apimicro: &str, apiobj: &str, content: &str) {
-        self.add_warn(&format!("debug_{}", apimicro), apimicro, apiobj, content, "");
+    pub fn add_debug(&self, apisys: &str, apimicro: &str, apiobj: &str, content: &str) {
+        self.add_warn(&format!("debug_{}", apisys), apisys, apimicro, apiobj, content, "");
     }
 
     /// 记录错误日志（简化版）
-    pub fn add_error(&self, apimicro: &str, apiobj: &str, content: &str) {
-        self.add_warn(&format!("err_{}", apimicro), apimicro, apiobj, content, "");
+    pub fn add_error(&self, apisys: &str, apimicro: &str, apiobj: &str, content: &str) {
+        self.add_warn(&format!("err_{}", apisys), apisys, apimicro, apiobj, content, "");
     }
 }
 

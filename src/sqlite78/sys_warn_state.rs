@@ -14,6 +14,7 @@ pub const CREATE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS sys_warn (
     cid TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL DEFAULT '',
+    apisys TEXT NOT NULL DEFAULT '',
     apimicro TEXT NOT NULL DEFAULT '',
     apiobj TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL,
