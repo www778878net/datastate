@@ -43,6 +43,10 @@ pub struct LocalDBConfig {
     pub uid: String,
     /// 操作者
     pub upby: String,
+    /// 系统名
+    pub apisys: String,
+    /// 微服务名
+    pub apimicro: String,
 }
 
 impl Default for LocalDBConfig {
@@ -70,6 +74,8 @@ impl Default for LocalDBConfig {
             cid,
             uid,
             upby,
+            apisys: String::new(),
+            apimicro: String::new(),
         }
     }
 }
@@ -345,7 +351,7 @@ impl LocalDB {
         // 记录 SQL 统计
         if self.config.is_count {
             let apiobj = Self::parse_table_name(sql);
-            if let Err(e) = Self::do_save_sql_log(&conn, &self.config.cid, &apiobj, sql, elapsed, downlen) {
+            if let Err(e) = Self::do_save_sql_log(&conn, &self.config.cid, &self.config.apisys, &self.config.apimicro, &apiobj, sql, elapsed, downlen, &self.config.upby) {
                 eprintln!("[LocalDB] save_sql_log 失败: {}", e);
             }
         }
@@ -454,7 +460,7 @@ impl LocalDB {
         // 记录 SQL 统计
         if self.config.is_count {
             let apiobj = Self::parse_table_name(sql);
-            if let Err(e) = Self::do_save_sql_log(&conn, &self.config.cid, &apiobj, sql, elapsed, 0) {
+            if let Err(e) = Self::do_save_sql_log(&conn, &self.config.cid, &self.config.apisys, &self.config.apimicro, &apiobj, sql, elapsed, 0, &self.config.upby) {
                 eprintln!("[LocalDB] save_sql_log 失败: {}", e);
             }
         }
@@ -897,24 +903,21 @@ impl LocalDB {
     /// # 参数
     /// - `conn`: 数据库连接
     /// - `cid`: 公司ID
+    /// - `apisys`: 系统名
+    /// - `apimicro`: 微服务名
     /// - `apiobj`: 表名（对象名）
     /// - `cmdtext`: SQL 语句
     /// - `dlong`: 执行时间（毫秒）
     /// - `downlen`: 下行数据量
-    fn do_save_sql_log(conn: &Connection, cid: &str, apiobj: &str, cmdtext: &str, dlong: i64, downlen: i64) -> Result<(), String> {
+    /// - `upby`: 操作者
+    fn do_save_sql_log(conn: &Connection, cid: &str, apisys: &str, apimicro: &str, apiobj: &str, cmdtext: &str, dlong: i64, downlen: i64, upby: &str) -> Result<(), String> {
         let cmdtextmd5 = format!("{:x}", md5::compute(cmdtext.as_bytes()));
         let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let id = format!("{}{:06x}", 
-            Local::now().format("%Y%m%d%H%M%S"),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.subsec_nanos() % 0xFFFFFF)
-                .unwrap_or(0)
-        );
+        let id = uuid::Uuid::new_v4().to_string();
 
         let sql = r#"
-            INSERT INTO sys_sql (id, cid, apiobj, cmdtext, cmdtextmd5, num, dlong, downlen, uptime)
-            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+            INSERT INTO sys_sql (id, cid, apisys, apimicro, apiobj, cmdtext, num, dlong, downlen, upby, cmdtextmd5, uptime)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
             ON CONFLICT(cmdtextmd5) DO UPDATE SET 
                 num = num + 1,
                 dlong = dlong + ?,
@@ -924,11 +927,14 @@ impl LocalDB {
         conn.execute(&sql, params![
             &id,
             &cid,
+            &apisys,
+            &apimicro,
             &apiobj,
             &cmdtext,
-            &cmdtextmd5,
             &dlong,
             &downlen,
+            &upby,
+            &cmdtextmd5,
             &uptime,
             &dlong,
             &downlen,
@@ -949,13 +955,7 @@ impl LocalDB {
     /// - `upby`: 操作者
     fn do_add_warn(conn: &Connection, cid: &str, kind: &str, apimicro: &str, apiobj: &str, content: &str, upby: &str) -> Result<(), String> {
         let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let id = format!("{}{:06x}", 
-            Local::now().format("%Y%m%d%H%M%S"),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.subsec_nanos() % 0xFFFFFF)
-                .unwrap_or(0)
-        );
+        let id = uuid::Uuid::new_v4().to_string();
 
         let sql = "INSERT INTO sys_warn (id, cid, kind, apimicro, apiobj, content, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         conn.execute(&sql, params![&id, &cid, &kind, &apimicro, &apiobj, &content, &upby, &uptime])
