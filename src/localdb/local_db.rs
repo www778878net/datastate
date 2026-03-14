@@ -28,6 +28,7 @@ use base::mylogger;
 use base::project_path::ProjectPath;
 use crate::datastate::{DATA_ABILITY_LOG_CREATE_SQL};
 use crate::data_sync::{DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL, SYNCLOG_CREATE_SQL};
+use crate::sqlite78::{SYS_SQL_CREATE_SQL, SYS_WARN_CREATE_SQL};
 
 /// LocalDB 配置
 #[derive(Debug, Clone)]
@@ -41,7 +42,7 @@ pub struct LocalDBConfig {
 impl Default for LocalDBConfig {
     fn default() -> Self {
         Self {
-            is_log: false,
+            is_log: true,
             is_count: true,
         }
     }
@@ -87,7 +88,7 @@ impl LocalDB {
 
         let config = config.unwrap_or_default();
 
-        // sys_sql 和 sys_warn 表由 sqlite78::creat_tb() 创建，这里不再重复创建
+        // sys_sql 和 sys_warn 表由 datastate 注册时自动创建
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -144,6 +145,8 @@ impl LocalDB {
             ("data_state_log", DATA_STATE_LOG_CREATE_SQL),
             ("data_sync_stats", DATA_SYNC_STATS_CREATE_SQL),
             ("data_ability_log", DATA_ABILITY_LOG_CREATE_SQL),
+            ("sys_sql", SYS_SQL_CREATE_SQL),
+            ("sys_warn", SYS_WARN_CREATE_SQL),
         ];
 
         for (table_name, create_sql) in tables {
@@ -313,10 +316,19 @@ impl LocalDB {
         let elapsed = start.elapsed().as_millis() as i64;
         let downlen = result.len() as i64;
 
-        // 记录 SQL 统计（直接执行，避免死锁）
+        // 记录 SQL 统计
         if self.config.is_count {
             if let Err(e) = Self::do_save_sql_log(&conn, "", sql, elapsed, downlen) {
                 eprintln!("[LocalDB] save_sql_log 失败: {}", e);
+            }
+        }
+
+        // 记录调试日志
+        if self.config.is_log {
+            let result_json = serde_json::to_string(&result).unwrap_or_default();
+            let content = format!("{} c:{}", result_json, sql);
+            if let Err(e) = Self::do_add_warn(&conn, "debug_local", "", "", &content, "") {
+                eprintln!("[LocalDB] add_warn 失败: {}", e);
             }
         }
 
@@ -366,14 +378,24 @@ impl LocalDB {
         let start = Instant::now();
 
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        conn.execute(sql, [])
+        let result = conn.execute(sql, [])
             .map_err(|e| format!("执行失败: {}", e))?;
 
         let elapsed = start.elapsed().as_millis() as i64;
 
-        // 记录 SQL 统计（直接执行，避免死锁）
+        // 记录 SQL 统计
         if self.config.is_count {
-            let _ = Self::do_save_sql_log(&conn, "", sql, elapsed, 0);
+            if let Err(e) = Self::do_save_sql_log(&conn, "", sql, elapsed, 0) {
+                eprintln!("[LocalDB] save_sql_log 失败: {}", e);
+            }
+        }
+
+        // 记录调试日志
+        if self.config.is_log {
+            let content = format!("rows_affected={} c:{}", result, sql);
+            if let Err(e) = Self::do_add_warn(&conn, "debug_local", "", "", &content, "") {
+                eprintln!("[LocalDB] add_warn 失败: {}", e);
+            }
         }
 
         Ok(())
@@ -793,6 +815,32 @@ impl LocalDB {
             &dlong,
             &downlen,
         ]).map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    /// 记录警告日志（静态方法，避免死锁）
+    ///
+    /// # 参数
+    /// - `conn`: 数据库连接
+    /// - `kind`: 日志类型
+    /// - `apimicro`: 微服务名
+    /// - `apiobj`: API对象名
+    /// - `content`: 日志内容
+    /// - `upby`: 操作者
+    fn do_add_warn(conn: &Connection, kind: &str, apimicro: &str, apiobj: &str, content: &str, upby: &str) -> Result<(), String> {
+        let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let id = format!("{}{:06x}", 
+            Local::now().format("%Y%m%d%H%M%S"),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos() % 0xFFFFFF)
+                .unwrap_or(0)
+        );
+
+        let sql = "INSERT INTO sys_warn (id, kind, apimicro, apiobj, content, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        conn.execute(&sql, params![&id, &kind, &apimicro, &apiobj, &content, &upby, &uptime])
+            .map_err(|e| e.to_string())?;
 
         Ok(())
     }

@@ -19,15 +19,9 @@ CREATE TABLE IF NOT EXISTS sys_warn (
     content TEXT NOT NULL,
     upid TEXT NOT NULL DEFAULT '',
     upby TEXT DEFAULT '',
-    uptime DATETIME NOT NULL,
+    uptime TEXT NOT NULL DEFAULT '',
     idpk INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL,
-    remark TEXT NOT NULL DEFAULT '',
-    remark2 TEXT NOT NULL DEFAULT '',
-    remark3 TEXT NOT NULL DEFAULT '',
-    remark4 TEXT NOT NULL DEFAULT '',
-    remark5 TEXT NOT NULL DEFAULT '',
-    remark6 TEXT NOT NULL DEFAULT '',
     UNIQUE(id)
 )
 "#;

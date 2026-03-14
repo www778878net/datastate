@@ -128,57 +128,13 @@ impl Sqlite78 {
     /// 创建系统常用表
     pub fn creat_tb(&self, _up: &UpInfo) -> Result<String, String> {
         let conn = self.get_conn()?;
-
-        let cmdtext1 = r#"CREATE TABLE IF NOT EXISTS sys_warn (
-            uid TEXT NOT NULL DEFAULT '',
-            kind TEXT NOT NULL DEFAULT '',
-            apimicro TEXT NOT NULL DEFAULT '',
-            apiobj TEXT NOT NULL DEFAULT '',
-            content TEXT NOT NULL,
-            upid TEXT NOT NULL DEFAULT '',
-            upby TEXT DEFAULT '',
-            uptime DATETIME NOT NULL,
-            idpk INTEGER PRIMARY KEY AUTOINCREMENT,
-            id TEXT NOT NULL,
-            remark TEXT NOT NULL DEFAULT '',
-            remark2 TEXT NOT NULL DEFAULT '',
-            remark3 TEXT NOT NULL DEFAULT '',
-            remark4 TEXT NOT NULL DEFAULT '',
-            remark5 TEXT NOT NULL DEFAULT '',
-            remark6 TEXT NOT NULL DEFAULT '',
-            UNIQUE(id)
-        )"#;
-
-        let cmdtext2 = r#"CREATE TABLE IF NOT EXISTS sys_sql (
-            cid TEXT NOT NULL DEFAULT '',
-            apisys TEXT NOT NULL DEFAULT '',
-            apimicro TEXT NOT NULL DEFAULT '',
-            apiobj TEXT NOT NULL DEFAULT '',
-            cmdtext TEXT NOT NULL,
-            uname TEXT NOT NULL DEFAULT '',
-            num INTEGER NOT NULL DEFAULT 0,
-            dlong INTEGER NOT NULL DEFAULT 0,
-            downlen INTEGER NOT NULL DEFAULT 0,
-            upby TEXT NOT NULL DEFAULT '',
-            cmdtextmd5 TEXT NOT NULL DEFAULT '',
-            uptime DATETIME NOT NULL,
-            idpk INTEGER PRIMARY KEY AUTOINCREMENT,
-            id TEXT NOT NULL,
-            remark TEXT NOT NULL DEFAULT '',
-            remark2 TEXT NOT NULL DEFAULT '',
-            remark3 TEXT NOT NULL DEFAULT '',
-            remark4 TEXT NOT NULL DEFAULT '',
-            remark5 TEXT NOT NULL DEFAULT '',
-            remark6 TEXT NOT NULL DEFAULT '',
-            UNIQUE(apisys, apimicro, apiobj, cmdtext),
-            UNIQUE(id)
-        )"#;
-
         let conn = conn.lock().map_err(|e| e.to_string())?;
-        conn.execute(cmdtext1, [])
-            .map_err(|e| format!("创建 sys_warn 表失败: {}", e))?;
-        conn.execute(cmdtext2, [])
+
+        // 使用 sys_sql_state.rs 和 sys_warn_state.rs 中的常量
+        conn.execute(crate::sqlite78::SYS_SQL_CREATE_SQL, [])
             .map_err(|e| format!("创建 sys_sql 表失败: {}", e))?;
+        conn.execute(crate::sqlite78::SYS_WARN_CREATE_SQL, [])
+            .map_err(|e| format!("创建 sys_warn 表失败: {}", e))?;
 
         Ok("ok".to_string())
     }
