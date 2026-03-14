@@ -984,8 +984,6 @@ impl LocalDB {
         let _ = Self::do_add_warn(&conn, &self.config.cid, kind, apisys, apimicro, apiobj, content, upby);
     }
 
-}
-
     /// 记录调试日志（简化版）
     pub fn add_debug(&self, apisys: &str, apimicro: &str, apiobj: &str, content: &str) {
         self.add_warn(&format!("debug_{}", apisys), apisys, apimicro, apiobj, content, "");
