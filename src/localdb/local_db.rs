@@ -47,12 +47,29 @@ pub struct LocalDBConfig {
 
 impl Default for LocalDBConfig {
     fn default() -> Self {
+        let (cid, uid, upby) = ProjectPath::find()
+            .ok()
+            .and_then(|p| p.load_ini_config().ok())
+            .map(|config| {
+                let user_config = config.get("user7788").cloned().unwrap_or_default();
+                let default_config = config.get("DEFAULT").cloned().unwrap_or_default();
+                
+                let cid = user_config.get("cid").cloned().unwrap_or_default();
+                let uid = user_config.get("uid").cloned().unwrap_or_default();
+                let upby = user_config.get("username").cloned()
+                    .or_else(|| default_config.get("uname").cloned())
+                    .unwrap_or_default();
+                
+                (cid, uid, upby)
+            })
+            .unwrap_or_default();
+
         Self {
             is_log: true,
             is_count: true,
-            cid: String::new(),
-            uid: String::new(),
-            upby: String::new(),
+            cid,
+            uid,
+            upby,
         }
     }
 }
@@ -1063,5 +1080,15 @@ mod tests {
         let db = LocalDB::new(None, None).expect("数据库连接失败");
         let result = db.download_from_server("testtb", "http://api.example.com/testtb", 10, 0, None);
         assert!(result.is_ok() || result.is_err()); // 测试结果
+    }
+
+    #[test]
+    fn test_config_read() {
+        let config = LocalDBConfig::default();
+        println!("cid: {}", config.cid);
+        println!("uid: {}", config.uid);
+        println!("upby: {}", config.upby);
+        // 配置文件中有值，应该能读取到
+        assert!(!config.cid.is_empty(), "cid 应该从配置文件读取到");
     }
 }
