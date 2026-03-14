@@ -37,6 +37,12 @@ pub struct LocalDBConfig {
     pub is_log: bool,
     /// 是否统计 SQL 效率
     pub is_count: bool,
+    /// 公司ID
+    pub cid: String,
+    /// 用户ID
+    pub uid: String,
+    /// 操作者
+    pub upby: String,
 }
 
 impl Default for LocalDBConfig {
@@ -44,6 +50,9 @@ impl Default for LocalDBConfig {
         Self {
             is_log: true,
             is_count: true,
+            cid: String::new(),
+            uid: String::new(),
+            upby: String::new(),
         }
     }
 }
@@ -318,7 +327,8 @@ impl LocalDB {
 
         // 记录 SQL 统计
         if self.config.is_count {
-            if let Err(e) = Self::do_save_sql_log(&conn, "", sql, elapsed, downlen) {
+            let apiobj = Self::parse_table_name(sql);
+            if let Err(e) = Self::do_save_sql_log(&conn, &self.config.cid, &apiobj, sql, elapsed, downlen) {
                 eprintln!("[LocalDB] save_sql_log 失败: {}", e);
             }
         }
@@ -326,13 +336,54 @@ impl LocalDB {
         // 记录调试日志
         if self.config.is_log {
             let result_json = serde_json::to_string(&result).unwrap_or_default();
-            let content = format!("{} c:{}", result_json, sql);
-            if let Err(e) = Self::do_add_warn(&conn, "debug_local", "", "", &content, "") {
+            let params_str = Self::params_to_string(params);
+            let content = format!("{} c:{} v{}", result_json, sql, params_str);
+            if let Err(e) = Self::do_add_warn(&conn, &self.config.uid, "debug_local", "", "", &content, &self.config.upby) {
                 eprintln!("[LocalDB] add_warn 失败: {}", e);
             }
         }
 
         Ok(result)
+    }
+
+    /// 将参数转换为字符串
+    fn params_to_string(params: &[&dyn rusqlite::ToSql]) -> String {
+        let parts: Vec<String> = params.iter().map(|p| {
+            let sql_value = match p.to_sql() {
+                Ok(v) => v,
+                Err(_) => return "?".to_string(),
+            };
+            match sql_value {
+                rusqlite::types::ToSqlOutput::Owned(v) => Self::value_to_string(&v),
+                rusqlite::types::ToSqlOutput::Borrowed(v) => Self::value_ref_to_string(v),
+                _ => "?".to_string(),
+            }
+        }).collect();
+        format!("[{}]", parts.join(","))
+    }
+
+    /// 将 SQLite 值转换为字符串
+    fn value_to_string(value: &rusqlite::types::Value) -> String {
+        use rusqlite::types::Value;
+        match value {
+            Value::Null => "null".to_string(),
+            Value::Integer(i) => i.to_string(),
+            Value::Real(f) => f.to_string(),
+            Value::Text(s) => format!("\"{}\"", s),
+            Value::Blob(b) => format!("<blob:{}bytes>", b.len()),
+        }
+    }
+
+    /// 将 SQLite 值引用转换为字符串
+    fn value_ref_to_string(value: rusqlite::types::ValueRef) -> String {
+        use rusqlite::types::ValueRef;
+        match value {
+            ValueRef::Null => "null".to_string(),
+            ValueRef::Integer(i) => i.to_string(),
+            ValueRef::Real(f) => f.to_string(),
+            ValueRef::Text(s) => format!("\"{}\"", String::from_utf8_lossy(s)),
+            ValueRef::Blob(b) => format!("<blob:{}bytes>", b.len()),
+        }
     }
 
     /// 处理查询结果
@@ -385,7 +436,8 @@ impl LocalDB {
 
         // 记录 SQL 统计
         if self.config.is_count {
-            if let Err(e) = Self::do_save_sql_log(&conn, "", sql, elapsed, 0) {
+            let apiobj = Self::parse_table_name(sql);
+            if let Err(e) = Self::do_save_sql_log(&conn, &self.config.cid, &apiobj, sql, elapsed, 0) {
                 eprintln!("[LocalDB] save_sql_log 失败: {}", e);
             }
         }
@@ -393,7 +445,7 @@ impl LocalDB {
         // 记录调试日志
         if self.config.is_log {
             let content = format!("rows_affected={} c:{}", result, sql);
-            if let Err(e) = Self::do_add_warn(&conn, "debug_local", "", "", &content, "") {
+            if let Err(e) = Self::do_add_warn(&conn, &self.config.uid, "debug_local", "", "", &content, &self.config.upby) {
                 eprintln!("[LocalDB] add_warn 失败: {}", e);
             }
         }
@@ -776,15 +828,63 @@ impl LocalDB {
         Ok((inserted, errors))
     }
 
+    /// 从 SQL 语句中解析表名
+    fn parse_table_name(sql: &str) -> String {
+        let sql_upper = sql.to_uppercase();
+        let sql_trimmed = sql.trim();
+        
+        // SELECT ... FROM table ...
+        if sql_upper.starts_with("SELECT") {
+            if let Some(from_pos) = sql_upper.find(" FROM ") {
+                let after_from = sql_trimmed[from_pos + 6..].trim();
+                if let Some(space_pos) = after_from.find(' ') {
+                    return after_from[..space_pos].to_string();
+                }
+                return after_from.to_string();
+            }
+        }
+        // INSERT INTO table ...
+        else if sql_upper.starts_with("INSERT") {
+            if let Some(into_pos) = sql_upper.find(" INTO ") {
+                let after_into = sql_trimmed[into_pos + 6..].trim();
+                if let Some(space_pos) = after_into.find(' ') {
+                    return after_into[..space_pos].to_string();
+                }
+                return after_into.to_string();
+            }
+        }
+        // UPDATE table SET ...
+        else if sql_upper.starts_with("UPDATE") {
+            let after_update = sql_trimmed[6..].trim();
+            if let Some(space_pos) = after_update.find(' ') {
+                return after_update[..space_pos].to_string();
+            }
+            return after_update.to_string();
+        }
+        // DELETE FROM table ...
+        else if sql_upper.starts_with("DELETE") {
+            if let Some(from_pos) = sql_upper.find(" FROM ") {
+                let after_from = sql_trimmed[from_pos + 6..].trim();
+                if let Some(space_pos) = after_from.find(' ') {
+                    return after_from[..space_pos].to_string();
+                }
+                return after_from.to_string();
+            }
+        }
+        
+        String::new()
+    }
+
     /// 记录 SQL 执行统计（静态方法，避免死锁）
     ///
     /// # 参数
     /// - `conn`: 数据库连接
+    /// - `cid`: 公司ID
     /// - `apiobj`: 表名（对象名）
     /// - `cmdtext`: SQL 语句
     /// - `dlong`: 执行时间（毫秒）
     /// - `downlen`: 下行数据量
-    fn do_save_sql_log(conn: &Connection, apiobj: &str, cmdtext: &str, dlong: i64, downlen: i64) -> Result<(), String> {
+    fn do_save_sql_log(conn: &Connection, cid: &str, apiobj: &str, cmdtext: &str, dlong: i64, downlen: i64) -> Result<(), String> {
         let cmdtextmd5 = format!("{:x}", md5::compute(cmdtext.as_bytes()));
         let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let id = format!("{}{:06x}", 
@@ -796,8 +896,8 @@ impl LocalDB {
         );
 
         let sql = r#"
-            INSERT INTO sys_sql (id, apiobj, cmdtext, cmdtextmd5, num, dlong, downlen, uptime)
-            VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+            INSERT INTO sys_sql (id, cid, apiobj, cmdtext, cmdtextmd5, num, dlong, downlen, uptime)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
             ON CONFLICT(cmdtextmd5) DO UPDATE SET 
                 num = num + 1,
                 dlong = dlong + ?,
@@ -806,6 +906,7 @@ impl LocalDB {
 
         conn.execute(&sql, params![
             &id,
+            &cid,
             &apiobj,
             &cmdtext,
             &cmdtextmd5,
@@ -823,12 +924,13 @@ impl LocalDB {
     ///
     /// # 参数
     /// - `conn`: 数据库连接
+    /// - `cid`: 公司ID（填UID的值）
     /// - `kind`: 日志类型
     /// - `apimicro`: 微服务名
     /// - `apiobj`: API对象名
     /// - `content`: 日志内容
     /// - `upby`: 操作者
-    fn do_add_warn(conn: &Connection, kind: &str, apimicro: &str, apiobj: &str, content: &str, upby: &str) -> Result<(), String> {
+    fn do_add_warn(conn: &Connection, cid: &str, kind: &str, apimicro: &str, apiobj: &str, content: &str, upby: &str) -> Result<(), String> {
         let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let id = format!("{}{:06x}", 
             Local::now().format("%Y%m%d%H%M%S"),
@@ -838,8 +940,8 @@ impl LocalDB {
                 .unwrap_or(0)
         );
 
-        let sql = "INSERT INTO sys_warn (id, kind, apimicro, apiobj, content, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        conn.execute(&sql, params![&id, &kind, &apimicro, &apiobj, &content, &upby, &uptime])
+        let sql = "INSERT INTO sys_warn (id, cid, kind, apimicro, apiobj, content, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        conn.execute(&sql, params![&id, &cid, &kind, &apimicro, &apiobj, &content, &upby, &uptime])
             .map_err(|e| e.to_string())?;
 
         Ok(())

@@ -12,7 +12,7 @@ pub const TABLE_NAME: &str = "sys_warn";
 /// SQLite 建表 SQL
 pub const CREATE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS sys_warn (
-    uid TEXT NOT NULL DEFAULT '',
+    cid TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL DEFAULT '',
     apimicro TEXT NOT NULL DEFAULT '',
     apiobj TEXT NOT NULL DEFAULT '',
