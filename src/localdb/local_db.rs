@@ -358,10 +358,11 @@ impl LocalDB {
 
         // 记录调试日志
         if self.config.is_log {
+            let apiobj = Self::parse_table_name(sql);
             let result_json = serde_json::to_string(&result).unwrap_or_default();
             let params_str = Self::params_to_string(params);
             let content = format!("{} c:{} v{}", result_json, sql, params_str);
-        let _ = Self::do_add_warn(&conn, &self.config.cid, "debug_local", &self.config.apisys, &self.config.apimicro, "", &content, &self.config.upby);
+            let _ = Self::do_add_warn(&conn, &self.config.cid, "debug_local", &self.config.apisys, &self.config.apimicro, &apiobj, &content, &self.config.upby);
         }
 
         Ok(result)
@@ -465,8 +466,9 @@ impl LocalDB {
 
         // 记录调试日志
         if self.config.is_log {
+            let apiobj = Self::parse_table_name(sql);
             let content = format!("rows_affected={} c:{}", result, sql);
-            if let Err(e) = Self::do_add_warn(&conn, &self.config.cid, "debug_local", &self.config.apisys, &self.config.apimicro, "", &content, &self.config.upby) {
+            if let Err(e) = Self::do_add_warn(&conn, &self.config.cid, "debug_local", &self.config.apisys, &self.config.apimicro, &apiobj, &content, &self.config.upby) {
                 eprintln!("[LocalDB] add_warn 失败: {}", e);
             }
         }
