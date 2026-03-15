@@ -244,9 +244,8 @@ impl DataSync {
 
     /// 从 TableConfig 创建 DataSync
     pub fn from_config(config: &crate::sync_config::TableConfig) -> Self {
-        let table_name = Self::extract_table_name(&config.apiurl);
         Self {
-            table_name: table_name.to_string(),
+            table_name: config.name.clone(),
             db: LocalDB::new(None, None)
                 .unwrap_or_else(|_| LocalDB::new(Some("data.db"), None).expect("创建数据库失败")),
             apiurl: config.apiurl.clone(),
@@ -335,12 +334,14 @@ impl DataSync {
     /// 从 URL 提取表名
     ///
     /// URL格式：http://api.example.com/apibuff/order/buff_order_selling_history/get
+    /// 分割后：["http:", "api.example.com", "apibuff", "order", "buff_order_selling_history", "get"]
+    /// 表名在索引4的位置
     pub fn extract_table_name(api_url: &str) -> String {
         let url = api_url.replace("//", "");
         let parts: Vec<&str> = url.trim_end_matches('/').split('/').collect();
-        // 表名在索引3的位置
-        if parts.len() > 3 {
-            parts[3].to_string()
+        // 表名在索引4的位置
+        if parts.len() > 4 {
+            parts[4].to_string()
         } else {
             String::new()
         }
