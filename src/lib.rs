@@ -11,6 +11,7 @@
 //! - state: 状态基类
 //! - schema: 数据表结构定义
 //! - query_builder: SQL 查询构建器
+//! - snowflake: 雪花算法ID生成器
 //!
 //! ## 工作流模块
 //! - capability: 能力基类
@@ -46,6 +47,9 @@ pub mod schema;
 pub mod query_builder;
 pub mod table_config;
 pub mod config;
+
+/// 雪花算法ID生成器
+pub mod snowflake;
 
 // ============ 工作流模块 ============
 pub mod capability_result;
@@ -138,3 +142,6 @@ pub use workflow::{
     SQL_CREATE_WORKFLOW_CAPABILITY, SQL_CREATE_WORKFLOW_INSTANCE, SQL_CREATE_WORKFLOW_TASK,
     init_workflow_tables, init_workflow_tables_with_default_path,
 };
+
+// snowflake 导出
+pub use snowflake::{get_worker_id, init_worker_id, next_id, next_id_string};

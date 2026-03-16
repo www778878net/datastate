@@ -86,6 +86,19 @@ impl TestTb {
         Self { db, audit, state }
     }
 
+    pub fn with_db_path(db_path: &str) -> Self {
+        let db = LocalDB::new(Some(db_path), None).expect("创建数据库失败");
+        let audit = DataAudit::new("testtb");
+
+        db.execute(TESTTB_CREATE_SQL).expect("建表失败");
+
+        let config = Self::get_config();
+        let dm = DataManage::get_singleton();
+        let state = dm.register(config).expect("注册到 DataManage 失败");
+
+        Self { db, audit, state }
+    }
+
     fn check_caller(&self, ability: &str, caller: &str) -> Result<(), String> {
         match caller {
             "testtb" => Ok(()),
@@ -154,31 +167,24 @@ impl TestTb {
         }
     }
 
-    pub fn msave(
-        &self,
-        record: &TestTbRecord,
-        caller: &str,
-        summary: &str,
-    ) -> Result<String, String> {
-        self.check_caller("msave", caller)?;
-        self.audit.check_permission("msave", caller, summary)?;
-        
-        let id = Uuid::new_v4().to_string();
-        let sql = "INSERT INTO testtb (id, cid, kind, item, data, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))";
-        self.db.execute_with_params(
-            sql,
-            &[&id, &record.cid, &record.kind, &record.item, &record.data, &caller],
-        )?;
-        Ok(id)
+    pub fn m_add(&self, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str, summary: &str) -> Result<String, String> {
+        self.check_caller("m_add", caller)?;
+        self.state.m_add(record, caller, summary)
     }
 
-    pub fn mdelete(&self, id: &str, caller: &str, summary: &str) -> Result<bool, String> {
-        self.check_caller("mdelete", caller)?;
-        self.audit.check_permission("mdelete", caller, summary)?;
-        
-        let sql = "DELETE FROM testtb WHERE id = ?";
-        self.db.execute_with_params(sql, &[&id])?;
-        Ok(true)
+    pub fn m_save(&self, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str, summary: &str) -> Result<String, String> {
+        self.check_caller("m_save", caller)?;
+        self.state.m_save(record, caller, summary)
+    }
+
+    pub fn m_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str, summary: &str) -> Result<bool, String> {
+        self.check_caller("m_update", caller)?;
+        self.state.m_update(id, record, caller, summary)
+    }
+
+    pub fn m_del(&self, id: &str, caller: &str, summary: &str) -> Result<bool, String> {
+        self.check_caller("m_del", caller)?;
+        self.state.m_del(id, caller, summary)
     }
 }
 
