@@ -61,7 +61,7 @@ impl DataState {
     /// - 自动设置 id、cid、upby、uptime
     pub fn m_add(&self, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
         self.audit.check_permission("m_add", caller, summary)?;
-        self.datasync.m_add(record, caller)
+        self.datasync.m_add(record)
     }
 
     /// 更新记录
@@ -71,7 +71,7 @@ impl DataState {
     /// - 自动设置 upby、uptime
     pub fn m_update(&self, id: &str, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<bool, String> {
         self.audit.check_permission("m_update", caller, summary)?;
-        self.datasync.m_update(id, record, caller)
+        self.datasync.m_update(id, record)
     }
 
     /// 保存记录（存在更新，不存在插入）
@@ -80,7 +80,7 @@ impl DataState {
     /// - 自动写 sync_queue：产生待同步记录
     pub fn m_save(&self, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
         self.audit.check_permission("m_save", caller, summary)?;
-        self.datasync.m_save(record, caller)
+        self.datasync.m_save(record)
     }
 
     /// 删除记录
@@ -89,7 +89,7 @@ impl DataState {
     /// - 自动写 sync_queue：产生待同步记录
     pub fn m_del(&self, id: &str, caller: &str, summary: &str) -> Result<bool, String> {
         self.audit.check_permission("m_del", caller, summary)?;
-        self.datasync.m_del(id, caller)
+        self.datasync.m_del(id)
     }
 
     /// 查询记录

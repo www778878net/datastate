@@ -1108,15 +1108,15 @@ impl DataSync {
     /// 插入记录（自动写 sync_queue）
     /// - 自动设置 id、cid、upby、uptime
     /// - 根据 uidcid 配置决定 cid 字段写入公司ID还是用户ID
-    pub fn m_add(&self, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str) -> Result<String, String> {
+    pub fn m_add(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
         let id = uuid::Uuid::new_v4().to_string();
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let cid_value = match self.uidcid.as_str() {
             "uid" => Self::get_uid(),
             _ => Self::get_cid(),
         };
-        let upby = if !caller.is_empty() { caller.to_string() } else { Self::get_uname() };
-        
+        let upby = Self::get_uname();
+
         let mut record_with_meta = record.clone();
         record_with_meta.insert("id".to_string(), serde_json::json!(id));
         if !cid_value.is_empty() {
@@ -1134,14 +1134,14 @@ impl DataSync {
     /// 更新记录（自动写 sync_queue）
     /// - 自动设置 cid、upby、uptime
     /// - 根据 uidcid 配置决定 cid 字段写入公司ID还是用户ID
-    pub fn m_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str) -> Result<bool, String> {
+    pub fn m_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<bool, String> {
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let cid_value = match self.uidcid.as_str() {
             "uid" => Self::get_uid(),
             _ => Self::get_cid(),
         };
-        let upby = if !caller.is_empty() { caller.to_string() } else { Self::get_uname() };
-        
+        let upby = Self::get_uname();
+
         let mut record_with_meta = record.clone();
         if !cid_value.is_empty() {
             record_with_meta.insert("cid".to_string(), serde_json::json!(cid_value));
@@ -1157,25 +1157,25 @@ impl DataSync {
     }
 
     /// 保存记录（存在更新，不存在插入）
-    pub fn m_save(&self, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str) -> Result<String, String> {
+    pub fn m_save(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
         if let Some(id_value) = record.get("id") {
             if let Some(id) = id_value.as_str() {
                 if !id.is_empty() {
                     let sql = format!("SELECT id FROM {} WHERE id = ?", self.table_name);
                     let exists = self.db.query(&sql, &[&id])?;
                     if !exists.is_empty() {
-                        self.m_update(id, record, caller)?;
+                        self.m_update(id, record)?;
                         return Ok(id.to_string());
                     }
                 }
             }
         }
-        self.m_add(record, caller)
+        self.m_add(record)
     }
 
     /// 删除记录（自动写 sync_queue）
-    pub fn m_del(&self, id: &str, caller: &str) -> Result<bool, String> {
-        let upby = if !caller.is_empty() { caller.to_string() } else { Self::get_uname() };
+    pub fn m_del(&self, id: &str) -> Result<bool, String> {
+        let upby = Self::get_uname();
         let sql = format!("DELETE FROM {} WHERE id = ?", self.table_name);
         self.db.execute_with_params(&sql, &[&id])?;
         self.add_to_queue(id, "delete", &serde_json::json!({"id": id}), &upby)?;
