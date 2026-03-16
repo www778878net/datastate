@@ -187,8 +187,42 @@ impl LocalDB {
             } else {
                 // 已存在的表，尝试添加 id 唯一索引
                 self.ensure_id_unique_index(table_name)?;
+
+                // sys_warn 表升级：添加缺失的列
+                if table_name == "sys_warn" {
+                    let columns = [
+                        ("cid", "TEXT NOT NULL DEFAULT ''"),
+                        ("apisys", "TEXT NOT NULL DEFAULT ''"),
+                        ("apimicro", "TEXT NOT NULL DEFAULT ''"),
+                        ("apiobj", "TEXT NOT NULL DEFAULT ''"),
+                        ("upid", "TEXT NOT NULL DEFAULT ''"),
+                    ];
+                    for (col, def) in &columns {
+                        self.ensure_column("sys_warn", col, def)?;
+                    }
+                }
             }
         }
+        Ok(())
+    }
+
+    /// 确保表有指定列（没有则添加）
+    pub fn ensure_column(&self, table_name: &str, column: &str, column_def: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // 检查列是否存在（遍历所有列）
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table_name))
+            .map_err(|e| e.to_string())?;
+        let columns: Vec<String> = stmt.query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        if !columns.contains(&column.to_string()) {
+            let sql = format!("ALTER TABLE {} ADD COLUMN {} {}", table_name, column, column_def);
+            conn.execute(&sql, []).map_err(|e| format!("添加列失败: {}", e))?;
+        }
+
         Ok(())
     }
 

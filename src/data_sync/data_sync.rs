@@ -1183,8 +1183,13 @@ impl DataSync {
     }
 
     /// 查询记录
+    /// where_clause 可以是条件（如 "id = ?"）或完整子句（如 "ORDER BY idpk DESC LIMIT 10"）
     pub fn get(&self, where_clause: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<std::collections::HashMap<String, serde_json::Value>>, String> {
-        let sql = format!("SELECT * FROM {} WHERE {}", self.table_name, where_clause);
+        let sql = if where_clause.trim_start().to_uppercase().starts_with("ORDER") {
+            format!("SELECT * FROM {} {}", self.table_name, where_clause)
+        } else {
+            format!("SELECT * FROM {} WHERE {}", self.table_name, where_clause)
+        };
         self.db.query(&sql, params)
     }
 
