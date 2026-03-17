@@ -94,7 +94,7 @@ pub use snowflake::{next_id, next_id_string};
 
 // datastate 导出（包含权限相关方法和内部访问trait）
 pub use datastate::{
-    DataState, SynclogItem, SYNCLOG_CREATE_SQL,
+    DataState, DataSync, SynclogItem, SYNCLOG_CREATE_SQL,
     DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL,
     StateLog, SyncStats,
     // 审计相关
@@ -102,6 +102,9 @@ pub use datastate::{
     AuditLogDataState, AuditLogRecord, AUDIT_LOG_CREATE_SQL,
     AuditPermDataState, AuditPermRecord, AUDIT_PERM_CREATE_SQL,
 };
+
+// state 导出
+pub use state::BaseState;
 
 // datamanage 导出
 pub use datamanage::DataManage;
