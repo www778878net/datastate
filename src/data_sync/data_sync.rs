@@ -242,6 +242,28 @@ impl DataSync {
         }
     }
 
+    /// 使用指定的数据库实例创建 DataSync
+    pub fn with_db(table_name: &str, db: LocalDB) -> Self {
+        Self {
+            table_name: table_name.to_string(),
+            db,
+            apiurl: String::new(),
+            download_interval: 300,
+            upload_interval: 300,
+            download_condition: None,
+            download_cols: None,
+            upload_cols: None,
+            init_getnumber: 0,
+            getnumber: 2000,
+            min_pending: 0,
+            uidcid: "cid".to_string(),
+            last_download: 0.0,
+            last_upload: 0.0,
+            error_message: String::new(),
+            error_time: 0.0,
+        }
+    }
+
     /// 从 TableConfig 创建 DataSync
     pub fn from_config(config: &crate::sync_config::TableConfig) -> Self {
         Self {
@@ -358,7 +380,7 @@ impl DataSync {
         worker: &str,
     ) -> Result<i64, String> {
         let id = crate::snowflake::next_id_string();
-        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let uptime = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         // 构建 cmdtext 和 params
         let (cmdtext, params) = self.build_cmdtext_and_params(action, data);
@@ -540,7 +562,7 @@ impl DataSync {
         worker: &str,
     ) -> Result<(), String> {
         let id = crate::snowflake::next_id_string();
-        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let uptime = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let sql = "INSERT INTO data_state_log (id, table_name, old_status, new_status, reason, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, ?)";
 
         let conn = self.db.get_conn();
@@ -1109,6 +1131,7 @@ impl DataSync {
     /// - 自动设置 id、cid、upby、uptime
     /// - 根据 uidcid 配置决定 cid 字段写入公司ID还是用户ID
     /// - 如果记录中已有 id，使用传入的 id；否则生成新的雪花ID
+    /// - 如果记录中已有 cid，使用传入的 cid；否则根据 uidcid 配置生成
     pub fn m_add(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
         // 如果记录中已有 id，使用传入的 id；否则生成新的雪花ID
         let id = record.get("id")
@@ -1117,10 +1140,15 @@ impl DataSync {
             .map(|s| s.to_string())
             .unwrap_or_else(|| crate::snowflake::next_id_string());
         
-        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let cid_value = match self.uidcid.as_str() {
-            "uid" => Self::get_uid(),
-            _ => Self::get_cid(),
+        let uptime = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        // 如果记录中已有 cid，使用传入的 cid；否则根据 uidcid 配置生成
+        let cid_value = if record.get("cid").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).is_some() {
+            String::new() // 已经有 cid，不需要再设置
+        } else {
+            match self.uidcid.as_str() {
+                "uid" => Self::get_uid(),
+                _ => Self::get_cid(),
+            }
         };
         let upby = Self::get_uname();
 
@@ -1142,7 +1170,7 @@ impl DataSync {
     /// - 自动设置 cid、upby、uptime
     /// - 根据 uidcid 配置决定 cid 字段写入公司ID还是用户ID
     pub fn m_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<bool, String> {
-        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let uptime = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let cid_value = match self.uidcid.as_str() {
             "uid" => Self::get_uid(),
             _ => Self::get_cid(),

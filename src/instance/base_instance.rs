@@ -13,7 +13,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::components::{BaseEntity, EconomicManager, LifecycleManager};
-use crate::{UpInfo, WorkflowInstance};
+use crate::workflow::WorkflowInstance;
+use crate::UpInfo;
 
 /// 工作流实例执行结果类
 #[derive(Debug, Clone)]

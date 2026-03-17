@@ -86,6 +86,12 @@ pub use mysql78::{
     SysSqlMysqlState, SYS_SQL_TABLE as SYS_SQL_TABLE_MYSQL, SYS_SQL_CREATE_SQL as SYS_SQL_CREATE_SQL_MYSQL,
 };
 
+// localdb 导出（临时兼容）
+pub use localdb::LocalDB;
+
+// snowflake 导出
+pub use snowflake::{next_id, next_id_string};
+
 // datastate 导出（包含权限相关方法和内部访问trait）
 pub use datastate::{
     DataState, SynclogItem, SYNCLOG_CREATE_SQL,
@@ -95,53 +101,14 @@ pub use datastate::{
     DataAudit, DATA_ABILITY_LOG_CREATE_SQL, AbilityLog,
     AuditLogDataState, AuditLogRecord, AUDIT_LOG_CREATE_SQL,
     AuditPermDataState, AuditPermRecord, AUDIT_PERM_CREATE_SQL,
+    // 用户相关
+    LoversDataState, VerifyResult, LOVERS_CREATE_SQL, LOVERS_AUTH_CREATE_SQL,
 };
-
-// localdb 导出（⚠️ 内部使用）
-pub use localdb::LocalDB;
-
-// data_sync 导出（同步组件）
-pub use data_sync::{
-    DataSync, SyncResult as SyncResultSync, SyncData as SyncDataSync,
-    add_to_synclog, get_pending_count, get_pending_items,
-    log_status_change, get_status_logs, update_sync_stats, get_sync_stats,
-};
-
-// datamanage 导出
-pub use datamanage::DataManage;
-
-// sync_config 导出
-pub use sync_config::{IndexDef, SyncPolicy, TableConfig, get_system_columns};
-
-// state 导出
-pub use state::{BaseState, StateStatus};
-
-// schema 导出
-pub use schema::{BaseSchema, CidSchema, UidSchema, SchemaType};
-
-// query_builder 导出
-pub use query_builder::QueryBuilder;
-
-// table_config 导出
-pub use table_config::{TableSet, TableConfigJson, UidCid, TableConfigManager};
-
-// config 导出
-pub use config::{Config, ConfigError};
-
-// ============ 工作流导出 ============
-
-pub use capability_result::CapabilityResult;
-pub use components::{BaseEntity, EconomicManager, LifecycleManager};
-pub use capability::{BaseCapability, CapabilityBase};
-pub use instance::{BaseInstance, InstanceBase, InstanceResult};
 
 // workflow 导出
 pub use workflow::{
-    ShardingConfig, ShardType, ShardingManager, MaintenanceResult,
-    WorkflowCapability, WorkflowInstance, WorkflowTask,
-    SQL_CREATE_WORKFLOW_CAPABILITY, SQL_CREATE_WORKFLOW_INSTANCE, SQL_CREATE_WORKFLOW_TASK,
+    WorkflowCapability, WorkflowTask, WorkflowInstance,
+    SQL_CREATE_WORKFLOW_CAPABILITY, SQL_CREATE_WORKFLOW_TASK, SQL_CREATE_WORKFLOW_INSTANCE,
     init_workflow_tables, init_workflow_tables_with_default_path,
+    ShardingConfig, ShardType, ShardingManager, MaintenanceResult,
 };
-
-// snowflake 导出
-pub use snowflake::{get_worker_id, init_worker_id, next_id, next_id_string};

@@ -98,11 +98,7 @@ impl Default for LocalDB {
 
 impl LocalDB {
     pub fn new(db_path: Option<&str>, config: Option<LocalDBConfig>) -> Result<Self, String> {
-        let path = if let Some(p) = db_path {
-            PathBuf::from(p)
-        } else {
-            ProjectPath::find()?.local_db()
-        };
+        let path = Self::resolve_db_path(db_path)?;
 
         if let Some(parent) = path.parent() {
             if !parent.exists() {
@@ -127,6 +123,38 @@ impl LocalDB {
             db_path: path,
             config,
         })
+    }
+
+    /// 解析数据库路径（优先级：环境变量 > 配置文件 > 默认）
+    fn resolve_db_path(db_path: Option<&str>) -> Result<PathBuf, String> {
+        // 1. 优先：显式传入的路径
+        if let Some(p) = db_path {
+            return Ok(PathBuf::from(p));
+        }
+
+        // 2. 其次：环境变量 SQLITE_PATH
+        if let Ok(env_path) = std::env::var("SQLITE_PATH") {
+            if !env_path.is_empty() {
+                return Ok(PathBuf::from(env_path));
+            }
+        }
+
+        // 3. 其次：配置文件 docs/config/{env}.ini 中的 db_path
+        if let Ok(project_path) = ProjectPath::find() {
+            if let Ok(ini_config) = project_path.load_ini_config() {
+                if let Some(database_section) = ini_config.get("database") {
+                    if let Some(db_path_value) = database_section.get("db_path") {
+                        if !db_path_value.is_empty() {
+                            return Ok(PathBuf::from(db_path_value));
+                        }
+                    }
+                }
+            }
+            // 4. 再次：默认路径 docs/config/local.db
+            return Ok(project_path.local_db());
+        }
+
+        Err("无法确定数据库路径：未找到项目根目录".to_string())
     }
 
     pub fn default_instance() -> Result<Self, String> {

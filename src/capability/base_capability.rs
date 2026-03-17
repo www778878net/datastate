@@ -19,7 +19,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::components::{BaseEntity, EconomicManager, LifecycleManager};
-use crate::{UpInfo, WorkflowCapability, WorkflowTask};
+use crate::workflow::{WorkflowCapability, WorkflowTask};
+use crate::UpInfo;
 use base::MyLogger;
 
 /// 能力基类 Trait

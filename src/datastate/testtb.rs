@@ -8,14 +8,18 @@
 //! - trade: 交易服务，只读查询
 
 use crate::dataaudit::DataAudit;
-use crate::{get_system_columns, DataManage, DataState, LocalDB, TableConfig};
+use crate::datamanage::DataManage;
+use crate::datastate::DataState;
+use crate::data_sync::DataSync;
+use crate::localdb::LocalDB;
+use crate::sync_config::{get_system_columns, TableConfig};
 use serde::{Deserialize, Serialize};
 
 /// testtb 表建表 SQL
 pub const TESTTB_CREATE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS testtb (
-    idpk INTEGER PRIMARY KEY AUTOINCREMENT,
-    id TEXT NOT NULL,
+    id TEXT NOT NULL PRIMARY KEY,
+    idpk INTEGER,
     cid TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL DEFAULT '',
     item TEXT NOT NULL DEFAULT '',
@@ -83,9 +87,8 @@ impl TestTb {
             let _ = db.ensure_id_is_primary_key("testtb");
         }
 
-        let config = Self::get_config();
-        let dm = DataManage::get_singleton();
-        let state = dm.register(config).expect("注册到 DataManage 失败");
+        // 直接创建 DataState 实例，使用默认数据库
+        let state = DataState::with_db("testtb", db.clone());
 
         Self { db, audit, state }
     }
@@ -101,9 +104,8 @@ impl TestTb {
             let _ = db.ensure_id_is_primary_key("testtb");
         }
 
-        let config = Self::get_config();
-        let dm = DataManage::get_singleton();
-        let state = dm.register(config).expect("注册到 DataManage 失败");
+        // 直接创建 DataState 实例，使用指定的数据库路径
+        let state = DataState::with_db("testtb", db.clone());
 
         Self { db, audit, state }
     }

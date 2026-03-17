@@ -10,6 +10,7 @@ use crate::data_sync::DataSync;
 use crate::dataaudit::DataAudit;
 use crate::state::BaseState;
 use crate::sync_config::TableConfig;
+use crate::localdb::LocalDB;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use serde_json::Value;
@@ -49,6 +50,15 @@ impl DataState {
             base: BaseState::new(&config.name),
             datasync: DataSync::from_config(config),
             audit: DataAudit::new(&config.name),
+        }
+    }
+
+    /// 使用指定的数据库实例创建 DataState
+    pub fn with_db(table_name: &str, db: LocalDB) -> Self {
+        Self {
+            base: BaseState::new(table_name),
+            datasync: DataSync::with_db(table_name, db),
+            audit: DataAudit::new(table_name),
         }
     }
 
