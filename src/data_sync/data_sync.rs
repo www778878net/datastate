@@ -1108,8 +1108,15 @@ impl DataSync {
     /// 插入记录（自动写 sync_queue）
     /// - 自动设置 id、cid、upby、uptime
     /// - 根据 uidcid 配置决定 cid 字段写入公司ID还是用户ID
+    /// - 如果记录中已有 id，使用传入的 id；否则生成新的雪花ID
     pub fn m_add(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
-        let id = crate::snowflake::next_id_string();
+        // 如果记录中已有 id，使用传入的 id；否则生成新的雪花ID
+        let id = record.get("id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| crate::snowflake::next_id_string());
+        
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let cid_value = match self.uidcid.as_str() {
             "uid" => Self::get_uid(),

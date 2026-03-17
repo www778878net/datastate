@@ -287,13 +287,29 @@ impl LocalDB {
             })
             .unwrap_or_default();
 
-        // 过滤掉本地表不存在的字段
-        let filtered_data: HashMap<String, Value> = data.iter()
-            .filter(|(k, _)| table_columns.contains(k) || k.as_str() == "id")
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        // 过滤掉本地表不存在的字段，并按表字段顺序排列
+        let mut ordered_columns: Vec<String> = Vec::new();
+        let mut ordered_values: Vec<Value> = Vec::new();
+        
+        for col in &table_columns {
+            if let Some(v) = data.get(col) {
+                ordered_columns.push(col.clone());
+                ordered_values.push(v.clone());
+            }
+        }
+        
+        // 确保 id 字段存在
+        if !ordered_columns.contains(&"id".to_string()) {
+            if let Some(v) = data.get("id") {
+                ordered_columns.push("id".to_string());
+                ordered_values.push(v.clone());
+            }
+        }
 
-        let columns: Vec<&str> = filtered_data.keys().map(|s| s.as_str()).collect();
+        // 调试信息
+        println!("[insert] table: {}, columns: {:?}, data: {:?}", table, ordered_columns, data);
+
+        let columns: Vec<&str> = ordered_columns.iter().map(|s| s.as_str()).collect();
         let placeholders: Vec<&str> = (0..columns.len()).map(|_| "?").collect();
         let sql = format!(
             "INSERT OR REPLACE INTO {} ({}) VALUES ({})",
@@ -302,7 +318,7 @@ impl LocalDB {
             placeholders.join(", ")
         );
 
-        let values: Vec<String> = filtered_data.values().map(|v| {
+        let values: Vec<String> = ordered_values.iter().map(|v| {
             match v {
                 Value::Null => "".to_string(),
                 Value::Bool(b) => b.to_string(),
@@ -311,6 +327,8 @@ impl LocalDB {
                 Value::Array(_) | Value::Object(_) => serde_json::to_string(v).unwrap_or_default(),
             }
         }).collect();
+
+        println!("[insert] SQL: {}, values: {:?}", sql, values);
 
         let params_vec: Vec<&dyn rusqlite::ToSql> = values.iter()
             .map(|v| v as &dyn rusqlite::ToSql)
