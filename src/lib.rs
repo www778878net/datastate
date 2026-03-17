@@ -118,3 +118,12 @@ pub use workflow::{
     init_workflow_tables, init_workflow_tables_with_default_path,
     ShardingConfig, ShardType, ShardingManager, MaintenanceResult,
 };
+
+// capability 导出
+pub use capability::{BaseCapability, CapabilityBase};
+
+// instance 导出
+pub use instance::{BaseInstance, InstanceBase, InstanceResult};
+
+// components 导出
+pub use components::{BaseEntity, LifecycleManager, EconomicManager};
