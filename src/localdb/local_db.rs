@@ -593,6 +593,66 @@ impl LocalDB {
         Ok(rows_affected > 0)
     }
 
+    /// 检查表的id字段是否是主键
+    pub fn is_id_primary_key(&self, table: &str) -> Result<bool, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let sql = format!("PRAGMA table_info({})", table);
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("查询表信息失败: {}", e))?;
+        
+        let rows = stmt.query_map([], |row| {
+            let pk: i32 = row.get(5)?;
+            let name: String = row.get(1)?;
+            Ok((name, pk))
+        }).map_err(|e| format!("获取表信息失败: {}", e))?;
+        
+        for row_result in rows {
+            let (name, pk) = row_result.map_err(|e| format!("读取行失败: {}", e))?;
+            if name == "id" {
+                return Ok(pk > 0);
+            }
+        }
+        Ok(false)
+    }
+
+    /// 将id字段设置为主键（如果当前主键是idpk）
+    /// 
+    /// 重建表结构：
+    /// - id 为主键（使用雪花算法生成）
+    /// - idpk 保留用于兼容（自增，但不是主键）
+    pub fn ensure_id_is_primary_key(&self, table: &str) -> Result<bool, String> {
+        let is_pk = self.is_id_primary_key(table)?;
+        if is_pk {
+            return Ok(false);
+        }
+        
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        
+        let temp_table = format!("{}_temp_{}", table, chrono::Utc::now().format("%Y%m%d%H%M%S"));
+        
+        conn.execute_batch(&format!(
+            r#"
+            CREATE TABLE {temp} AS SELECT * FROM {table};
+            DROP TABLE {table};
+            CREATE TABLE {table} (
+                id TEXT NOT NULL PRIMARY KEY,
+                idpk INTEGER,
+                cid TEXT NOT NULL DEFAULT '',
+                kind TEXT NOT NULL DEFAULT '',
+                item TEXT NOT NULL DEFAULT '',
+                data TEXT NOT NULL DEFAULT '',
+                upby TEXT NOT NULL DEFAULT '',
+                uptime TEXT NOT NULL DEFAULT ''
+            );
+            INSERT INTO {table} SELECT * FROM {temp};
+            DROP TABLE {temp};
+            "#,
+            temp = temp_table,
+            table = table
+        )).map_err(|e| format!("修改主键失败: {}", e))?;
+        
+        Ok(true)
+    }
+
     /// 应用远程更新（插入或更新，不考虑 sync_queue）
     pub fn apply_remote_update(&self, table: &str, record_id: &str, data: &HashMap<String, Value>) -> Result<(), String> {
         // 检查本地是否存在

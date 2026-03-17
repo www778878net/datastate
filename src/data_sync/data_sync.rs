@@ -1109,7 +1109,7 @@ impl DataSync {
     /// - 自动设置 id、cid、upby、uptime
     /// - 根据 uidcid 配置决定 cid 字段写入公司ID还是用户ID
     pub fn m_add(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = crate::snowflake::next_id_string();
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let cid_value = match self.uidcid.as_str() {
             "uid" => Self::get_uid(),

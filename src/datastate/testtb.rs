@@ -78,6 +78,11 @@ impl TestTb {
         let audit = DataAudit::new("testtb");
 
         db.execute(TESTTB_CREATE_SQL).expect("建表失败");
+        
+        // 检查id是否是主键，如果不是则替换
+        if let Ok(false) = db.is_id_primary_key("testtb") {
+            let _ = db.ensure_id_is_primary_key("testtb");
+        }
 
         let config = Self::get_config();
         let dm = DataManage::get_singleton();
@@ -91,6 +96,11 @@ impl TestTb {
         let audit = DataAudit::new("testtb");
 
         db.execute(TESTTB_CREATE_SQL).expect("建表失败");
+        
+        // 检查id是否是主键，如果不是则替换
+        if let Ok(false) = db.is_id_primary_key("testtb") {
+            let _ = db.ensure_id_is_primary_key("testtb");
+        }
 
         let config = Self::get_config();
         let dm = DataManage::get_singleton();
@@ -102,7 +112,7 @@ impl TestTb {
     fn check_caller(&self, ability: &str, caller: &str) -> Result<(), String> {
         match caller {
             "testtb" => Ok(()),
-            "inventory" if matches!(ability, "getone" | "mlist" | "msave") => Ok(()),
+            "inventory" if matches!(ability, "getone" | "mlist" | "m_save") => Ok(()),
             "trade" if matches!(ability, "getone" | "mlist") => Ok(()),
             _ => Err(format!("[{}] 无权调用 testtb/{}", caller, ability)),
         }
@@ -204,20 +214,15 @@ mod tests {
 
         let testtb = TestTb::new();
 
-        let record = TestTbRecord {
-            idpk: 0,
-            id: String::new(),
-            cid: "c1".into(),
-            kind: "k1".into(),
-            item: "i1".into(),
-            data: "d1".into(),
-            upby: String::new(),
-            uptime: String::new(),
-        };
+        let mut record = std::collections::HashMap::new();
+        record.insert("cid".to_string(), serde_json::json!("c1"));
+        record.insert("kind".to_string(), serde_json::json!("k1"));
+        record.insert("item".to_string(), serde_json::json!("i1"));
+        record.insert("data".to_string(), serde_json::json!("d1"));
 
         println!("【1】testtb 调用（全部允许）");
-        let id = testtb.msave(&record, "testtb", "内部保存").expect("testtb 应该能保存");
-        println!("  - msave 成功: {}", id);
+        let id = testtb.m_save(&record, "testtb", "内部保存").expect("testtb 应该能保存");
+        println!("  - m_save 成功: {}", id);
 
         let _list = testtb.mlist("testtb", 10, "内部列表").expect("testtb 应该能列表");
         println!("  - mlist 成功: {} 条", _list.len());
@@ -225,12 +230,12 @@ mod tests {
         let _found = testtb.getone(&id, "testtb", "内部查询").expect("testtb 应该能查询");
         println!("  - getone 成功: {:?}", _found.is_some());
 
-        testtb.mdelete(&id, "testtb", "内部删除").expect("testtb 应该能删除");
-        println!("  - mdelete 成功");
+        testtb.m_del(&id, "testtb", "内部删除").expect("testtb 应该能删除");
+        println!("  - m_del 成功");
 
-        println!("\n【2】inventory 调用（允许 msave/mlist/getone）");
-        let id2 = testtb.msave(&record, "inventory", "库存保存").expect("inventory 应该能保存");
-        println!("  - msave 成功: {}", id2);
+        println!("\n【2】inventory 调用（允许 m_save/mlist/getone）");
+        let id2 = testtb.m_save(&record, "inventory", "库存保存").expect("inventory 应该能保存");
+        println!("  - m_save 成功: {}", id2);
 
         let _list = testtb.mlist("inventory", 10, "库存列表").expect("inventory 应该能列表");
         println!("  - mlist 成功");
@@ -238,9 +243,9 @@ mod tests {
         let _found = testtb.getone(&id2, "inventory", "库存查询").expect("inventory 应该能查询");
         println!("  - getone 成功");
 
-        let result = testtb.mdelete(&id2, "inventory", "尝试删除");
+        let result = testtb.m_del(&id2, "inventory", "尝试删除");
         assert!(result.is_err(), "inventory 不应该能删除");
-        println!("  - mdelete 拒绝: {}", result.unwrap_err());
+        println!("  - m_del 拒绝: {}", result.unwrap_err());
 
         println!("\n【3】trade 调用（只允许 mlist/getone）");
         let _list = testtb.mlist("trade", 10, "交易列表").expect("trade 应该能列表");
@@ -249,13 +254,13 @@ mod tests {
         let _found = testtb.getone(&id2, "trade", "交易查询").expect("trade 应该能查询");
         println!("  - getone 成功");
 
-        let result = testtb.msave(&record, "trade", "尝试保存");
+        let result = testtb.m_save(&record, "trade", "尝试保存");
         assert!(result.is_err(), "trade 不应该能保存");
-        println!("  - msave 拒绝: {}", result.unwrap_err());
+        println!("  - m_save 拒绝: {}", result.unwrap_err());
 
-        let result = testtb.mdelete(&id2, "trade", "尝试删除");
+        let result = testtb.m_del(&id2, "trade", "尝试删除");
         assert!(result.is_err(), "trade 不应该能删除");
-        println!("  - mdelete 拒绝: {}", result.unwrap_err());
+        println!("  - m_del 拒绝: {}", result.unwrap_err());
 
         println!("\n【4】unknown 调用（全部拒绝）");
         let result = testtb.mlist("unknown", 10, "未知调用");
