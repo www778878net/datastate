@@ -102,28 +102,6 @@ impl LoversDataState {
         Ok(())
     }
 
-    /// 验证 SID（简单模式）
-    /// 
-    /// 从 SID 中提取 CID，格式为 "cid" 或 "cid|other"
-    /// 不查数据库，仅做格式验证
-    pub fn verify_sid_simple(sid: &str) -> Result<VerifyResult, String> {
-        if sid.is_empty() {
-            return Err("无效的SID: sid为空".to_string());
-        }
-        
-        let cid = if sid.contains('|') {
-            sid.split('|').next().unwrap_or("").to_string()
-        } else {
-            sid.to_string()
-        };
-        
-        if cid.is_empty() {
-            return Err("无效的SID: 无法提取CID".to_string());
-        }
-        
-        Ok(VerifyResult::new(&cid, "", ""))
-    }
-
     /// 验证 SID（数据库模式）
     /// 
     /// 从数据库验证 SID 是否有效
@@ -186,5 +164,34 @@ impl LoversDataState {
 impl Default for LoversDataState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_verify_sid_empty() {
+        let state = LoversDataState::new();
+        let result = state.verify_sid("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("sid为空"));
+    }
+
+    #[test]
+    fn test_verify_sid_web_empty() {
+        let state = LoversDataState::new();
+        let result = state.verify_sid_web("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("sid_web为空"));
+    }
+
+    #[test]
+    fn test_verify_result_new() {
+        let result = VerifyResult::new("CID001", "UID001", "Test User");
+        assert_eq!(result.cid, "CID001");
+        assert_eq!(result.uid, "UID001");
+        assert_eq!(result.uname, "Test User");
     }
 }

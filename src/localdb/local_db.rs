@@ -1239,7 +1239,7 @@ mod tests {
 
     #[test]
     fn test_download_from_server() {
-        let db = LocalDB::new(None, None).expect("数据库连接失败");
+        let db = LocalDB::new(None).expect("数据库连接失败");
         let result = db.download_from_server("testtb", "http://api.example.com/testtb", 10, 0, None);
         assert!(result.is_ok() || result.is_err()); // 测试结果
     }
