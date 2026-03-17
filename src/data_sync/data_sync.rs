@@ -387,7 +387,12 @@ impl DataSync {
         let params_json = serde_json::to_string(&params).unwrap_or_default();
         let cmdtextmd5 = format!("{:x}", md5::compute(&cmdtext));
 
-        let sql = "INSERT INTO synclog (id, apisys, apimicro, apiobj, tbname, action, cmdtext, params, idrow, worker, synced, cmdtextmd5, upby, uptime) VALUES (?, 'v1', 'iflow', 'synclog', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)";
+        // 从 data 中获取 cid
+        let cid = data.get("cid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        let sql = "INSERT INTO synclog (id, apisys, apimicro, apiobj, tbname, action, cmdtext, params, idrow, worker, synced, cmdtextmd5, cid, upby, uptime) VALUES (?, 'v1', 'iflow', 'synclog', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)";
 
         let conn = self.db.get_conn();
         let conn_guard = conn.lock().map_err(|e| e.to_string())?;
@@ -404,6 +409,7 @@ impl DataSync {
                     record_id,
                     worker,
                     cmdtextmd5,
+                    cid,
                     worker,
                     uptime
                 ],
