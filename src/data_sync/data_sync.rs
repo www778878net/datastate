@@ -420,7 +420,9 @@ impl DataSync {
         
         match action {
             "insert" => {
-                let columns: Vec<&str> = data_obj.keys().map(|s| s.as_str()).collect();
+                // 使用固定的列顺序（按字母顺序排序）
+                let mut columns: Vec<&str> = data_obj.keys().map(|s| s.as_str()).collect();
+                columns.sort();
                 let placeholders: Vec<&str> = columns.iter().map(|_| "?").collect();
                 let cmdtext = format!(
                     "INSERT INTO `{}` ({}) VALUES ({})",
@@ -434,8 +436,10 @@ impl DataSync {
                 (cmdtext, params)
             }
             "update" => {
+                // 使用固定的列顺序（按字母顺序排序，排除 id）
                 let mut columns: Vec<&str> = data_obj.keys().map(|s| s.as_str()).collect();
                 columns.retain(|c| *c != "id");
+                columns.sort();
                 let set_clause = columns.iter()
                     .map(|c| format!("`{}` = ?", c))
                     .collect::<Vec<_>>()
