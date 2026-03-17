@@ -182,12 +182,10 @@ mod tests {
 
     #[test]
     fn test_ability_id_generation() {
-        use uuid::Uuid;
-
-        let id = Uuid::new_v4().to_string();
+        let id = crate::snowflake::next_id_string();
 
         assert!(!id.is_empty());
-        assert_eq!(id.len(), 36);
+        assert!(id.len() >= 18); // 雪花ID长度约18-19位
     }
 
     /// DEMO 测试: 验证 DataState 组合 DataSync 功能

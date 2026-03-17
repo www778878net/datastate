@@ -23,16 +23,16 @@ impl BaseSchema {
     /// 创建新的 BaseSchema 实例
     pub fn new() -> Self {
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: crate::snowflake::next_id_string(),
             idpk: 0,
             upby: String::new(),
             uptime: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         }
     }
 
-    /// 生成新 ID
+    /// 生成新 ID（使用雪花算法）
     pub fn new_id() -> String {
-        uuid::Uuid::new_v4().to_string()
+        crate::snowflake::next_id_string()
     }
 
     /// 获取所有系统字段名

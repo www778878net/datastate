@@ -127,7 +127,7 @@ impl AuditLogDataState {
         elapsed_ms: i64,
     ) -> Result<(), String> {
         let uptime = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = crate::snowflake::next_id_string();
 
         let conn = self.datasync.db.get_conn();
         let conn_guard = conn.lock().map_err(|e| e.to_string())?;

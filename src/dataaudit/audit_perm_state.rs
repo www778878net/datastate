@@ -6,7 +6,6 @@
 use crate::data_sync::DataSync;
 use crate::state::BaseState;
 use crate::sync_config::TableConfig;
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 
 /// 权限表创建SQL
@@ -93,8 +92,8 @@ impl AuditPermDataState {
         caller: &str,
         description: &str,
     ) -> Result<(), String> {
-        // 生成业务主键 id: UUID
-        let id = Uuid::new_v4().to_string();
+        // 生成业务主键 id: 雪花算法
+        let id = crate::snowflake::next_id_string();
 
         let sql = "INSERT OR REPLACE INTO datastate_audit (id, tablename, ability, caller, description, upby, cid, uid, uptime) VALUES (?, ?, ?, ?, ?, '', '', '', '')";
 

@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use chrono::Local;
-use uuid::Uuid;
 
 /// 查询结果
 #[derive(Debug, Clone)]
@@ -402,8 +401,8 @@ impl Sqlite78 {
         let conn = self.get_conn()?;
         let conn = conn.lock().map_err(|e| e.to_string())?;
 
-        // 生成 UUID
-        let cmdtextmd5 = Uuid::new_v4().to_string();
+        // 生成雪花ID
+        let cmdtextmd5 = crate::snowflake::next_id_string();
 
         let id = UpInfo::new_id();
         let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();

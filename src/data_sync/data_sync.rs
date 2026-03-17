@@ -357,7 +357,7 @@ impl DataSync {
         data: &serde_json::Value,
         worker: &str,
     ) -> Result<i64, String> {
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = crate::snowflake::next_id_string();
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         // 构建 cmdtext 和 params
@@ -539,7 +539,7 @@ impl DataSync {
         reason: &str,
         worker: &str,
     ) -> Result<(), String> {
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = crate::snowflake::next_id_string();
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let sql = "INSERT INTO data_state_log (id, table_name, old_status, new_status, reason, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, ?)";
 
@@ -623,7 +623,7 @@ impl DataSync {
         failed: i32,
         worker: &str,
     ) -> Result<(), String> {
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = crate::snowflake::next_id_string();
         let today = Local::now().format("%Y-%m-%d").to_string();
         let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let sql = r#"

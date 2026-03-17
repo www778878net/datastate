@@ -10,7 +10,6 @@
 use crate::dataaudit::DataAudit;
 use crate::{get_system_columns, DataManage, DataState, LocalDB, TableConfig};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// testtb 表建表 SQL
 pub const TESTTB_CREATE_SQL: &str = r#"

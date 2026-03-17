@@ -421,7 +421,7 @@ impl InstanceBase {
 
         // 确保 ID 存在
         if base.base.id.is_empty() {
-            base.base.id = uuid::Uuid::new_v4().to_string();
+            base.base.id = crate::snowflake::next_id_string();
         }
 
         // 设置工作流实例ID

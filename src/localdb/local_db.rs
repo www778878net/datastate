@@ -1007,7 +1007,7 @@ impl LocalDB {
     fn do_save_sql_log(conn: &Connection, cid: &str, apisys: &str, apimicro: &str, apiobj: &str, cmdtext: &str, dlong: i64, downlen: i64, upby: &str) -> Result<(), String> {
         let cmdtextmd5 = format!("{:x}", md5::compute(cmdtext.as_bytes()));
         let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = crate::snowflake::next_id_string();
 
         let sql = r#"
             INSERT INTO sys_sql (id, cid, apisys, apimicro, apiobj, cmdtext, num, dlong, downlen, upby, cmdtextmd5, uptime)
@@ -1049,7 +1049,7 @@ impl LocalDB {
     /// - `upby`: 操作者
     fn do_add_warn(conn: &Connection, cid: &str, kind: &str, apisys: &str, apimicro: &str, apiobj: &str, content: &str, upby: &str) -> Result<(), String> {
         let uptime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = crate::snowflake::next_id_string();
 
         let sql = "INSERT INTO sys_warn (id, cid, kind, apisys, apimicro, apiobj, content, upby, uptime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         conn.execute(&sql, params![&id, &cid, &kind, &apisys, &apimicro, &apiobj, &content, &upby, &uptime])
