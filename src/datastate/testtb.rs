@@ -207,6 +207,11 @@ impl TestTb {
         self.state.m_sync_save(record)
     }
 
+    /// 同步更新记录（不自动填充字段，不写 sync_queue）
+    pub fn m_sync_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<bool, String> {
+        self.state.m_sync_update(id, record)
+    }
+
     /// 同步删除记录（不写 sync_queue）
     pub fn m_sync_del(&self, id: &str) -> Result<bool, String> {
         self.state.m_sync_del(id)

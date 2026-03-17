@@ -23,7 +23,7 @@
 use rusqlite::{Connection, Row, Rows, params};
 use serde_json::Value;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::collections::HashMap;
 use chrono::Local;
 use base::mylogger;
@@ -82,6 +82,9 @@ impl Default for LocalDBConfig {
         }
     }
 }
+
+/// 全局数据库实例（单例模式）
+static INSTANCE: OnceLock<LocalDB> = OnceLock::new();
 
 /// 本地数据库管理类
 #[derive(Debug, Clone)]
@@ -156,7 +159,8 @@ impl LocalDB {
     }
 
     pub fn default_instance() -> Result<Self, String> {
-        Self::new(None)
+        INSTANCE.get_or_init(|| Self::new(None).expect("创建数据库失败"));
+        Ok(INSTANCE.get().unwrap().clone())
     }
 
     /// 使用指定路径创建数据库实例

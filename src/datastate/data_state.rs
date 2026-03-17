@@ -110,6 +110,13 @@ impl DataState {
         self.datasync.m_sync_save(record)
     }
 
+    /// 同步更新记录
+    /// - 用于从服务器同步更新操作到本地
+    /// - 不自动填充字段，不写 sync_queue
+    pub fn m_sync_update(&self, id: &str, record: &HashMap<String, Value>) -> Result<bool, String> {
+        self.datasync.m_sync_update(id, record)
+    }
+
     /// 同步删除记录
     /// - 用于从服务器同步删除操作到本地
     /// - 不写 sync_queue（避免循环同步）
