@@ -101,8 +101,6 @@ pub use datastate::{
     DataAudit, DATA_ABILITY_LOG_CREATE_SQL, AbilityLog,
     AuditLogDataState, AuditLogRecord, AUDIT_LOG_CREATE_SQL,
     AuditPermDataState, AuditPermRecord, AUDIT_PERM_CREATE_SQL,
-    // 用户相关
-    LoversDataState, VerifyResult, LOVERS_CREATE_SQL, LOVERS_AUTH_CREATE_SQL,
 };
 
 // datamanage 导出
