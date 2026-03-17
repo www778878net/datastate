@@ -122,6 +122,9 @@ pub use workflow::{
 // capability 导出
 pub use capability::{BaseCapability, CapabilityBase};
 
+// capability_result 导出
+pub use capability_result::CapabilityResult;
+
 // instance 导出
 pub use instance::{BaseInstance, InstanceBase, InstanceResult};
 
