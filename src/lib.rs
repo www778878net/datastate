@@ -105,6 +105,12 @@ pub use datastate::{
     LoversDataState, VerifyResult, LOVERS_CREATE_SQL, LOVERS_AUTH_CREATE_SQL,
 };
 
+// datamanage 导出
+pub use datamanage::DataManage;
+
+// sync_config 导出
+pub use sync_config::{IndexDef, TableConfig, get_system_columns};
+
 // workflow 导出
 pub use workflow::{
     WorkflowCapability, WorkflowTask, WorkflowInstance,

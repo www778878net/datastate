@@ -46,10 +46,14 @@ pub struct DataAudit {
 impl DataAudit {
     /// 创建 DataAudit 实例（默认开启审计）
     pub fn new(tablename: &str) -> Self {
+        let db = LocalDB::default();
+        // 初始化审计日志表
+        let _ = Self::init_tables(&db);
+        
         Self {
             tablename: tablename.to_string(),
             audit_enabled: true,
-            db: LocalDB::default(),
+            db,
         }
     }
 

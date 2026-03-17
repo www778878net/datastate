@@ -4,18 +4,21 @@
 //!
 //! # 用法
 //! ```rust
-//! use localdb::localdb::LocalDB;
+//! use database::LocalDB;
 //!
-//! // 方式1: 使用默认路径 (docs/config/local.db)
-//! let db = LocalDB::new(None)?;
-//! // 或
+//! // 默认实例（三级优先级：环境变量 > 配置文件 > 默认路径）
 //! let db = LocalDB::default_instance()?;
 //!
-//! // 方式2: 只读方式 (共享内存模式)
-//! let db = LocalDB::new(Some("docs/config/local.db"))?;
+//! // 多数据源场景
+//! let main_db = LocalDB::default_instance()?;
+//! let game_db = LocalDB::with_path("data/game.db")?;
+//! let log_db = LocalDB::with_path("data/logs.db")?;
 //! ```
 //!
-//! ⚠️  注意: 禁止传入其他路径，必须使用默认路径！
+//! ## 数据库路径优先级
+//! 1. 环境变量 `SQLITE_PATH`
+//! 2. 配置文件 `docs/config/{env}.ini` 中的 `[database] db_path`
+//! 3. 默认路径 `docs/config/local.db`
 
 use rusqlite::{Connection, Row, Rows, params};
 use serde_json::Value;
@@ -90,15 +93,15 @@ pub struct LocalDB {
 
 impl Default for LocalDB {
     fn default() -> Self {
-        Self::new(None, None).unwrap_or_else(|_| {
+        Self::new(None).unwrap_or_else(|_| {
             panic!("Failed to create default LocalDB")
         })
     }
 }
 
 impl LocalDB {
-    pub fn new(db_path: Option<&str>, config: Option<LocalDBConfig>) -> Result<Self, String> {
-        let path = Self::resolve_db_path(db_path)?;
+    pub fn new(config: Option<LocalDBConfig>) -> Result<Self, String> {
+        let path = Self::resolve_db_path()?;
 
         if let Some(parent) = path.parent() {
             if !parent.exists() {
@@ -126,20 +129,15 @@ impl LocalDB {
     }
 
     /// 解析数据库路径（优先级：环境变量 > 配置文件 > 默认）
-    fn resolve_db_path(db_path: Option<&str>) -> Result<PathBuf, String> {
-        // 1. 优先：显式传入的路径
-        if let Some(p) = db_path {
-            return Ok(PathBuf::from(p));
-        }
-
-        // 2. 其次：环境变量 SQLITE_PATH
+    fn resolve_db_path() -> Result<PathBuf, String> {
+        // 1. 优先：环境变量 SQLITE_PATH
         if let Ok(env_path) = std::env::var("SQLITE_PATH") {
             if !env_path.is_empty() {
                 return Ok(PathBuf::from(env_path));
             }
         }
 
-        // 3. 其次：配置文件 docs/config/{env}.ini 中的 db_path
+        // 2. 其次：配置文件 docs/config/{env}.ini 中的 db_path
         if let Ok(project_path) = ProjectPath::find() {
             if let Ok(ini_config) = project_path.load_ini_config() {
                 if let Some(database_section) = ini_config.get("database") {
@@ -150,7 +148,7 @@ impl LocalDB {
                     }
                 }
             }
-            // 4. 再次：默认路径 docs/config/local.db
+            // 3. 默认路径 docs/config/local.db
             return Ok(project_path.local_db());
         }
 
@@ -158,7 +156,36 @@ impl LocalDB {
     }
 
     pub fn default_instance() -> Result<Self, String> {
-        Self::new(None, None)
+        Self::new(None)
+    }
+
+    /// 使用指定路径创建数据库实例
+    /// 
+    /// 用于多数据源场景，如：
+    /// - 主数据库：LocalDB::default_instance()
+    /// - 游戏数据库：LocalDB::with_path("data/game.db")
+    /// - 日志数据库：LocalDB::with_path("data/logs.db")
+    pub fn with_path(db_path: &str) -> Result<Self, String> {
+        let path = PathBuf::from(db_path);
+
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("创建目录失败: {}", e))?;
+            }
+        }
+
+        let conn = Connection::open(&path)
+            .map_err(|e| format!("连接数据库失败: {}", e))?;
+
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=30000;")
+            .map_err(|e| format!("设置 PRAGMA 失败: {}", e))?;
+
+        Ok(Self {
+            conn: Arc::new(Mutex::new(conn)),
+            db_path: path,
+            config: LocalDBConfig::default(),
+        })
     }
 
     /// 获取按天分表的表名
@@ -1172,7 +1199,7 @@ mod tests {
     #[test]
     fn test_new_database() {
         let db_path = get_test_db_path();
-        let db = LocalDB::new(Some(&db_path), None);
+        let db = LocalDB::with_path(&db_path);
         assert!(db.is_ok(), "数据库连接应该成功");
 
         let db = db.unwrap();
@@ -1187,7 +1214,7 @@ mod tests {
 
     #[test]
     fn test_table_exists() {
-        let db = LocalDB::new(Some(&get_test_db_path()), None).expect("数据库连接失败");
+        let db = LocalDB::with_path(&get_test_db_path()).expect("数据库连接失败");
         let exists = db.table_exists("non_existent_table_12345");
         assert!(exists.is_ok(), "查询表存在应该成功");
         assert!(!exists.unwrap(), "不存在的表应该返回 false");

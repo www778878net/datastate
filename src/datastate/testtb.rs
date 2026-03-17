@@ -94,7 +94,10 @@ impl TestTb {
     }
 
     pub fn with_db_path(db_path: &str) -> Self {
-        let db = LocalDB::new(Some(db_path), None).expect("创建数据库失败");
+        // 设置环境变量来指定数据库路径
+        std::env::set_var("SQLITE_PATH", db_path);
+        
+        let db = LocalDB::new(None).expect("创建数据库失败");
         let audit = DataAudit::new("testtb");
 
         db.execute(TESTTB_CREATE_SQL).expect("建表失败");
@@ -196,6 +199,17 @@ impl TestTb {
     pub fn m_del(&self, id: &str, caller: &str, summary: &str) -> Result<bool, String> {
         self.check_caller("m_del", caller)?;
         self.state.m_del(id, caller, summary)
+    }
+
+    /// 同步保存记录（不自动填充字段，不写 sync_queue）
+    /// 用于从服务器同步数据到本地
+    pub fn m_sync_save(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
+        self.state.m_sync_save(record)
+    }
+
+    /// 同步删除记录（不写 sync_queue）
+    pub fn m_sync_del(&self, id: &str) -> Result<bool, String> {
+        self.state.m_sync_del(id)
     }
 }
 

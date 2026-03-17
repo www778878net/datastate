@@ -223,8 +223,8 @@ impl DataSync {
     pub fn new(table_name: &str) -> Self {
         Self {
             table_name: table_name.to_string(),
-            db: LocalDB::new(None, None)
-                .unwrap_or_else(|_| LocalDB::new(Some("data.db"), None).expect("创建数据库失败")),
+            db: LocalDB::default_instance()
+                .unwrap_or_else(|_| LocalDB::new(None).expect("创建数据库失败")),
             apiurl: String::new(),
             download_interval: 300,
             upload_interval: 300,
@@ -268,8 +268,8 @@ impl DataSync {
     pub fn from_config(config: &crate::sync_config::TableConfig) -> Self {
         Self {
             table_name: config.name.clone(),
-            db: LocalDB::new(None, None)
-                .unwrap_or_else(|_| LocalDB::new(Some("data.db"), None).expect("创建数据库失败")),
+            db: LocalDB::default_instance()
+                .unwrap_or_else(|_| LocalDB::new(None).expect("创建数据库失败")),
             apiurl: config.apiurl.clone(),
             download_interval: config.download_interval,
             upload_interval: config.upload_interval,
@@ -1217,6 +1217,55 @@ impl DataSync {
         Ok(true)
     }
 
+    /// 同步插入记录（不自动填充字段，不写 sync_queue）
+    /// 用于从服务器同步数据到本地，或从客户端同步数据到服务器
+    /// 完整保存传入的数据，不自动填充 CID、upby、uptime
+    pub fn m_sync_add(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
+        let id = record.get("id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| crate::snowflake::next_id_string());
+
+        let mut record_with_id = record.clone();
+        record_with_id.insert("id".to_string(), serde_json::json!(id));
+
+        self.db.insert(&self.table_name, &record_with_id)?;
+        Ok(id)
+    }
+
+    /// 同步更新记录（不自动填充字段，不写 sync_queue）
+    /// 用于从服务器同步数据到本地，或从客户端同步数据到服务器
+    pub fn m_sync_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<bool, String> {
+        let updated = self.db.update(&self.table_name, id, record)?;
+        Ok(updated)
+    }
+
+    /// 同步保存记录（存在更新，不存在插入，不自动填充字段，不写 sync_queue）
+    /// 用于从服务器同步数据到本地，或从客户端同步数据到服务器
+    pub fn m_sync_save(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
+        if let Some(id_value) = record.get("id") {
+            if let Some(id) = id_value.as_str() {
+                if !id.is_empty() {
+                    let sql = format!("SELECT id FROM {} WHERE id = ?", self.table_name);
+                    let exists = self.db.query(&sql, &[&id])?;
+                    if !exists.is_empty() {
+                        self.m_sync_update(id, record)?;
+                        return Ok(id.to_string());
+                    }
+                }
+            }
+        }
+        self.m_sync_add(record)
+    }
+
+    /// 同步删除记录（不写 sync_queue）
+    pub fn m_sync_del(&self, id: &str) -> Result<bool, String> {
+        let sql = format!("DELETE FROM {} WHERE id = ?", self.table_name);
+        self.db.execute_with_params(&sql, &[&id])?;
+        Ok(true)
+    }
+
     /// 查询记录
     /// where_clause 可以是条件（如 "id = ?"）或完整子句（如 "ORDER BY idpk DESC LIMIT 10"）
     pub fn get(&self, where_clause: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<std::collections::HashMap<String, serde_json::Value>>, String> {
@@ -1348,7 +1397,7 @@ mod tests {
 
     #[test]
     fn test_init_tables() {
-        let db = LocalDB::new(None, None).expect("创建数据库失败");
+        let db = LocalDB::default_instance().expect("创建数据库失败");
         DataSync::init_tables(&db).expect("初始化表失败");
 
         // 验证表是否创建成功

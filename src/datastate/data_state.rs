@@ -102,6 +102,21 @@ impl DataState {
         self.datasync.m_del(id)
     }
 
+    /// 同步保存记录（存在更新，不存在插入）
+    /// - 用于从服务器同步数据到本地，或从客户端同步数据到服务器
+    /// - 不自动填充 CID、upby、uptime
+    /// - 不写 sync_queue（避免循环同步）
+    pub fn m_sync_save(&self, record: &HashMap<String, Value>) -> Result<String, String> {
+        self.datasync.m_sync_save(record)
+    }
+
+    /// 同步删除记录
+    /// - 用于从服务器同步删除操作到本地
+    /// - 不写 sync_queue（避免循环同步）
+    pub fn m_sync_del(&self, id: &str) -> Result<bool, String> {
+        self.datasync.m_sync_del(id)
+    }
+
     /// 查询记录
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
