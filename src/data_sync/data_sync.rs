@@ -208,6 +208,11 @@ pub struct DataSync {
     /// 隔离字段类型：cid=公司隔离, uid=用户隔离
     pub uidcid: String,
 
+    /// 是否启用下载
+    pub download_enabled: bool,
+    /// 是否启用上传
+    pub upload_enabled: bool,
+
     /// 上次下载时间
     pub last_download: f64,
     /// 上次上传时间
@@ -235,6 +240,8 @@ impl DataSync {
             getnumber: 2000,
             min_pending: 0,
             uidcid: "cid".to_string(),
+            download_enabled: true,
+            upload_enabled: true,
             last_download: 0.0,
             last_upload: 0.0,
             error_message: String::new(),
@@ -257,6 +264,8 @@ impl DataSync {
             getnumber: 2000,
             min_pending: 0,
             uidcid: "cid".to_string(),
+            download_enabled: true,
+            upload_enabled: true,
             last_download: 0.0,
             last_upload: 0.0,
             error_message: String::new(),
@@ -280,6 +289,8 @@ impl DataSync {
             getnumber: config.getnumber,
             min_pending: config.min_pending,
             uidcid: config.uidcid.clone(),
+            download_enabled: config.download_enabled,
+            upload_enabled: config.upload_enabled,
             last_download: 0.0,
             last_upload: 0.0,
             error_message: String::new(),

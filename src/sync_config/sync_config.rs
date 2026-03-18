@@ -92,8 +92,17 @@ pub struct TableConfig {
     /// 隔离字段类型：cid(默认)=公司隔离, uid=用户隔离, 空=公共表
     #[serde(default = "default_uidcid")]
     pub uidcid: String,
+
+    /// 是否启用下载（默认 true）
+    #[serde(default = "default_true")]
+    pub download_enabled: bool,
+
+    /// 是否启用上传（默认 true）
+    #[serde(default = "default_true")]
+    pub upload_enabled: bool,
 }
 
+fn default_true() -> bool { true }
 fn default_download_interval() -> i64 { 300 }
 fn default_upload_interval() -> i64 { 300 }
 fn default_init_getnumber() -> i32 { 0 }
@@ -236,6 +245,8 @@ impl Default for TableConfig {
             partition_by_day: false,
             retention_days: 0,
             uidcid: default_uidcid(),
+            download_enabled: true,
+            upload_enabled: true,
         }
     }
 }

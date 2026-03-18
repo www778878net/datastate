@@ -253,7 +253,8 @@ impl DataManage {
         match sync_key.rfind('_') {
             Some(pos) if pos > 0 => {
                 let suffix = &sync_key[pos + 1..];
-                if suffix.len() == 8 && suffix.chars().all(|c| c.is_ascii_hexdigit()) {
+                // 支持 8 或 16 个字符的十六进制后缀
+                if (suffix.len() == 8 || suffix.len() == 16) && suffix.chars().all(|c| c.is_ascii_hexdigit()) {
                     sync_key[..pos].to_string()
                 } else {
                     sync_key.to_string()
@@ -265,18 +266,7 @@ impl DataManage {
 
     /// 获取待同步数据数量
     fn get_pending_count(&self, sync_key: &str) -> i32 {
-        let table_name = match sync_key.rfind('_') {
-            Some(pos) if pos > 0 => {
-                let suffix = &sync_key[pos + 1..];
-                if suffix.len() == 8 && suffix.chars().all(|c| c.is_ascii_hexdigit()) {
-                    &sync_key[..pos]
-                } else {
-                    sync_key
-                }
-            }
-            _ => sync_key,
-        };
-
+        let table_name = self.extract_table_name(sync_key);
         let sql = "SELECT COUNT(*) FROM synclog WHERE tbname = ? AND synced = 0";
         match self.db.query(sql, &[&table_name as &dyn rusqlite::ToSql]) {
             Ok(results) if !results.is_empty() => {
@@ -285,9 +275,9 @@ impl DataManage {
                     .next()
                     .and_then(|v| v.as_i64())
                     .map(|n| n as i32)
-                    .unwrap_or(0)
+                    .unwrap_or_default()
             }
-            _ => 0,
+            _ => 0
         }
     }
 
@@ -380,8 +370,14 @@ impl DataManage {
 
         let state_keys: Vec<String> = {
             let states = self.states.read();
-            states.keys().cloned().collect()
+            let keys: Vec<String> = states.keys().cloned().collect();
+            keys
         };
+
+        if state_keys.is_empty() {
+            let logger = mylogger!();
+            logger.info("[DataManage] sync_once: states 为空，没有注册的表");
+        }
 
         for sync_key in state_keys {
             if let Some(mut state) = self.get_state(&sync_key) {
@@ -392,21 +388,30 @@ impl DataManage {
                 let table_name = self.extract_table_name(&sync_key);
                 let local_count = self.db.count(&table_name).unwrap_or(0);
 
-                let need_download = state.datasync.need_download(
+                // 检查是否启用下载
+                let need_download = state.datasync.download_enabled && state.datasync.need_download(
                     state.datasync.download_interval,
                     state.datasync.last_download,
                     state.datasync.min_pending,
                     local_count,
                     state.base.is_idle()
                 );
+                // 检查是否启用上传
                 let pending_count = self.get_pending_count(&sync_key);
-                let need_upload = state.datasync.need_upload(
+                let need_upload = state.datasync.upload_enabled && state.datasync.need_upload(
                     state.datasync.upload_interval,
                     state.datasync.last_upload,
                     pending_count,
                     state.base.is_idle()
                 );
                 
+                {
+                    let logger = mylogger!();
+                    logger.info(&format!(
+                        "[DataManage] sync_once: table={}, need_download={}, need_upload={}, pending_count={}, upload_enabled={}",
+                        table_name, need_download, need_upload, pending_count, state.datasync.upload_enabled
+                    ));
+                }
 
                 if need_download || need_upload {
                     state.base.set_working();
@@ -516,6 +521,40 @@ impl DataManage {
                 datawf: crate::data_sync::SyncData::default(),
             },
         }
+    }
+
+    /// 启动后台同步线程
+    /// 每10秒检测上传下载，每5分钟调用doWork
+    pub fn run(&self) -> std::thread::JoinHandle<()> {
+        let manager = self.clone();
+        
+        std::thread::spawn(move || {
+            let logger = mylogger!();
+            logger.info("[DataManage] 后台同步线程启动");
+            
+            // 启动时立即执行一次同步
+            let result = manager.sync_once();
+            if result.datawf.inserted > 0 || result.datawf.updated > 0 {
+                logger.info(&format!(
+                    "[DataManage] 初始同步完成: inserted={}, updated={}",
+                    result.datawf.inserted, result.datawf.updated
+                ));
+            }
+            
+            loop {
+                // 每10秒循环一次
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                
+                // 执行一次同步检测
+                let result = manager.sync_once();
+                if result.datawf.inserted > 0 || result.datawf.updated > 0 {
+                    logger.info(&format!(
+                        "[DataManage] 同步完成: inserted={}, updated={}",
+                        result.datawf.inserted, result.datawf.updated
+                    ));
+                }
+            }
+        })
     }
 
     /// 调用服务器端 replayBatch 回放日志
