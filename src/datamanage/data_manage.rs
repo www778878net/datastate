@@ -34,6 +34,8 @@ pub struct DataManage {
     registered_tables: Arc<RwLock<HashMap<String, TableConfig>>>,
     /// 日志记录器
     logger: Arc<base::mylogger::MyLogger>,
+    /// 上次调用 doWork 的时间戳
+    last_dowork_time: Arc<RwLock<f64>>,
 }
 
 impl DataManage {
@@ -50,6 +52,7 @@ impl DataManage {
             db: Arc::new(db),
             registered_tables: Arc::new(RwLock::new(HashMap::new())),
             logger,
+            last_dowork_time: Arc::new(RwLock::new(0.0)),
         };
         // 确保 sync_queue 表存在
         manager.ensure_synclog()?;
@@ -67,15 +70,6 @@ impl DataManage {
             self.db.execute(SYNCLOG_CREATE_SQL)?;
         }
         Ok(())
-    }
-
-    /// 获取当前时间戳
-    #[allow(dead_code)]
-    fn current_time() -> f64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs_f64()
     }
 
     /// 生成同步配置的唯一标识符
@@ -474,9 +468,16 @@ impl DataManage {
             }
         }
 
-        // 所有表同步完成后，调用服务器端 replayBatch 回放日志
-        if total_inserted > 0 || total_updated > 0 {
-            let _ = self.call_replay_batch();
+        // 每5分钟调用一次 doWork 回放日志
+        let now = crate::data_sync::DataSync::current_time();
+        let last_dowork = *self.last_dowork_time.read();
+        if now - last_dowork >= 300.0 {
+            if let Ok(processed) = self.call_replay_batch() {
+                if processed > 0 {
+                    self.logger.info(&format!("[DataManage] doWork 回放 {} 条日志", processed));
+                }
+            }
+            *self.last_dowork_time.write() = now;
         }
 
         SyncResult {
@@ -489,6 +490,30 @@ impl DataManage {
                 failed: if total_errors > 0 { Some(total_errors as i32) } else { None },
                 total: None,
                 errors: None,
+            },
+        }
+    }
+
+    /// 执行一次 doWork 回放日志（每5分钟调用一次）
+    pub fn do_work_once(&self) -> SyncResult {
+        let result = self.call_replay_batch();
+        match result {
+            Ok(processed) => SyncResult {
+                res: 0,
+                errmsg: String::new(),
+                datawf: crate::data_sync::SyncData {
+                    inserted: processed,
+                    updated: 0,
+                    skipped: 0,
+                    failed: None,
+                    total: None,
+                    errors: None,
+                },
+            },
+            Err(e) => SyncResult {
+                res: -1,
+                errmsg: e,
+                datawf: crate::data_sync::SyncData::default(),
             },
         }
     }
