@@ -283,7 +283,7 @@ impl DataManage {
             _ => sync_key,
         };
 
-        let sql = "SELECT COUNT(*) FROM sync_queue WHERE table_name = ? AND synced = 0";
+        let sql = "SELECT COUNT(*) FROM synclog WHERE tbname = ? AND synced = 0";
         match self.db.query(sql, &[&table_name as &dyn rusqlite::ToSql]) {
             Ok(results) if !results.is_empty() => {
                 results[0]
