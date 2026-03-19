@@ -404,14 +404,6 @@ impl DataManage {
                     pending_count,
                     state.base.is_idle()
                 );
-                
-                {
-                    let logger = mylogger!();
-                    logger.info(&format!(
-                        "[DataManage] sync_once: table={}, need_download={}, need_upload={}, pending_count={}, upload_enabled={}",
-                        table_name, need_download, need_upload, pending_count, state.datasync.upload_enabled
-                    ));
-                }
 
                 if need_download || need_upload {
                     state.base.set_working();

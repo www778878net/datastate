@@ -760,6 +760,7 @@ impl DataSync {
     ///
     /// 从服务器下载数据并保存到本地数据库
     /// 首次下载使用分页方式，避免一次性获取大量数据
+    /// 本地有数据的不做初始化下载（is_first_download = local_count == 0）
     pub fn download_once(&self) -> SyncResult {
         if self.table_name.is_empty() {
             return SyncResult {
@@ -772,6 +773,8 @@ impl DataSync {
         let local_count = self.get_local_count();
         let is_first_download = local_count == 0;
 
+        // 本地有数据但 last_download == 0.0，说明数据不是通过下载得到的
+        // 不做初始化下载，直接返回成功
         if local_count > 0 && self.last_download == 0.0 {
             return SyncResult {
                 res: 0,
