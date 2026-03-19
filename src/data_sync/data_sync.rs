@@ -1305,12 +1305,6 @@ impl DataSync {
         Ok(result.into_iter().next())
     }
 
-    /// 查询所有记录
-    pub fn get_all(&self, limit: i32) -> Result<Vec<std::collections::HashMap<String, serde_json::Value>>, String> {
-        let sql = format!("SELECT * FROM {} ORDER BY idpk DESC LIMIT {}", self.table_name, limit);
-        self.db.query(&sql, &[])
-    }
-
     /// 统计记录数
     pub fn count(&self) -> Result<i32, String> {
         self.db.count(&self.table_name)

@@ -140,14 +140,6 @@ impl DataState {
         self.datasync.get_one(id)
     }
 
-    /// 查询所有记录
-    /// - 权限检查：验证caller是否有权限调用此方法
-    /// - 审计日志：通过log_action_with_count记录操作摘要
-    pub fn get_all(&self, limit: i32, caller: &str, summary: &str) -> Result<Vec<HashMap<String, Value>>, String> {
-        self.audit.check_permission("get_all", caller, summary)?;
-        self.datasync.get_all(limit)
-    }
-
     /// 统计记录数
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
