@@ -97,6 +97,10 @@ pub use datastate::{
     DataState, DataSync, SynclogItem, SYNCLOG_CREATE_SQL,
     DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL,
     StateLog, SyncStats,
+    // MySQL 版本
+    DataStateMysql, DataSyncMysql, SynclogItemMysql, SyncStatsMysql, StateLogMysql,
+    SyncResultMysql, SyncDataMysql,
+    SYNCLOG_CREATE_SQL_MYSQL, DATA_STATE_LOG_CREATE_SQL_MYSQL, DATA_SYNC_STATS_CREATE_SQL_MYSQL,
     // 审计相关
     DataAudit, DATA_ABILITY_LOG_CREATE_SQL, AbilityLog,
     AuditLogDataState, AuditLogRecord, AUDIT_LOG_CREATE_SQL,
