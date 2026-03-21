@@ -939,13 +939,14 @@ impl LocalDB {
         }
 
         let cols = vec![
-            "apisys", "apimicro", "apiobj", "tbname", "action", 
+            "id", "apisys", "apimicro", "apiobj", "tbname", "action", 
             "cmdtext", "params", "idrow", "worker", "synced",
             "lasterrinfo", "cmdtextmd5", "num", "dlong", "downlen"
         ];
 
         let mut pars: Vec<Value> = Vec::new();
         for item in items {
+            pars.push(Value::String(item.id.clone()));
             pars.push(Value::String(item.apisys.clone()));
             pars.push(Value::String(item.apimicro.clone()));
             pars.push(Value::String(item.apiobj.clone()));
@@ -997,19 +998,19 @@ impl LocalDB {
                 
                 if let Some(back) = back_obj.get("back") {
                     if let Some(back_obj) = back.as_object() {
-                        // 新格式：successCount, failedCount, successIds, failedRecords
+                        // 新格式：successIdrows, failedRecords
                         if let Some(count) = back_obj.get("successCount").and_then(|v| v.as_i64()) {
                             inserted = count as i32;
                         }
                         
-                        // 解析 failedRecords
+                        // 解析 failedRecords: [{idrow, lasterrinfo}]
                         if let Some(failed_list) = back_obj.get("failedRecords").and_then(|v| v.as_array()) {
                             for (idx, err) in failed_list.iter().enumerate() {
                                 if let Some(err_obj) = err.as_object() {
                                     errors.push(crate::data_sync::SyncValidationError {
                                         index: idx as i32,
                                         idrow: err_obj.get("idrow").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                        error: err_obj.get("error").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                        error: err_obj.get("lasterrinfo").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                                     });
                                 }
                             }
