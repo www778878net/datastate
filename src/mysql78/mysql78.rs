@@ -105,6 +105,26 @@ impl Default for Mysql78 {
     }
 }
 
+impl std::fmt::Debug for Mysql78 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Mysql78")
+            .field("host", &self.host)
+            .field("config", &self.config)
+            .field("pool", &self.pool.as_ref().map(|_| "Pool"))
+            .finish()
+    }
+}
+
+impl Clone for Mysql78 {
+    fn clone(&self) -> Self {
+        Self {
+            pool: self.pool.clone(),
+            config: self.config.clone(),
+            host: self.host.clone(),
+        }
+    }
+}
+
 impl Mysql78 {
     /// 重试次数
     const MAX_RETRY_ATTEMPTS: u32 = 3;

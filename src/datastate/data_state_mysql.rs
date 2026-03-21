@@ -6,7 +6,7 @@
 //! - DataSyncMysql: 同步队列管理
 //! - DataAudit: 权限检查和审计日志
 
-use crate::data_sync::data_sync_mysql::DataSyncMysql;
+use crate::data_sync::DataSyncMysql;
 use crate::dataaudit::DataAudit;
 use crate::mysql78::{Mysql78, MysqlConfig};
 use crate::state::BaseState;
