@@ -142,7 +142,7 @@ impl Mysql78 {
         }
 
         let url = format!(
-            "mysql://{}:{}@{}:{}/{}?connect_timeout=30&wait_timeout=30",
+            "mysql://{}:{}@{}:{}/{}",
             self.config.user,
             self.config.password,
             self.config.host,
