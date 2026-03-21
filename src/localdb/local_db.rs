@@ -997,6 +997,25 @@ impl LocalDB {
                 
                 if let Some(back) = back_obj.get("back") {
                     if let Some(back_obj) = back.as_object() {
+                        // 新格式：successCount, failedCount, successIds, failedRecords
+                        if let Some(count) = back_obj.get("successCount").and_then(|v| v.as_i64()) {
+                            inserted = count as i32;
+                        }
+                        
+                        // 解析 failedRecords
+                        if let Some(failed_list) = back_obj.get("failedRecords").and_then(|v| v.as_array()) {
+                            for (idx, err) in failed_list.iter().enumerate() {
+                                if let Some(err_obj) = err.as_object() {
+                                    errors.push(crate::data_sync::SyncValidationError {
+                                        index: idx as i32,
+                                        idrow: err_obj.get("idrow").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                        error: err_obj.get("error").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                    });
+                                }
+                            }
+                        }
+                        
+                        // 兼容旧格式：batches, errors
                         if let Some(count) = back_obj.get("batches").and_then(|v| v.as_i64()) {
                             inserted = count as i32;
                         }

@@ -996,7 +996,7 @@ impl DataSync {
     /// 执行一次上传
     ///
     /// 将本地 synclog 批量上传到服务器
-    /// 验证失败的记录会被标记为 synced=-1 并记录错误信息
+    /// 根据服务器返回的 successIds 和 failedRecords 更新本地 synclog 表
     pub fn upload_once(&self) -> SyncResult {
         if self.table_name.is_empty() {
             return SyncResult {
@@ -1022,13 +1022,26 @@ impl DataSync {
 
         match result {
             Ok((inserted, errors)) => {
-                let synced_ids: Vec<i64> = pending_items.iter().map(|item| item.idpk).collect();
-                
-                if !synced_ids.is_empty() {
-                    let _ = self.mark_synced(&synced_ids);
-                }
-
+                // errors 包含失败的记录信息（idrow 和 error）
                 let failed_count = errors.len() as i32;
+                let success_count = inserted;
+                
+                // 构建失败记录的 idrow 集合
+                let failed_idrows: std::collections::HashSet<&str> = errors.iter()
+                    .map(|e| e.idrow.as_str())
+                    .collect();
+                
+                // 标记成功的记录（不在失败列表中的）
+                for item in &pending_items {
+                    if !failed_idrows.contains(item.idrow.as_str()) {
+                        let _ = self.db.execute(&format!(
+                            "UPDATE synclog SET synced = 1 WHERE idrow = '{}'",
+                            item.idrow
+                        ));
+                    }
+                }
+                
+                // 标记失败的记录
                 let error_messages: Vec<String> = errors.iter().map(|e| format!("{}: {}", e.idrow, e.error)).collect();
                 
                 if !errors.is_empty() {
@@ -1045,7 +1058,7 @@ impl DataSync {
                     res: 0,
                     errmsg: String::new(),
                     datawf: SyncData {
-                        inserted,
+                        inserted: success_count,
                         updated: 0,
                         skipped: 0,
                         failed: Some(failed_count),
