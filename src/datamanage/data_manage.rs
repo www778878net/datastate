@@ -34,8 +34,6 @@ pub struct DataManage {
     registered_tables: Arc<RwLock<HashMap<String, TableConfig>>>,
     /// 日志记录器
     logger: Arc<base::mylogger::MyLogger>,
-    /// 上次调用 doWork 的时间戳
-    last_dowork_time: Arc<RwLock<f64>>,
 }
 
 impl DataManage {
@@ -52,7 +50,6 @@ impl DataManage {
             db: Arc::new(db),
             registered_tables: Arc::new(RwLock::new(HashMap::new())),
             logger,
-            last_dowork_time: Arc::new(RwLock::new(0.0)),
         };
         // 确保 sync_queue 表存在
         manager.ensure_synclog()?;
@@ -465,18 +462,6 @@ impl DataManage {
             }
         }
 
-        // 每5分钟调用一次 doWork 回放日志
-        let now = crate::data_sync::DataSync::current_time();
-        let last_dowork = *self.last_dowork_time.read();
-        if now - last_dowork >= 300.0 {
-            if let Ok(processed) = self.call_replay_batch() {
-                if processed > 0 {
-                    self.logger.info(&format!("[DataManage] doWork 回放 {} 条日志", processed));
-                }
-            }
-            *self.last_dowork_time.write() = now;
-        }
-
         SyncResult {
             res: 0,
             errmsg: String::new(),
@@ -491,32 +476,8 @@ impl DataManage {
         }
     }
 
-    /// 执行一次 doWork 回放日志（每5分钟调用一次）
-    pub fn do_work_once(&self) -> SyncResult {
-        let result = self.call_replay_batch();
-        match result {
-            Ok(processed) => SyncResult {
-                res: 0,
-                errmsg: String::new(),
-                datawf: crate::data_sync::SyncData {
-                    inserted: processed,
-                    updated: 0,
-                    skipped: 0,
-                    failed: None,
-                    total: None,
-                    errors: None,
-                },
-            },
-            Err(e) => SyncResult {
-                res: -1,
-                errmsg: e,
-                datawf: crate::data_sync::SyncData::default(),
-            },
-        }
-    }
-
     /// 启动后台同步线程
-    /// 每10秒检测上传下载，每5分钟调用doWork
+    /// 每10秒检测上传下载
     pub fn run(&self) -> std::thread::JoinHandle<()> {
         let manager = self.clone();
         
@@ -547,42 +508,6 @@ impl DataManage {
                 }
             }
         })
-    }
-
-    /// 调用服务器端 replayBatch 回放日志
-    fn call_replay_batch(&self) -> Result<i32, String> {
-        use base::http::HttpHelper;
-
-        let sid = self.db.get_sid();
-        if sid.is_empty() {
-            return Err("配置文件未找到 SID".to_string());
-        }
-
-        let url = "http://log.778878.net/apisvc/backsvc/synclog/doWork";
-        let request_payload = serde_json::json!({
-            "sid": sid
-        });
-
-        let response = HttpHelper::post(url, None, Some(&request_payload), None, false, None, 30, 2);
-
-        let logger = mylogger!();
-        logger.info(&format!("[DataManage] replayBatch 响应: res={}, errmsg={}", 
-            response.res, response.errmsg));
-
-        if response.res != 0 {
-            return Err(response.errmsg);
-        }
-
-        // 解析返回结果
-        if let Some(ref resp_data) = response.data {
-            if let Some(back) = resp_data.response.get("back") {
-                if let Some(processed) = back.get("processed") {
-                    return Ok(processed.as_i64().unwrap_or(0) as i32);
-                }
-            }
-        }
-
-        Ok(0)
     }
 }
 
