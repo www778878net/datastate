@@ -153,7 +153,7 @@ pub struct SyncDataMysql {
 // ========== DataSyncMysql 组件 ==========
 
 /// DataSyncMysql - MySQL 版本同步队列组件
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DataSyncMysql {
     /// 表名
     pub table_name: String,
@@ -197,9 +197,23 @@ pub struct DataSyncMysql {
     pub last_upload: f64,
 
     /// 错误信息
-    pub error_message: String,
-    /// 错误时间
-    pub error_time: f64,
+    pub last_error: Option<String>,
+}
+
+impl std::fmt::Debug for DataSyncMysql {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DataSyncMysql")
+            .field("table_name", &self.table_name)
+            .field("apiurl", &self.apiurl)
+            .field("download_interval", &self.download_interval)
+            .field("upload_interval", &self.upload_interval)
+            .field("download_enabled", &self.download_enabled)
+            .field("upload_enabled", &self.upload_enabled)
+            .field("last_download", &self.last_download)
+            .field("last_upload", &self.last_upload)
+            .field("last_error", &self.last_error)
+            .finish()
+    }
 }
 
 impl DataSyncMysql {
@@ -222,8 +236,7 @@ impl DataSyncMysql {
             upload_enabled: true,
             last_download: 0.0,
             last_upload: 0.0,
-            error_message: String::new(),
-            error_time: 0.0,
+            last_error: None,
         }
     }
 

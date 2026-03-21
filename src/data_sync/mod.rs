@@ -8,7 +8,7 @@
 //! - DataSyncMysql: MySQL 版本
 
 mod data_sync;
-mod data_sync_mysql;
+pub mod data_sync_mysql;
 
 // SQLite 版本导出
 pub use data_sync::{

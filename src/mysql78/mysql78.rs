@@ -93,6 +93,7 @@ pub struct MysqlInsertResult {
 }
 
 /// Mysql78 - MySQL 数据库操作类
+#[derive(Clone)]
 pub struct Mysql78 {
     pool: Option<Arc<Mutex<Pool>>>,
     config: MysqlConfig,
