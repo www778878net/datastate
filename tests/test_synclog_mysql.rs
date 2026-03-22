@@ -36,11 +36,9 @@ const DEFAULT_CID: &str = "GUEST000-8888-8888-8888-GUEST00GUEST";
 /// guest3 用户的 CID（用于帐套隔离测试）
 const GUEST3_CID: &str = "GUEST003-8888-8888-8888-GUEST00GUEST";
 
-/// 默认测试 SID（cid|worker 格式）
-const DEFAULT_SID: &str = "GUEST000-8888-8888-8888-GUEST00GUEST|test_worker";
-
-/// guest3 用户的 SID
-const GUEST3_SID: &str = "GUEST003-8888-8888-8888-GUEST00GUEST|guest3_worker";
+/// 测试 SID（UUID 格式，验证失败会使用 GUEST 身份）
+const DEFAULT_SID: &str = "GUEST000-8888-8888-8888-GUEST00GUEST";
+const GUEST3_SID: &str = "GUEST003-8888-8888-8888-GUEST00GUEST";
 
 // ========== 测试数据结构 ==========
 
@@ -212,13 +210,9 @@ fn upload_synclog_to_api(
     let bytedata = batch.encode_to_vec();
     let bytedata_base64 = general_purpose::STANDARD.encode(&bytedata);
 
-    // 从 SID 中提取 cid（格式：cid|worker）
-    let cid = sid.split('|').next().unwrap_or("").to_string();
-
-    // 构建请求
+    // 构建请求（cid 由服务端从测试 SID 中自动提取）
     let request_body = serde_json::json!({
         "sid": sid,
-        "cid": cid,
         "jsdata": bytedata_base64,
     });
 
