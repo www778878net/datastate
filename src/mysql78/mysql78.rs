@@ -404,11 +404,9 @@ fn json_values_to_mysql_params(values: &[Value]) -> mysql::Params {
         return mysql::Params::Empty;
     }
 
-    let mut params = Vec::new();
-    for (i, v) in values.iter().enumerate() {
-        params.push((format!("p{}", i), json_to_mysql_value(v)));
-    }
-    mysql::Params::from(params)
+    // 使用位置参数格式
+    let params: Vec<mysql::Value> = values.iter().map(|v| json_to_mysql_value(v)).collect();
+    mysql::Params::Positional(params)
 }
 
 /// 将 serde_json::Value 转换为 mysql::Value
