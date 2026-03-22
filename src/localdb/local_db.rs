@@ -792,9 +792,9 @@ impl LocalDB {
         });
 
         if let Some(cond) = download_condition {
-            if let Some(arr) = cond.as_array() {
+            if let Some(_arr) = cond.as_array() {
                 request_payload["pars"] = cond.clone();
-            } else if let Some(obj) = cond.as_object() {
+            } else if let Some(_obj) = cond.as_object() {
                 request_payload["data"] = cond.clone();
             }
         }

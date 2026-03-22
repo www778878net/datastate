@@ -210,7 +210,7 @@ pub trait BaseInstance: Send + Sync {
         let up = UpInfo::new();
         let json = self.to_instance_json();
 
-        let id = workflow_instance.insert(&json, &up)?;
+        let _id = workflow_instance.insert(&json, &up)?;
 
         Ok(())
     }

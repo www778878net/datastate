@@ -9,6 +9,7 @@
 //! 3. data_sync_stats - 同步统计（按天）
 
 use crate::localdb::LocalDB;
+use base::mylogger;
 use base::project_path::ProjectPath;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
@@ -854,11 +855,12 @@ impl DataSync {
         }
 
         if !all_errors.is_empty() {
-            eprintln!(
+            let logger = mylogger!();
+            logger.error(&format!(
                 "[DataSync] {} 分页同步错误: {}",
                 self.table_name,
                 all_errors.join("; ")
-            );
+            ));
         }
 
         SyncResult {
@@ -1215,6 +1217,7 @@ impl DataSync {
         let upby = Self::get_uname();
 
         let mut record_with_meta = record.clone();
+        record_with_meta.insert("id".to_string(), serde_json::json!(id));  // 确保 id 字段存在，用于 synclog
         if !cid_value.is_empty() {
             record_with_meta.insert("cid".to_string(), serde_json::json!(cid_value));
         }

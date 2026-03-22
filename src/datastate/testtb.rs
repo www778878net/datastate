@@ -8,9 +8,7 @@
 //! - trade: 交易服务，只读查询
 
 use crate::dataaudit::DataAudit;
-use crate::datamanage::DataManage;
 use crate::datastate::DataState;
-use crate::data_sync::DataSync;
 use crate::localdb::LocalDB;
 use crate::sync_config::{get_system_columns, TableConfig};
 use serde::{Deserialize, Serialize};
