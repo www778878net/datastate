@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn test_workflow_instance_basic() {
-        use base::mylogger::mylogger;
+        use base::mylogger;
         let instance = WorkflowInstance::with_default_path()
             .expect("创建失败");
 

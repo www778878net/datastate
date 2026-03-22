@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn test_workflow_task_basic() {
-        use base::mylogger::mylogger;
+        use base::mylogger;
         let task = WorkflowTask::with_default_path()
             .expect("创建失败");
 

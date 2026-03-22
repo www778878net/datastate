@@ -261,7 +261,7 @@ impl Default for AuditLogDataState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base::mylogger::mylogger;
+    use base::mylogger;
 
     #[test]
     fn test_audit_log_state_creation() {

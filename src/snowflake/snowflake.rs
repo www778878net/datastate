@@ -120,7 +120,7 @@ fn wait_next_millis(last: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base::mylogger::mylogger;
+    use base::mylogger;
 
     #[test]
     fn test_next_id() {

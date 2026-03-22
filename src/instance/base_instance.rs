@@ -8,7 +8,7 @@
 //! - 执行完自动保存到 workflow_instance 表（按天分表）
 
 use async_trait::async_trait;
-use base::mylogger::mylogger;
+use base::mylogger;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Instant;

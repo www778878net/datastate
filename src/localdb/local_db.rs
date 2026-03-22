@@ -1195,7 +1195,7 @@ impl LocalDB {
 
 #[cfg(test)]
 mod tests {
-    use base::mylogger::mylogger;
+    use base::mylogger;
     use super::*;
     use std::path::PathBuf;
 
