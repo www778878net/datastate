@@ -261,9 +261,11 @@ impl Default for AuditLogDataState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base::mylogger;
 
     #[test]
     fn test_audit_log_state_creation() {
+        let logger = mylogger!();
         let state = AuditLogDataState::new();
         assert_eq!(state.base.name, "data_audit_log");
         assert_eq!(state.datasync.table_name, "data_audit_log");
@@ -271,6 +273,7 @@ mod tests {
 
     #[test]
     fn test_audit_log_sql_validity() {
+        let logger = mylogger!();
         let sql = AUDIT_LOG_CREATE_SQL;
         assert!(sql.contains("CREATE TABLE"));
         assert!(sql.contains("data_audit_log"));
@@ -283,8 +286,10 @@ mod tests {
 
     #[test]
     fn test_log_audit() {
+        let logger = mylogger!();
+
         let state = AuditLogDataState::new();
-        
+
         // 第一次记录
         let result = state.log_audit(
             "local",
@@ -295,10 +300,10 @@ mod tests {
             150,
         );
         if result.is_err() {
-            eprintln!("第一次记录失败: {:?}", result);
+            logger.error(&format!("第一次记录失败: {:?}", result));
         }
         assert!(result.is_ok(), "第一次记录失败: {:?}", result);
-        
+
         // 第二次记录（相同唯一键，应该更新计数）
         let result = state.log_audit(
             "local",
@@ -309,17 +314,17 @@ mod tests {
             200,
         );
         if result.is_err() {
-            eprintln!("第二次记录失败: {:?}", result);
+            logger.error(&format!("第二次记录失败: {:?}", result));
         }
         assert!(result.is_ok(), "第二次记录失败: {:?}", result);
-        
+
         // 验证日志记录
         let logs = state.get_audit_logs(Some("testtb"), 10);
         if logs.is_empty() {
-            eprintln!("日志记录为空");
+            logger.error("日志记录为空");
         }
         assert!(!logs.is_empty(), "日志记录为空");
-        
+
         let log = &logs[0];
         assert_eq!(log.apiobj, "testtb");
         assert_eq!(log.apisys, "local");
