@@ -1218,6 +1218,7 @@ impl DataSync {
         let upby = Self::get_uname();
 
         let mut record_with_meta = record.clone();
+        record_with_meta.insert("id".to_string(), serde_json::json!(id));  // 确保 id 字段存在，用于 synclog
         if !cid_value.is_empty() {
             record_with_meta.insert("cid".to_string(), serde_json::json!(cid_value));
         }

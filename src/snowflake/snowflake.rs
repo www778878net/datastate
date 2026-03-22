@@ -5,6 +5,8 @@
 //!
 //! worker_id基于UUID自动生成，确保不同进程有不同的worker_id
 
+#![allow(static_mut_refs)]
+
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 

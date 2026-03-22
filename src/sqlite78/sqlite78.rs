@@ -11,6 +11,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use chrono::Local;
 
+/// 查询结果
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct QueryResult {
+    pub rows: Vec<HashMap<String, Value>>,
+}
 
 /// 更新结果
 #[derive(Debug, Clone)]
