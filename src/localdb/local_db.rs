@@ -366,7 +366,8 @@ impl LocalDB {
         }
 
         // 调试信息
-        println!("[insert] table: {}, columns: {:?}, data: {:?}", table, ordered_columns, data);
+        let logger = mylogger!();
+        logger.detail(&format!("[insert] table: {}, columns: {:?}, data: {:?}", table, ordered_columns, data));
 
         let columns: Vec<&str> = ordered_columns.iter().map(|s| s.as_str()).collect();
         let placeholders: Vec<&str> = (0..columns.len()).map(|_| "?").collect();
@@ -387,7 +388,8 @@ impl LocalDB {
             }
         }).collect();
 
-        println!("[insert] SQL: {}, values: {:?}", sql, values);
+        let logger = mylogger!();
+        logger.detail(&format!("[insert] SQL: {}, values: {:?}", sql, values));
 
         let params_vec: Vec<&dyn rusqlite::ToSql> = values.iter()
             .map(|v| v as &dyn rusqlite::ToSql)
@@ -463,7 +465,8 @@ impl LocalDB {
         if self.config.is_count {
             let apiobj = Self::parse_table_name(sql);
             if let Err(e) = Self::do_save_sql_log(&conn, &self.config.cid, &self.config.apisys, &self.config.apimicro, &apiobj, sql, elapsed, downlen, &self.config.upby) {
-                eprintln!("[LocalDB] save_sql_log 失败: {}", e);
+                let logger = mylogger!();
+                logger.error(&format!("[LocalDB] save_sql_log 失败: {}", e));
             }
         }
 
@@ -571,7 +574,8 @@ impl LocalDB {
         if self.config.is_count {
             let apiobj = Self::parse_table_name(sql);
             if let Err(e) = Self::do_save_sql_log(&conn, &self.config.cid, &self.config.apisys, &self.config.apimicro, &apiobj, sql, elapsed, 0, &self.config.upby) {
-                eprintln!("[LocalDB] save_sql_log 失败: {}", e);
+                let logger = mylogger!();
+                logger.error(&format!("[LocalDB] save_sql_log 失败: {}", e));
             }
         }
 
@@ -580,7 +584,8 @@ impl LocalDB {
             let apiobj = Self::parse_table_name(sql);
             let content = format!("rows_affected={} c:{}", result, sql);
             if let Err(e) = Self::do_add_warn(&conn, &self.config.cid, "debug_local", &self.config.apisys, &self.config.apimicro, &apiobj, &content, &self.config.upby) {
-                eprintln!("[LocalDB] add_warn 失败: {}", e);
+                let logger = mylogger!();
+                logger.error(&format!("[LocalDB] add_warn 失败: {}", e));
             }
         }
 
@@ -1190,6 +1195,7 @@ impl LocalDB {
 
 #[cfg(test)]
 mod tests {
+    use base::mylogger::mylogger;
     use super::*;
     use std::path::PathBuf;
 
@@ -1267,9 +1273,12 @@ mod tests {
     #[test]
     fn test_config_read() {
         let config = LocalDBConfig::default();
-        println!("cid: {}", config.cid);
-        println!("uid: {}", config.uid);
-        println!("upby: {}", config.upby);
+        let logger = mylogger!();
+        logger.detail(&format!("cid: {}", config.cid));
+        let logger = mylogger!();
+        logger.detail(&format!("uid: {}", config.uid));
+        let logger = mylogger!();
+        logger.detail(&format!("upby: {}", config.upby));
         // 配置文件中有值，应该能读取到
         assert!(!config.cid.is_empty(), "cid 应该从配置文件读取到");
     }

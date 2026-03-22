@@ -120,31 +120,35 @@ fn wait_next_millis(last: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+    use base::mylogger::mylogger;
+
     #[test]
     fn test_next_id() {
         let id1 = next_id();
         let id2 = next_id();
         assert!(id2 > id1);
-        println!("ID1: {}", id1);
-        println!("ID2: {}", id2);
-        println!("worker_id: {}", get_worker_id());
+        let logger = mylogger!();
+        logger.detail(&format!("ID1: {}", id1));
+        logger.detail(&format!("ID2: {}", id2));
+        logger.detail(&format!("worker_id: {}", get_worker_id()));
     }
-    
+
     #[test]
     fn test_next_id_string() {
         let id = next_id_string();
         assert!(!id.is_empty());
-        println!("ID String: {}", id);
-        println!("worker_id: {}", get_worker_id());
+        let logger = mylogger!();
+        logger.detail(&format!("ID String: {}", id));
+        logger.detail(&format!("worker_id: {}", get_worker_id()));
     }
-    
+
     #[test]
     fn test_worker_id_auto() {
         let id = next_id();
         let worker_id = get_worker_id();
         assert!(worker_id <= MAX_WORKER_ID as u64);
-        println!("自动生成的worker_id: {}", worker_id);
-        println!("生成的ID: {}", id);
+        let logger = mylogger!();
+        logger.detail(&format!("自动生成的worker_id: {}", worker_id));
+        logger.detail(&format!("生成的ID: {}", id));
     }
 }

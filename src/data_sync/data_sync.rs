@@ -9,6 +9,7 @@
 //! 3. data_sync_stats - 同步统计（按天）
 
 use crate::localdb::LocalDB;
+use base::mylogger;
 use base::project_path::ProjectPath;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
@@ -854,11 +855,12 @@ impl DataSync {
         }
 
         if !all_errors.is_empty() {
-            eprintln!(
+            let logger = mylogger!();
+            logger.error(&format!(
                 "[DataSync] {} 分页同步错误: {}",
                 self.table_name,
                 all_errors.join("; ")
-            );
+            ));
         }
 
         SyncResult {
@@ -894,11 +896,12 @@ impl DataSync {
                 let (inserted, updated, skipped, errors) = self.save_records(&records);
 
                 if !errors.is_empty() {
-                    eprintln!(
+                    let logger = mylogger!();
+                    logger.error(&format!(
                         "[DataSync] {} 同步错误: {}",
                         self.table_name,
                         errors.join("; ")
-                    );
+                    ));
                 }
 
                 SyncResult {
