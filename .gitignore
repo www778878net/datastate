@@ -3,3 +3,4 @@ target/
 Cargo.lock
 *.db
 docs/task/
+logs/
