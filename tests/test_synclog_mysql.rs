@@ -241,12 +241,17 @@ fn upload_synclog_to_api(
         return Err(format!("业务错误: {}", resp["errmsg"].as_str().unwrap_or("未知错误")));
     }
 
-    let success_ids: Vec<String> = resp["data"]["success_ids"]
+    // back 字段是 JSON 字符串，需要再解析一次
+    let data_str = resp["back"].as_str().unwrap_or("{}");
+    let data: serde_json::Value = serde_json::from_str(data_str)
+        .map_err(|e| format!("解析back失败: {}", e))?;
+
+    let success_ids: Vec<String> = data["success_ids"]
         .as_array()
         .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
         .unwrap_or_default();
 
-    let failed: Vec<FailedRecord> = resp["data"]["failed"]
+    let failed: Vec<FailedRecord> = data["failed"]
         .as_array()
         .map(|arr| arr.iter().filter_map(|v| {
             Some(FailedRecord {
@@ -294,7 +299,12 @@ fn download_synclog_from_api(
         return Err(format!("业务错误: {}", resp["errmsg"].as_str().unwrap_or("未知错误")));
     }
 
-    let bytedata_base64 = resp["data"]["bytedata"].as_str().unwrap_or("");
+    // back 字段是 JSON 字符串，需要再解析一次
+    let data_str = resp["back"].as_str().unwrap_or("{}");
+    let data: serde_json::Value = serde_json::from_str(data_str)
+        .map_err(|e| format!("解析back失败: {}", e))?;
+
+    let bytedata_base64 = data["bytedata"].as_str().unwrap_or("");
     let bytedata = general_purpose::STANDARD.decode(bytedata_base64)
         .map_err(|e| format!("Base64解码失败: {}", e))?;
 
@@ -358,9 +368,14 @@ fn query_mysql_testtb_via_api(sid: &str, kind_filter: &str) -> Result<Vec<HashMa
         return Err(format!("业务错误: {}", resp["errmsg"].as_str().unwrap_or("未知错误")));
     }
 
+    // back 字段是 JSON 字符串，需要再解析一次
+    let data_str = resp["back"].as_str().unwrap_or("{}");
+    let data: serde_json::Value = serde_json::from_str(data_str)
+        .map_err(|e| format!("解析back失败: {}", e))?;
+
     // 解析返回数据
     let binding = vec![];
-    let items = resp["data"]["items"].as_array().unwrap_or(&binding);
+    let items = data["items"].as_array().unwrap_or(&binding);
     Ok(items.iter().map(|item| {
         let mut map = HashMap::new();
         if let Some(obj) = item.as_object() {
@@ -770,6 +785,12 @@ fn test_full_workflow() {
     match upload_synclog_to_api(&items, DEFAULT_SID) {
         Ok((success_ids, failed)) => {
             println!("成功: {} 条, 失败: {} 条", success_ids.len(), failed.len());
+            
+            // 打印失败详情
+            for err in &failed {
+                println!("  ✗ 失败: id={}, idrow={}, error={}", err.id, err.idrow, err.error);
+            }
+            
             update_local_synclog(&db, &success_ids, &failed);
 
             // Step 3: 验证一致性
