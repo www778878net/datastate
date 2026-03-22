@@ -18,9 +18,9 @@ const MAX_SEQUENCE: i64 = (1 << SEQUENCE_BITS) - 1;
 const WORKER_ID_SHIFT: i64 = SEQUENCE_BITS;
 const TIMESTAMP_SHIFT: i64 = SEQUENCE_BITS + WORKER_ID_BITS;
 
-static mut LAST_TIMESTAMP: AtomicI64 = AtomicI64::new(0);
-static mut SEQUENCE: AtomicI64 = AtomicI64::new(0);
-static mut WORKER_ID: AtomicU64 = AtomicU64::new(0);
+static LAST_TIMESTAMP: AtomicI64 = AtomicI64::new(0);
+static SEQUENCE: AtomicI64 = AtomicI64::new(0);
+static WORKER_ID: AtomicU64 = AtomicU64::new(0);
 
 /// 初始化worker_id（基于UUID自动生成）
 fn init_worker_id_auto() {
@@ -28,9 +28,7 @@ fn init_worker_id_auto() {
     let bytes = uuid.as_bytes();
     let hash = ((bytes[0] as u64) << 24) | ((bytes[1] as u64) << 16) | ((bytes[2] as u64) << 8) | (bytes[3] as u64);
     let worker_id = hash % ((MAX_WORKER_ID + 1) as u64);
-    unsafe {
-        WORKER_ID.store(worker_id, Ordering::SeqCst);
-    }
+    WORKER_ID.store(worker_id, Ordering::SeqCst);
 }
 
 /// 手动设置机器ID
@@ -44,14 +42,12 @@ pub fn init_worker_id(worker_id: u64) {
     if worker_id > MAX_WORKER_ID as u64 {
         panic!("worker_id 超出范围: {}", worker_id);
     }
-    unsafe {
-        WORKER_ID.store(worker_id, Ordering::SeqCst);
-    }
+    WORKER_ID.store(worker_id, Ordering::SeqCst);
 }
 
 /// 获取当前worker_id
 pub fn get_worker_id() -> u64 {
-    unsafe { WORKER_ID.load(Ordering::SeqCst) }
+    WORKER_ID.load(Ordering::SeqCst)
 }
 
 /// 生成下一个雪花ID（i64）
@@ -64,34 +60,32 @@ pub fn get_worker_id() -> u64 {
 pub fn next_id() -> i64 {
     let now = current_millis();
     
-    unsafe {
-        if WORKER_ID.load(Ordering::SeqCst) == 0 {
-            init_worker_id_auto();
-        }
-        
-        let last = LAST_TIMESTAMP.load(Ordering::SeqCst);
-        
-        if now < last {
-            panic!("时钟回拨，拒绝生成ID");
-        }
-        
-        if now == last {
-            let seq = SEQUENCE.fetch_add(1, Ordering::SeqCst);
-            if seq > MAX_SEQUENCE {
-                wait_next_millis(last);
-                SEQUENCE.store(0, Ordering::SeqCst);
-                LAST_TIMESTAMP.store(now, Ordering::SeqCst);
-            }
-        } else {
+    if WORKER_ID.load(Ordering::SeqCst) == 0 {
+        init_worker_id_auto();
+    }
+    
+    let last = LAST_TIMESTAMP.load(Ordering::SeqCst);
+    
+    if now < last {
+        panic!("时钟回拨，拒绝生成ID");
+    }
+    
+    if now == last {
+        let seq = SEQUENCE.fetch_add(1, Ordering::SeqCst);
+        if seq > MAX_SEQUENCE {
+            wait_next_millis(last);
             SEQUENCE.store(0, Ordering::SeqCst);
             LAST_TIMESTAMP.store(now, Ordering::SeqCst);
         }
-        
-        let worker_id = WORKER_ID.load(Ordering::SeqCst) as i64;
-        let seq = SEQUENCE.load(Ordering::SeqCst);
-        
-        ((now - EPOCH) << TIMESTAMP_SHIFT) | (worker_id << WORKER_ID_SHIFT) | seq
+    } else {
+        SEQUENCE.store(0, Ordering::SeqCst);
+        LAST_TIMESTAMP.store(now, Ordering::SeqCst);
     }
+    
+    let worker_id = WORKER_ID.load(Ordering::SeqCst) as i64;
+    let seq = SEQUENCE.load(Ordering::SeqCst);
+    
+    ((now - EPOCH) << TIMESTAMP_SHIFT) | (worker_id << WORKER_ID_SHIFT) | seq
 }
 
 /// 生成下一个雪花ID（String）

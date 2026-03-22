@@ -8,9 +8,7 @@
 //! - trade: 交易服务，只读查询
 
 use crate::dataaudit::DataAudit;
-use crate::datamanage::DataManage;
 use crate::datastate::DataState;
-use crate::data_sync::DataSync;
 use crate::localdb::LocalDB;
 use crate::sync_config::{get_system_columns, TableConfig};
 use serde::{Deserialize, Serialize};
@@ -230,7 +228,9 @@ mod tests {
 
     #[test]
     fn test_audit_permission() {
-        println!("\n=== 权限测试 ===\n");
+        use base::mylogger::mylogger;
+        let logger = mylogger!();
+        logger.detail("\n=== 权限测试 ===");
 
         let testtb = TestTb::new();
 
@@ -240,53 +240,53 @@ mod tests {
         record.insert("item".to_string(), serde_json::json!("i1"));
         record.insert("data".to_string(), serde_json::json!("d1"));
 
-        println!("【1】testtb 调用（全部允许）");
+        logger.detail("【1】testtb 调用（全部允许）");
         let id = testtb.m_save(&record, "testtb", "内部保存").expect("testtb 应该能保存");
-        println!("  - m_save 成功: {}", id);
+        logger.detail(&format!("  - m_save 成功: {}", id));
 
         let _list = testtb.mlist("testtb", 10, "内部列表").expect("testtb 应该能列表");
-        println!("  - mlist 成功: {} 条", _list.len());
+        logger.detail(&format!("  - mlist 成功: {} 条", _list.len()));
 
         let _found = testtb.getone(&id, "testtb", "内部查询").expect("testtb 应该能查询");
-        println!("  - getone 成功: {:?}", _found.is_some());
+        logger.detail(&format!("  - getone 成功: {:?}", _found.is_some()));
 
         testtb.m_del(&id, "testtb", "内部删除").expect("testtb 应该能删除");
-        println!("  - m_del 成功");
+        logger.detail("  - m_del 成功");
 
-        println!("\n【2】inventory 调用（允许 m_save/mlist/getone）");
+        logger.detail("\n【2】inventory 调用（允许 m_save/mlist/getone）");
         let id2 = testtb.m_save(&record, "inventory", "库存保存").expect("inventory 应该能保存");
-        println!("  - m_save 成功: {}", id2);
+        logger.detail(&format!("  - m_save 成功: {}", id2));
 
         let _list = testtb.mlist("inventory", 10, "库存列表").expect("inventory 应该能列表");
-        println!("  - mlist 成功");
+        logger.detail("  - mlist 成功");
 
         let _found = testtb.getone(&id2, "inventory", "库存查询").expect("inventory 应该能查询");
-        println!("  - getone 成功");
+        logger.detail("  - getone 成功");
 
         let result = testtb.m_del(&id2, "inventory", "尝试删除");
         assert!(result.is_err(), "inventory 不应该能删除");
-        println!("  - m_del 拒绝: {}", result.unwrap_err());
+        logger.detail(&format!("  - m_del 拒绝: {}", result.unwrap_err()));
 
-        println!("\n【3】trade 调用（只允许 mlist/getone）");
+        logger.detail("\n【3】trade 调用（只允许 mlist/getone）");
         let _list = testtb.mlist("trade", 10, "交易列表").expect("trade 应该能列表");
-        println!("  - mlist 成功");
+        logger.detail("  - mlist 成功");
 
         let _found = testtb.getone(&id2, "trade", "交易查询").expect("trade 应该能查询");
-        println!("  - getone 成功");
+        logger.detail("  - getone 成功");
 
         let result = testtb.m_save(&record, "trade", "尝试保存");
         assert!(result.is_err(), "trade 不应该能保存");
-        println!("  - m_save 拒绝: {}", result.unwrap_err());
+        logger.detail(&format!("  - m_save 拒绝: {}", result.unwrap_err()));
 
         let result = testtb.m_del(&id2, "trade", "尝试删除");
         assert!(result.is_err(), "trade 不应该能删除");
-        println!("  - m_del 拒绝: {}", result.unwrap_err());
+        logger.detail(&format!("  - m_del 拒绝: {}", result.unwrap_err()));
 
-        println!("\n【4】unknown 调用（全部拒绝）");
+        logger.detail("\n【4】unknown 调用（全部拒绝）");
         let result = testtb.mlist("unknown", 10, "未知调用");
         assert!(result.is_err());
-        println!("  - mlist 拒绝: {}", result.unwrap_err());
+        logger.detail(&format!("  - mlist 拒绝: {}", result.unwrap_err()));
 
-        println!("\n=== 测试完成 ===");
+        logger.detail("\n=== 测试完成 ===");
     }
 }
