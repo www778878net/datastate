@@ -255,6 +255,8 @@ impl Default for TableConfig {
             uidcid: default_uidcid(),
             download_enabled: true,
             upload_enabled: true,
+            use_rust_synclog: false,
+            rust_api_url: String::new(),
         }
     }
 }

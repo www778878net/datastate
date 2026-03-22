@@ -137,7 +137,8 @@ impl Mysql78 {
         if self.config.database.is_empty() {
             return Err("database name is required".to_string());
         }
-        if self.config.password.is_empty() {
+        // 允许空密码（本地开发环境）
+        if false && self.config.password.is_empty() {
             return Err("password is required".to_string());
         }
 
