@@ -367,7 +367,7 @@ impl DataSync {
 
     /// 从 URL 提取表名
     ///
-    /// URL格式：http://api.example.com/apibuff/order/buff_order_selling_history/get
+    /// URL格式: <http://api.example.com/apibuff/order/buff_order_selling_history/get>
     /// 分割后：["http:", "api.example.com", "apibuff", "order", "buff_order_selling_history", "get"]
     /// 表名在索引4的位置
     pub fn extract_table_name(api_url: &str) -> String {
@@ -1582,11 +1582,11 @@ mod tests {
         tester.logger.detail("Step2: 验证DataState使用委托模式");
 
         // 2.1 创建DataState实例
-        // URL格式：http://api.example.com/apibuff/order/buff_order_selling_history/get
+        // URL格式: <http://api.example.com/apibuff/order/buff_order_selling_history/get>
         // 表名在索引3的位置（去掉//后按/分割）
         let config = TableConfig {
             name: unique_table.clone(),
-            apiurl: format!("http://test.api/apibuff/order/{}/get", unique_table),
+            apiurl: format!("http://test.api/apibuff/order/{}/get>", unique_table),
             download_interval: 300,
             upload_interval: 300,
             init_getnumber: 50,
