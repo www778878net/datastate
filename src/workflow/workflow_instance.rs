@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn test_workflow_instance_status_update() {
-        use base::mylogger::mylogger;
+        use base::mylogger;
         let instance = WorkflowInstance::with_default_path()
             .expect("创建失败");
 
@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_workflow_instance_query() {
-        use base::mylogger::mylogger;
+        use base::mylogger;
         let instance = WorkflowInstance::with_default_path()
             .expect("创建失败");
 
@@ -515,7 +515,7 @@ mod tests {
 
     #[test]
     fn test_workflow_instance_pagination() {
-        use base::mylogger::mylogger;
+        use base::mylogger;
         let instance = WorkflowInstance::with_default_path()
             .expect("创建失败");
 
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_workflow_instance_delete() {
-        use base::mylogger::mylogger;
+        use base::mylogger;
         let instance = WorkflowInstance::with_default_path()
             .expect("创建失败");
 

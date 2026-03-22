@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn test_workflow_task_status_transition() {
-        use base::mylogger::mylogger;
+        use base::mylogger;
         let task = WorkflowTask::with_default_path()
             .expect("创建失败");
 
@@ -547,7 +547,7 @@ mod tests {
 
     #[test]
     fn test_workflow_task_complex_query() {
-        use base::mylogger::mylogger;
+        use base::mylogger;
         let task = WorkflowTask::with_default_path()
             .expect("创建失败");
 
@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_workflow_task_delete() {
-        use base::mylogger::mylogger;
+        use base::mylogger;
         let task = WorkflowTask::with_default_path()
             .expect("创建失败");
 
