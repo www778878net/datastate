@@ -474,7 +474,7 @@ impl DataSync {
                 (cmdtext, params)
             }
             "delete" => {
-                let cmdtext = format!("UPDATE `{}` SET deleted = 1 WHERE `id` = ?", self.table_name);
+                let cmdtext = format!("DELETE FROM `{}` WHERE `id` = ?", self.table_name);
                 let params = vec![data_obj.get("id").cloned().unwrap_or(serde_json::Value::Null)];
                 (cmdtext, params)
             }
