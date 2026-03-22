@@ -475,7 +475,7 @@ impl DataSync {
                 (cmdtext, params)
             }
             "delete" => {
-                let cmdtext = format!("UPDATE `{}` SET deleted = 1 WHERE `id` = ?", self.table_name);
+                let cmdtext = format!("DELETE FROM `{}` WHERE `id` = ?", self.table_name);
                 let params = vec![data_obj.get("id").cloned().unwrap_or(serde_json::Value::Null)];
                 (cmdtext, params)
             }
@@ -896,11 +896,12 @@ impl DataSync {
                 let (inserted, updated, skipped, errors) = self.save_records(&records);
 
                 if !errors.is_empty() {
-                    eprintln!(
+                    let logger = mylogger!();
+                    logger.error(&format!(
                         "[DataSync] {} 同步错误: {}",
                         self.table_name,
                         errors.join("; ")
-                    );
+                    ));
                 }
 
                 SyncResult {
