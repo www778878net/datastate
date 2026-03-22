@@ -1,5 +1,5 @@
 //! synclog MySQL 同步测试
-use base::mylogger::mylogger;
+//!
 //!
 //! 架构：本地 SQLite → axum78 API → MySQL
 //!
@@ -212,9 +212,13 @@ fn upload_synclog_to_api(
     let bytedata = batch.encode_to_vec();
     let bytedata_base64 = general_purpose::STANDARD.encode(&bytedata);
 
+    // 从 SID 中提取 cid（格式：cid|worker）
+    let cid = sid.split('|').next().unwrap_or("").to_string();
+
     // 构建请求
     let request_body = serde_json::json!({
         "sid": sid,
+        "cid": cid,
         "jsdata": bytedata_base64,
     });
 
@@ -399,7 +403,6 @@ fn cleanup_test_data(db: &LocalDB) {
 /// 测试 1: 本地新增/修改/删除产生 synclog
 #[test]
 fn test_01_generate_synclog() {
-    mylogger!().detail(&format!("\n========== 测试 1: 本地新增/修改/删除产生 synclog ==========\n"));
 
     let db = setup_local_db();
     ensure_testtb_table_sqlite(&db);
@@ -411,7 +414,6 @@ fn test_01_generate_synclog() {
     let sync = DataSync::with_db("testtb", db.clone());
 
     // 1. 新增 3 条记录
-    mylogger!().detail(&format!("【1】新增记录..."));
     let records: Vec<TestRecord> = (0..3)
         .map(|i| TestRecord::new(DEFAULT_CID, "test_01", &format!("item_{}", i), &format!("data_{}", i)))
         .collect();
@@ -420,41 +422,31 @@ fn test_01_generate_synclog() {
     for r in &records {
         let id = sync.m_add(&r.to_map()).expect("新增失败");
         ids.push(id.clone());
-        mylogger!().detail(&format!("  + 新增: id={}, kind={}", id, r.kind));
     }
 
     // 2. 修改第 2 条
-    mylogger!().detail(&format!("\n【2】修改记录..."));
     let mut update_map = HashMap::new();
     update_map.insert("data".to_string(), json!("data_1_updated"));
     sync.m_update(&ids[1], &update_map).expect("修改失败");
-    mylogger!().detail(&format!("  * 修改: id={}", ids[1]));
 
     // 3. 删除第 3 条
-    mylogger!().detail(&format!("\n【3】删除记录..."));
     sync.m_del(&ids[2]).expect("删除失败");
-    mylogger!().detail(&format!("  - 删除: id={}", ids[2]));
 
     // 验证 synclog
     let pending = sync.get_pending_count();
-    mylogger!().detail(&format!("\n待同步记录: {} 条", pending));
     
     // 应该有 5 条: 3 insert + 1 update + 1 delete
     assert!(pending >= 5, "应该至少有 5 条待同步记录");
 
     let items = sync.get_pending_items(10);
-    mylogger!().detail(&format!("\nsynclog 详情:"));
     for (i, item) in items.iter().enumerate() {
-        mylogger!().detail(&format!("  [{}] action={}, idrow={}", i, item.action, item.idrow));
     }
 
-    mylogger!().detail(&format!("\n========== 测试 1 完成 ==========\n"));
 }
 
 /// 测试 2: 同步到 axum78，写入 MySQL synclog 表
 #[test]
 fn test_02_sync_to_mysql_synclog() {
-    mylogger!().detail(&format!("\n========== 测试 2: 同步到 axum78，写入 MySQL synclog 表 ==========\n"));
 
     let db = setup_local_db();
     ensure_testtb_table_sqlite(&db);
@@ -465,24 +457,17 @@ fn test_02_sync_to_mysql_synclog() {
     // 获取待同步记录
     let items = sync.get_pending_items(100);
     if items.is_empty() {
-        mylogger!().detail(&format!("没有待同步记录，跳过测试"));
         return;
     }
 
-    mylogger!().detail(&format!("待同步记录: {} 条", items.len()));
 
     // 调用 API 上传
-    mylogger!().detail(&format!("\n【调用 axum78 API】"));
     match upload_synclog_to_api(&items, DEFAULT_SID) {
         Ok((success_ids, failed)) => {
-            mylogger!().detail(&format!("成功: {} 条", success_ids.len()));
-            mylogger!().detail(&format!("失败: {} 条", failed.len()));
 
             for id in &success_ids {
-                mylogger!().detail(&format!("  ✓ 成功: {}", id));
             }
             for err in &failed {
-                mylogger!().detail(&format!("  ✗ 失败: {} - {} ({})", err.idrow, err.error, err.id));
             }
 
             // 更新本地 synclog
@@ -491,36 +476,27 @@ fn test_02_sync_to_mysql_synclog() {
             // 验证本地状态
             let synced_count = db.count("synclog WHERE synced = 1").unwrap_or(0);
             let failed_count = db.count("synclog WHERE synced = -1").unwrap_or(0);
-            mylogger!().detail(&format!("\n本地 synclog 状态: synced={}, failed={}", synced_count, failed_count));
         }
         Err(e) => {
-            mylogger!().detail(&format!("API 调用失败: {}", e));
-            mylogger!().detail(&format!("请确保 axum78 服务已启动: {}", API_BASE_URL));
         }
     }
 
-    mylogger!().detail(&format!("\n========== 测试 2 完成 ==========\n"));
 }
 
 /// 测试 3: 验证 MySQL testtb 表数据
 #[test]
 fn test_03_verify_mysql_testtb() {
-    mylogger!().detail(&format!("\n========== 测试 3: 验证 MySQL testtb 表数据 ==========\n"));
 
     let db = setup_local_db();
 
     // 查询本地数据
     let local_records = query_local_testtb(&db, "test_01");
-    mylogger!().detail(&format!("本地 testtb 记录: {} 条", local_records.len()));
 
     // 查询 MySQL 数据（通过 API）
-    mylogger!().detail(&format!("\n【查询 MySQL testtb】"));
     match query_mysql_testtb_via_api(DEFAULT_SID, "test_01") {
         Ok(mysql_records) => {
-            mylogger!().detail(&format!("MySQL testtb 记录: {} 条", mysql_records.len()));
 
             // 对比数据
-            mylogger!().detail(&format!("\n【数据对比】"));
             for local in &local_records {
                 let local_id = local.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 let local_data = local.get("data").and_then(|v| v.as_str()).unwrap_or("");
@@ -532,37 +508,28 @@ fn test_03_verify_mysql_testtb() {
                 if let Some(mysql) = mysql_match {
                     let mysql_data = mysql.get("data").and_then(|v| v.as_str()).unwrap_or("");
                     let match_status = if local_data == mysql_data { "✓" } else { "✗" };
-                    mylogger!().detail(&format!("  {} id={}: local={}, mysql={}", match_status, local_id, local_data, mysql_data));
                 } else {
-                    mylogger!().detail(&format!("  ✗ id={}: MySQL 中不存在", local_id));
                 }
             }
         }
         Err(e) => {
-            mylogger!().detail(&format!("查询 MySQL 失败: {}", e));
-            mylogger!().detail(&format!("请确保 axum78 服务已启动: {}", API_BASE_URL));
         }
     }
 
-    mylogger!().detail(&format!("\n========== 测试 3 完成 ==========\n"));
 }
 
 /// 测试 4: MySQL 修改后下载到本地
 #[test]
 fn test_04_download_from_mysql() {
-    mylogger!().detail(&format!("\n========== 测试 4: MySQL 修改后下载到本地 ==========\n"));
 
     let db = setup_local_db();
     let _sync = DataSync::with_db("testtb", db.clone());
 
     // 从 API 获取其他 worker 的 synclog（已同步到 MySQL 的）
-    mylogger!().detail(&format!("【从 axum78 下载 synclog】"));
     match download_synclog_from_api(DEFAULT_SID, 100) {
         Ok(items) => {
-            mylogger!().detail(&format!("下载到 {} 条记录", items.len()));
 
             for item in &items {
-                mylogger!().detail(&format!("  - action={}, tbname={}, idrow={}", item.action, item.tbname, item.idrow));
 
                 // 同步到本地 testtb 表
                 if item.tbname == "testtb" {
@@ -571,16 +538,13 @@ fn test_04_download_from_mysql() {
                     match item.action.as_str() {
                         "insert" => {
                             // 从 MySQL 获取完整记录（通过 API）
-                            mylogger!().detail(&format!("    -> 需要从 MySQL 获取完整记录"));
                         }
                         "update" => {
                             // 更新本地记录
-                            mylogger!().detail(&format!("    -> 更新本地记录"));
                         }
                         "delete" => {
                             // 删除本地记录
                             let _ = db.execute(&format!("DELETE FROM testtb WHERE id = '{}'", item.idrow));
-                            mylogger!().detail(&format!("    -> 已删除本地记录"));
                         }
                         _ => {}
                     }
@@ -588,18 +552,14 @@ fn test_04_download_from_mysql() {
             }
         }
         Err(e) => {
-            mylogger!().detail(&format!("下载失败: {}", e));
-            mylogger!().detail(&format!("请确保 axum78 服务已启动: {}", API_BASE_URL));
         }
     }
 
-    mylogger!().detail(&format!("\n========== 测试 4 完成 ==========\n"));
 }
 
 /// 测试 5: 双边同时修改的冲突处理
 #[test]
 fn test_05_conflict_resolution() {
-    mylogger!().detail(&format!("\n========== 测试 5: 双边同时修改的冲突处理 ==========\n"));
 
     let db = setup_local_db();
     ensure_testtb_table_sqlite(&db);
@@ -609,13 +569,11 @@ fn test_05_conflict_resolution() {
     // 创建一条测试记录
     let record = TestRecord::new(DEFAULT_CID, "test_05", "conflict_item", "original_data");
     let id = sync.m_add(&record.to_map()).expect("新增失败");
-    mylogger!().detail(&format!("创建测试记录: id={}", id));
 
     // 先同步到 MySQL
     let items = sync.get_pending_items(100);
     if let Ok((success_ids, failed)) = upload_synclog_to_api(&items, DEFAULT_SID) {
         update_local_synclog(&db, &success_ids, &failed);
-        mylogger!().detail(&format!("已同步到 MySQL"));
     }
 
     // 本地修改
@@ -625,33 +583,22 @@ fn test_05_conflict_resolution() {
     update_map.insert("data".to_string(), json!("local_modified"));
     update_map.insert("uptime".to_string(), json!(local_time.clone()));
     sync.m_update(&id, &update_map).expect("本地修改失败");
-    mylogger!().detail(&format!("本地修改: data=local_modified, uptime={}", local_time));
 
     // 模拟 MySQL 端修改（需要通过 API 或直接操作数据库）
     std::thread::sleep(std::time::Duration::from_millis(100));
     let server_time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    mylogger!().detail(&format!("模拟服务器修改: data=server_modified, uptime={}", server_time));
-    mylogger!().detail(&format!("（实际需要在 MySQL 端执行 UPDATE）"));
 
     // 冲突解决逻辑：比较 uptime，较新的覆盖较旧的
-    mylogger!().detail(&format!("\n【冲突解决策略】"));
-    mylogger!().detail(&format!("比较 uptime:"));
-    mylogger!().detail(&format!("  本地: {}", local_time));
-    mylogger!().detail(&format!("  服务器: {}", server_time));
     
     if server_time > local_time {
-        mylogger!().detail(&format!("=> 服务器数据更新，本地接受服务器数据"));
     } else {
-        mylogger!().detail(&format!("=> 本地数据更新，保持本地数据"));
     }
 
-    mylogger!().detail(&format!("\n========== 测试 5 完成 ==========\n"));
 }
 
 /// 测试 6: guest3 用户帐套隔离
 #[test]
 fn test_06_account_isolation() {
-    mylogger!().detail(&format!("\n========== 测试 6: guest3 用户帐套隔离测试 ==========\n"));
 
     let db = setup_local_db();
     ensure_testtb_table_sqlite(&db);
@@ -666,23 +613,17 @@ fn test_06_account_isolation() {
     // 默认用户创建记录
     let default_record = TestRecord::new(DEFAULT_CID, "test_06_default", "default_item", "default_data");
     let default_id = sync.m_add(&default_record.to_map()).expect("新增失败");
-    mylogger!().detail(&format!("默认用户创建: id={}, cid={}", default_id, DEFAULT_CID));
 
     // guest3 用户创建记录
     let guest3_record = TestRecord::new(GUEST3_CID, "test_06_guest3", "guest3_item", "guest3_data");
     let guest3_id = sync.m_add(&guest3_record.to_map()).expect("新增失败");
-    mylogger!().detail(&format!("guest3 用户创建: id={}, cid={}", guest3_id, GUEST3_CID));
 
     // 获取待同步记录
     let items = sync.get_pending_items(100);
-    mylogger!().detail(&format!("\n待同步记录: {} 条", items.len()));
 
     // 使用默认用户身份同步
-    mylogger!().detail(&format!("\n【默认用户同步】"));
     match upload_synclog_to_api(&items, DEFAULT_SID) {
         Ok((success_ids, failed)) => {
-            mylogger!().detail(&format!("成功: {} 条", success_ids.len()));
-            mylogger!().detail(&format!("失败: {} 条", failed.len()));
 
             // 检查 guest3 的记录是否被拒绝
             let guest3_failed = failed.iter().any(|f| {
@@ -690,29 +631,22 @@ fn test_06_account_isolation() {
             });
             
             if guest3_failed {
-                mylogger!().detail(&format!("✓ guest3 的记录被正确拒绝（权限隔离生效）"));
             }
 
             for err in &failed {
-                mylogger!().detail(&format!("  ✗ 失败: {} - {}", err.idrow, err.error));
             }
 
             update_local_synclog(&db, &success_ids, &failed);
         }
         Err(e) => {
-            mylogger!().detail(&format!("API 调用失败: {}", e));
-            mylogger!().detail(&format!("请确保 axum78 服务已启动: {}", API_BASE_URL));
         }
     }
 
     // 使用 guest3 用户身份同步
-    mylogger!().detail(&format!("\n【guest3 用户同步】"));
     let items2 = sync.get_pending_items(100);
     if !items2.is_empty() {
         match upload_synclog_to_api(&items2, GUEST3_SID) {
             Ok((success_ids, failed)) => {
-                mylogger!().detail(&format!("成功: {} 条", success_ids.len()));
-                mylogger!().detail(&format!("失败: {} 条", failed.len()));
 
                 // 检查默认用户的记录是否被拒绝
                 let default_failed = failed.iter().any(|f| {
@@ -720,28 +654,21 @@ fn test_06_account_isolation() {
                 });
 
                 if default_failed {
-                    mylogger!().detail(&format!("✓ 默认用户的记录被正确拒绝（权限隔离生效）"));
                 }
 
                 for err in &failed {
-                    mylogger!().detail(&format!("  ✗ 失败: {} - {}", err.idrow, err.error));
                 }
             }
             Err(e) => {
-                mylogger!().detail(&format!("API 调用失败: {}", e));
             }
         }
     }
 
-    mylogger!().detail(&format!("\n========== 测试 6 完成 ==========\n"));
 }
 
 /// 完整流程测试
 #[test]
 fn test_full_workflow() {
-    mylogger!().detail(&format!("\n========== 完整同步流程测试 ==========\n"));
-    mylogger!().detail(&format!("架构: 本地 SQLite -> axum78 API -> MySQL"));
-    mylogger!().detail(&format!("API: {}", SYNCLOG_API_URL));
     
 
     let db = setup_local_db();
@@ -754,7 +681,6 @@ fn test_full_workflow() {
     let sync = DataSync::with_db("testtb", db.clone());
 
     // Step 1: 新增、修改、删除
-    mylogger!().detail(&format!("【Step 1】本地操作产生 synclog..."));
     let records: Vec<TestRecord> = (0..3)
         .map(|i| TestRecord::new(DEFAULT_CID, "test_full", &format!("item_{}", i), &format!("data_{}", i)))
         .collect();
@@ -763,51 +689,39 @@ fn test_full_workflow() {
     for r in &records {
         let id = sync.m_add(&r.to_map()).expect("新增失败");
         ids.push(id.clone());
-        mylogger!().detail(&format!("  + 新增: id={}", id));
     }
 
     // 修改第二条
     let mut update_map = HashMap::new();
     update_map.insert("data".to_string(), json!("data_1_updated"));
     sync.m_update(&ids[1], &update_map).expect("修改失败");
-    mylogger!().detail(&format!("  * 修改: id={}", ids[1]));
 
     // 删除第三条
     sync.m_del(&ids[2]).expect("删除失败");
-    mylogger!().detail(&format!("  - 删除: id={}", ids[2]));
 
     let pending = sync.get_pending_count();
-    mylogger!().detail(&format!("\n待同步: {} 条", pending));
 
     // Step 2: 同步到 MySQL
-    mylogger!().detail(&format!("\n【Step 2】同步到 axum78..."));
     let items = sync.get_pending_items(100);
     
     match upload_synclog_to_api(&items, DEFAULT_SID) {
         Ok((success_ids, failed)) => {
-            mylogger!().detail(&format!("成功: {} 条, 失败: {} 条", success_ids.len(), failed.len()));
             
             // 打印失败详情
             for err in &failed {
-                mylogger!().detail(&format!("  ✗ 失败: id={}, idrow={}, error={}", err.id, err.idrow, err.error));
             }
             
             update_local_synclog(&db, &success_ids, &failed);
 
             // Step 3: 验证一致性
-            mylogger!().detail(&format!("\n【Step 3】验证数据一致性..."));
             let local_records = query_local_testtb(&db, "test_full");
-            mylogger!().detail(&format!("本地记录: {} 条", local_records.len()));
 
             match query_mysql_testtb_via_api(DEFAULT_SID, "test_full") {
                 Ok(mysql_records) => {
-                    mylogger!().detail(&format!("MySQL 记录: {} 条", mysql_records.len()));
 
                     // 应该有 2 条记录（第三条已删除）
                     if local_records.len() == 2 && mysql_records.len() == 2 {
-                        mylogger!().detail(&format!("✓ 记录数一致"));
                     } else {
-                        mylogger!().detail(&format!("✗ 记录数不一致"));
                     }
 
                     // 验证修改
@@ -817,20 +731,16 @@ fn test_full_workflow() {
                     if let Some(r) = updated {
                         let data = r.get("data").and_then(|v| v.as_str()).unwrap_or("");
                         if data == "data_1_updated" {
-                            mylogger!().detail(&format!("✓ 第二条记录已正确更新"));
                         }
                     }
                 }
                 Err(e) => {
-                    mylogger!().detail(&format!("查询 MySQL 失败: {}", e));
                 }
             }
         }
         Err(e) => {
-            mylogger!().detail(&format!("同步失败: {}", e));
-            mylogger!().detail(&format!("请确保 axum78 服务已启动: {}", API_BASE_URL));
         }
     }
 
-    mylogger!().detail(&format!("\n========== 完整流程测试完成 ==========\n"));
 }
+
