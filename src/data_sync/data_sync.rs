@@ -12,8 +12,51 @@ use crate::localdb::LocalDB;
 use base::mylogger;
 use base::project_path::ProjectPath;
 use chrono::Local;
+use prost::Message;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+// ========== Protobuf 数据结构 ==========
+
+/// synclog 项（protobuf 编码用）
+#[derive(Clone, PartialEq, Message, Serialize, Deserialize)]
+pub struct ProtoSynclogItem {
+    #[prost(string, tag = "1")]
+    pub id: String,
+    #[prost(string, tag = "2")]
+    pub apisys: String,
+    #[prost(string, tag = "3")]
+    pub apimicro: String,
+    #[prost(string, tag = "4")]
+    pub apiobj: String,
+    #[prost(string, tag = "5")]
+    pub tbname: String,
+    #[prost(string, tag = "6")]
+    pub action: String,
+    #[prost(string, tag = "7")]
+    pub cmdtext: String,
+    #[prost(string, tag = "8")]
+    pub params: String,
+    #[prost(string, tag = "9")]
+    pub idrow: String,
+    #[prost(string, tag = "10")]
+    pub worker: String,
+    #[prost(int32, tag = "11")]
+    pub synced: i32,
+    #[prost(string, tag = "12")]
+    pub cmdtextmd5: String,
+    #[prost(string, tag = "13")]
+    pub cid: String,
+    #[prost(string, tag = "14")]
+    pub upby: String,
+}
+
+/// synclog 批量数据（protobuf 编码用）
+#[derive(Clone, PartialEq, Message)]
+pub struct ProtoSynclogBatch {
+    #[prost(message, repeated, tag = "1")]
+    pub items: Vec<ProtoSynclogItem>,
+}
 
 // ========== 建表 SQL ==========
 
@@ -214,6 +257,12 @@ pub struct DataSync {
     /// 是否启用上传
     pub upload_enabled: bool,
 
+    /// 是否使用 Rust 版本的 synclog_mysql API（默认 false，使用 logsvc）
+    pub use_rust_synclog: bool,
+
+    /// Rust API 地址（当 use_rust_synclog=true 时使用）
+    pub rust_api_url: String,
+
     /// 上次下载时间
     pub last_download: f64,
     /// 上次上传时间
@@ -247,6 +296,8 @@ impl DataSync {
             last_upload: 0.0,
             error_message: String::new(),
             error_time: 0.0,
+            use_rust_synclog: false,
+            rust_api_url: String::new(),
         }
     }
 
@@ -271,6 +322,8 @@ impl DataSync {
             last_upload: 0.0,
             error_message: String::new(),
             error_time: 0.0,
+            use_rust_synclog: false,
+            rust_api_url: String::new(),
         }
     }
 
@@ -296,6 +349,8 @@ impl DataSync {
             last_upload: 0.0,
             error_message: String::new(),
             error_time: 0.0,
+            use_rust_synclog: config.use_rust_synclog,
+            rust_api_url: config.rust_api_url.clone(),
         }
     }
 
@@ -1019,9 +1074,162 @@ impl DataSync {
             };
         }
 
-        let synclog_url = "http://log.778878.net/apisvc/backsvc/synclog";
+        // 根据配置选择同步 URL 和上传方式
+        let result = if self.use_rust_synclog && !self.rust_api_url.is_empty() {
+            // 使用 Rust API，protobuf 格式
+            self.upload_to_rust_api(&self.rust_api_url, &pending_items)
+        } else {
+            // 使用旧的 logsvc，JSON 格式
+            let synclog_url = "http://log.778878.net/apisvc/backsvc/synclog";
+            self.upload_to_logsvc(synclog_url, &pending_items)
+        };
 
-        let result = self.db.upload_batch_to_server(synclog_url, &pending_items);
+        result
+    }
+
+    /// 上传到 Rust API（protobuf 格式）
+    fn upload_to_rust_api(&self, api_url: &str, items: &[SynclogItem]) -> SyncResult {
+        use base::http::HttpHelper;
+        use prost::Message;
+        use base64::{Engine as _, engine::general_purpose};
+
+        let sid = self.db.get_sid();
+        if sid.is_empty() {
+            return SyncResult {
+                res: -1,
+                errmsg: "配置文件未找到 SID".to_string(),
+                datawf: SyncData::default(),
+            };
+        }
+
+        // 构建 protobuf SynclogBatch
+        let proto_items: Vec<ProtoSynclogItem> = items.iter().map(|item| ProtoSynclogItem {
+            id: item.id.clone(),
+            apisys: item.apisys.clone(),
+            apimicro: item.apimicro.clone(),
+            apiobj: item.apiobj.clone(),
+            tbname: item.tbname.clone(),
+            action: item.action.clone(),
+            cmdtext: item.cmdtext.clone(),
+            params: item.params.clone(),
+            idrow: item.idrow.clone(),
+            worker: item.worker.clone(),
+            synced: item.synced,
+            cmdtextmd5: item.cmdtextmd5.clone(),
+            cid: item.cid.clone(),
+            upby: item.upby.clone(),
+        }).collect();
+
+        let batch = ProtoSynclogBatch { items: proto_items };
+        let bytedata = batch.encode_to_vec();
+        let bytedata_base64 = general_purpose::STANDARD.encode(&bytedata);
+
+        let url = format!("{}/mAddMany", api_url.trim_end_matches('/'));
+        let request_payload = serde_json::json!({
+            "sid": sid,
+            "jsdata": bytedata_base64,
+        });
+
+        let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
+
+        let logger = mylogger!();
+        logger.info(&format!("[upload_to_rust_api] 响应: res={}, errmsg={}", response.res, response.errmsg));
+
+        if response.res != 0 {
+            return SyncResult {
+                res: -1,
+                errmsg: response.errmsg,
+                datawf: SyncData::default(),
+            };
+        }
+
+        // 解析 Rust API 响应格式: { res: 0, data: { success_ids: [...], failed: [{id, idrow, error}] } }
+        let mut success_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut failed: Vec<SyncValidationError> = Vec::new();
+
+        if let Some(ref resp_data) = response.data {
+            if let Some(back_obj) = resp_data.response.as_object() {
+                logger.info(&format!("[upload_to_rust_api] 业务响应: {:?}", back_obj));
+
+                // 检查 res
+                if let Some(back_res) = back_obj.get("res") {
+                    if back_res.as_i64().unwrap_or(0) != 0 {
+                        let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
+                        return SyncResult {
+                            res: -1,
+                            errmsg: format!("业务错误: {}", back_errmsg),
+                            datawf: SyncData::default(),
+                        };
+                    }
+                }
+
+                // 解析 success_ids
+                if let Some(ids) = back_obj.get("success_ids").and_then(|v| v.as_array()) {
+                    for id in ids {
+                        if let Some(id_str) = id.as_str() {
+                            success_ids.insert(id_str.to_string());
+                        }
+                    }
+                }
+
+                // 解析 failed
+                if let Some(failed_list) = back_obj.get("failed").and_then(|v| v.as_array()) {
+                    for (idx, err) in failed_list.iter().enumerate() {
+                        if let Some(err_obj) = err.as_object() {
+                            failed.push(SyncValidationError {
+                                index: idx as i32,
+                                idrow: err_obj.get("idrow").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                error: err_obj.get("error").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // 更新本地 synclog 状态
+        for item in items {
+            if success_ids.contains(&item.id) {
+                let _ = self.db.execute(&format!(
+                    "UPDATE synclog SET synced = 1 WHERE id = '{}'",
+                    item.id
+                ));
+            } else {
+                // 查找对应的错误信息
+                let error_msg = failed.iter()
+                    .find(|f| f.idrow == item.idrow)
+                    .map(|f| f.error.clone())
+                    .unwrap_or_else(|| "未知错误".to_string());
+                
+                let _ = self.db.execute(&format!(
+                    "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE id = '{}'",
+                    error_msg.replace("'", "''"),
+                    item.id
+                ));
+            }
+        }
+
+        let success_count = success_ids.len() as i32;
+        let failed_count = failed.len() as i32;
+        let error_messages: Vec<String> = failed.iter().map(|e| format!("{}: {}", e.idrow, e.error)).collect();
+
+        SyncResult {
+            res: 0,
+            errmsg: String::new(),
+            datawf: SyncData {
+                inserted: success_count,
+                updated: 0,
+                skipped: 0,
+                failed: Some(failed_count),
+                total: Some(items.len() as i32),
+                errors: if error_messages.is_empty() { None } else { Some(error_messages) },
+            },
+        }
+    }
+
+    /// 上传到 logsvc（JSON 格式，旧版兼容）
+    fn upload_to_logsvc(&self, synclog_url: &str, items: &[SynclogItem]) -> SyncResult {
+        let result = self.db.upload_batch_to_server(synclog_url, items);
 
         match result {
             Ok((inserted, errors)) => {
@@ -1035,7 +1243,7 @@ impl DataSync {
                     .collect();
                 
                 // 标记成功的记录（不在失败列表中的）
-                for item in &pending_items {
+                for item in items {
                     if !failed_idrows.contains(item.idrow.as_str()) {
                         let _ = self.db.execute(&format!(
                             "UPDATE synclog SET synced = 1 WHERE idrow = '{}'",
@@ -1065,7 +1273,7 @@ impl DataSync {
                         updated: 0,
                         skipped: 0,
                         failed: Some(failed_count),
-                        total: Some(pending_items.len() as i32),
+                        total: Some(items.len() as i32),
                         errors: if error_messages.is_empty() { None } else { Some(error_messages) },
                     },
                 }

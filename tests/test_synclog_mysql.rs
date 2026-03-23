@@ -16,6 +16,7 @@ use database::{
     DataSync, LocalDB,
     data_sync::SynclogItem,
     snowflake::next_id_string,
+    ProtoSynclogItem, ProtoSynclogBatch,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -74,95 +75,6 @@ impl TestRecord {
     }
 }
 
-// ========== Protobuf 消息结构 ==========
-
-/// Protobuf 消息结构（用于编解码）
-#[derive(Clone, PartialEq, Message)]
-struct SynclogBatch {
-    #[prost(message, repeated, tag = "1")]
-    items: Vec<SynclogItemProto>,
-}
-
-/// Protobuf 格式的 synclog 项
-#[derive(Clone, PartialEq, Message)]
-struct SynclogItemProto {
-    #[prost(string, tag = "1")]
-    pub id: String,
-    #[prost(string, tag = "2")]
-    pub apisys: String,
-    #[prost(string, tag = "3")]
-    pub apimicro: String,
-    #[prost(string, tag = "4")]
-    pub apiobj: String,
-    #[prost(string, tag = "5")]
-    pub tbname: String,
-    #[prost(string, tag = "6")]
-    pub action: String,
-    #[prost(string, tag = "7")]
-    pub cmdtext: String,
-    #[prost(string, tag = "8")]
-    pub params: String,
-    #[prost(string, tag = "9")]
-    pub idrow: String,
-    #[prost(string, tag = "10")]
-    pub worker: String,
-    #[prost(int32, tag = "11")]
-    pub synced: i32,
-    #[prost(string, tag = "12")]
-    pub cmdtextmd5: String,
-    #[prost(string, tag = "13")]
-    pub cid: String,
-    #[prost(string, tag = "14")]
-    pub upby: String,
-}
-
-impl From<&SynclogItem> for SynclogItemProto {
-    fn from(item: &SynclogItem) -> Self {
-        Self {
-            id: item.id.clone(),
-            apisys: item.apisys.clone(),
-            apimicro: item.apimicro.clone(),
-            apiobj: item.apiobj.clone(),
-            tbname: item.tbname.clone(),
-            action: item.action.clone(),
-            cmdtext: item.cmdtext.clone(),
-            params: item.params.clone(),
-            idrow: item.idrow.clone(),
-            worker: item.worker.clone(),
-            synced: item.synced,
-            cmdtextmd5: item.cmdtextmd5.clone(),
-            cid: item.cid.clone(),
-            upby: item.upby.clone(),
-        }
-    }
-}
-
-impl From<SynclogItemProto> for SynclogItem {
-    fn from(proto: SynclogItemProto) -> Self {
-        Self {
-            idpk: 0,
-            apisys: proto.apisys,
-            apimicro: proto.apimicro,
-            apiobj: proto.apiobj,
-            tbname: proto.tbname,
-            action: proto.action,
-            cmdtext: proto.cmdtext,
-            params: proto.params,
-            idrow: proto.idrow,
-            worker: proto.worker,
-            synced: proto.synced,
-            cmdtextmd5: proto.cmdtextmd5,
-            num: 0,
-            dlong: 0,
-            downlen: 0,
-            id: proto.id,
-            upby: proto.upby,
-            uptime: String::new(),
-            cid: proto.cid,
-        }
-    }
-}
-
 // ========== 失败记录结构 ==========
 
 /// 失败记录
@@ -204,9 +116,25 @@ fn upload_synclog_to_api(
 ) -> Result<(Vec<String>, Vec<FailedRecord>), String> {
     use base64::{Engine as _, engine::general_purpose};
     
-    // 构建 Protobuf 数据
-    let proto_items: Vec<SynclogItemProto> = items.iter().map(|i| i.into()).collect();
-    let batch = SynclogBatch { items: proto_items };
+    // 构建 Protobuf 数据（使用导出的类型）
+    let proto_items: Vec<ProtoSynclogItem> = items.iter().map(|item| ProtoSynclogItem {
+        id: item.id.clone(),
+        apisys: item.apisys.clone(),
+        apimicro: item.apimicro.clone(),
+        apiobj: item.apiobj.clone(),
+        tbname: item.tbname.clone(),
+        action: item.action.clone(),
+        cmdtext: item.cmdtext.clone(),
+        params: item.params.clone(),
+        idrow: item.idrow.clone(),
+        worker: item.worker.clone(),
+        synced: item.synced,
+        cmdtextmd5: item.cmdtextmd5.clone(),
+        cid: item.cid.clone(),
+        upby: item.upby.clone(),
+    }).collect();
+
+    let batch = ProtoSynclogBatch { items: proto_items };
     let bytedata = batch.encode_to_vec();
     let bytedata_base64 = general_purpose::STANDARD.encode(&bytedata);
 
@@ -307,10 +235,31 @@ fn download_synclog_from_api(
     let bytedata = general_purpose::STANDARD.decode(bytedata_base64)
         .map_err(|e| format!("Base64解码失败: {}", e))?;
 
-    let batch: SynclogBatch = Message::decode(&*bytedata)
+    let batch: ProtoSynclogBatch = Message::decode(&*bytedata)
         .map_err(|e| format!("Protobuf解码失败: {}", e))?;
 
-    Ok(batch.items.into_iter().map(|p| p.into()).collect())
+    // 转换为 SynclogItem
+    Ok(batch.items.into_iter().map(|p| SynclogItem {
+        idpk: 0,
+        apisys: p.apisys,
+        apimicro: p.apimicro,
+        apiobj: p.apiobj,
+        tbname: p.tbname,
+        action: p.action,
+        cmdtext: p.cmdtext,
+        params: p.params,
+        idrow: p.idrow,
+        worker: p.worker,
+        synced: p.synced,
+        cmdtextmd5: p.cmdtextmd5,
+        num: 0,
+        dlong: 0,
+        downlen: 0,
+        id: p.id,
+        upby: p.upby,
+        uptime: String::new(),
+        cid: p.cid,
+    }).collect())
 }
 
 /// 根据同步结果更新本地 synclog 表
