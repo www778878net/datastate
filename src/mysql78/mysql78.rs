@@ -4,7 +4,7 @@
 //! 提供连接池管理、预处理语句缓存、重试机制、事务操作
 
 use chrono::Local;
-use mysql::{Pool, PooledConn, prelude::Queryable, TxOpts};
+use mysql::{Pool, PooledConn, prelude::Queryable, TxOpts, Opts, OptsBuilder};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -142,16 +142,23 @@ impl Mysql78 {
             return Err("password is required".to_string());
         }
 
-        let url = format!(
-            "mysql://{}:{}@{}:{}/{}",
-            self.config.user,
-            self.config.password,
-            self.config.host,
-            self.config.port,
-            self.config.database
-        );
+        // 调试输出
+        eprintln!("DEBUG Mysql78::initialize - host={}, port={}, user={}, database={}", 
+            self.config.host, self.config.port, self.config.user, self.config.database);
 
-        let pool = Pool::new(url.as_str())
+        // 使用 OptsBuilder 构建 MySQL 连接选项
+        let opts = OptsBuilder::default()
+            .ip_or_hostname(Some(&self.config.host))
+            .tcp_port(self.config.port)
+            .user(Some(&self.config.user))
+            .pass(Some(&self.config.password))
+            .db_name(Some(&self.config.database))
+            .ssl_opts(None::<mysql::SslOpts>)
+            .prefer_socket(false)
+            .read_timeout(Some(Duration::from_secs(10)))
+            .write_timeout(Some(Duration::from_secs(10)));
+
+        let pool = Pool::new(opts)
             .map_err(|e| format!("创建连接池失败: {}", e))?;
 
         self.pool = Some(Arc::new(Mutex::new(pool)));

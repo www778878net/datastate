@@ -329,11 +329,18 @@ impl DataSync {
 
     /// 从 TableConfig 创建 DataSync
     pub fn from_config(config: &crate::sync_config::TableConfig) -> Self {
+        // 根据 use_rust_synclog 选择正确的 API URL
+        let apiurl = if config.use_rust_synclog && !config.rust_api_url.is_empty() {
+            config.rust_api_url.clone()
+        } else {
+            config.apiurl.clone()
+        };
+
         Self {
             table_name: config.name.clone(),
             db: LocalDB::default_instance()
                 .unwrap_or_else(|_| LocalDB::new(None).expect("创建数据库失败")),
-            apiurl: config.apiurl.clone(),
+            apiurl,
             download_interval: config.download_interval,
             upload_interval: config.upload_interval,
             download_condition: config.download_condition.clone(),

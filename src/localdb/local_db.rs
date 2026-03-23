@@ -27,10 +27,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::collections::HashMap;
 use chrono::Local;
 use base::mylogger;
+use prost::Message;
 
 use base::project_path::ProjectPath;
 use crate::datastate::{DATA_ABILITY_LOG_CREATE_SQL};
-use crate::data_sync::{DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL, SYNCLOG_CREATE_SQL};
+use crate::data_sync::{DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL, SYNCLOG_CREATE_SQL, ProtoSynclogBatch};
 use crate::sqlite78::{SYS_SQL_CREATE_SQL, SYS_WARN_CREATE_SQL};
 
 /// LocalDB 配置
@@ -767,7 +768,10 @@ impl LocalDB {
         String::new()
     }
 
-    /// 从服务器下载数据到本地（支持分页）
+    /// 从服务器下载数据到本地（支持分页，兼容 JSON 和 protobuf 格式）
+    ///
+    /// - 如果 api_url 指向 synclog_mysql，使用 protobuf 格式
+    /// - 否则使用旧的 JSON 格式（logsvc）
     pub fn download_from_server(
         &self,
         _table: &str,
@@ -777,55 +781,125 @@ impl LocalDB {
         download_condition: Option<&Value>,
     ) -> Result<Vec<HashMap<String, Value>>, String> {
         use base::http::HttpHelper;
+        use base64::{Engine as _, engine::general_purpose};
 
         let sid = self.get_sid();
         if sid.is_empty() {
             return Err("配置文件未找到 SID".to_string());
         }
 
-        // 自动添加 /get 后缀（与 Python 版本一致）
-        let url = if api_url.ends_with("/get") {
-            api_url.to_string()
-        } else {
-            format!("{}/get", api_url)
-        };
+        // 判断是否为 Rust API（synclog_mysql）
+        let is_rust_api = api_url.contains("synclog_mysql");
 
-        let mut request_payload = serde_json::json!({
-            "sid": sid,
-            "getnumber": getnumber,
-            "getstart": getstart
-        });
+        if is_rust_api {
+            // === Rust API: protobuf 格式 ===
+            let url = format!("{}/get", api_url.trim_end_matches('/'));
 
-        if let Some(cond) = download_condition {
-            if let Some(_arr) = cond.as_array() {
-                request_payload["pars"] = cond.clone();
-            } else if let Some(_obj) = cond.as_object() {
-                request_payload["data"] = cond.clone();
+            //  protobuf 格式请求：只需要 sid 和 limit
+            let request_payload = serde_json::json!({
+                "sid": sid,
+                "limit": getnumber,
+            });
+
+            let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
+
+            if response.res != 0 {
+                return Err(response.errmsg);
             }
-        }
 
-        let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
+            if let Some(data) = response.data {
+                let response_value: Value = data.response;
+                if let Some(bytedata_base64) = response_value.get("bytedata").and_then(|v| v.as_str()) {
+                    // 解码 base64 protobuf
+                    let bytes = general_purpose::STANDARD
+                        .decode(bytedata_base64)
+                        .map_err(|e| format!("Base64解码失败: {}", e))?;
 
-        if response.res != 0 {
-            return Err(response.errmsg);
-        }
+                    // 解码 SynclogBatch protobuf
+                    let batch = ProtoSynclogBatch::decode(&*bytes)
+                        .map_err(|e| format!("Protobuf解码失败: {}", e))?;
 
-        if let Some(data) = response.data {
-            let response_value: Value = data.response;
-            if let Some(back) = response_value.get("back") {
-                if let Some(arr) = back.as_array() {
+                    // 转换为 HashMap<String, Value>
+                    // 注意：服务器 get() 返回的业务数据存储在 cmdtext 字段（JSON 格式）
                     let mut result: Vec<HashMap<String, Value>> = Vec::new();
-                    for item in arr {
-                        if let Some(obj) = item.as_object() {
-                            result.push(obj.clone().into_iter().collect());
+                    for item in batch.items {
+                        // 尝试解析 cmdtext 中的业务数据 JSON
+                        let business_data: HashMap<String, Value> = match serde_json::from_str(&item.cmdtext) {
+                            Ok(map) => map,
+                            Err(_) => {
+                                // 回退：构建同步日志字段（兼容旧逻辑）
+                                let mut fallback = HashMap::new();
+                                fallback.insert("id".to_string(), Value::String(item.id.clone()));
+                                fallback.insert("tbname".to_string(), Value::String(item.tbname.clone()));
+                                fallback.insert("action".to_string(), Value::String(item.action.clone()));
+                                fallback.insert("cmdtext".to_string(), Value::String(item.cmdtext.clone()));
+                                fallback
+                            }
+                        };
+
+                        // 确保业务数据包含 tbname 和 id
+                        let mut record = business_data;
+                        if !record.contains_key("tbname") {
+                            record.insert("tbname".to_string(), Value::String(item.tbname.clone()));
                         }
+                        if !record.contains_key("id") {
+                            record.insert("id".to_string(), Value::String(item.id.clone()));
+                        }
+
+                        result.push(record);
                     }
+
                     return Ok(result);
                 }
             }
-        }
 
-        Ok(Vec::new())
+            Ok(Vec::new())
+        } else {
+            // === 旧版 JSON 格式 ===
+            // 自动添加 /get 后缀（与 Python 版本一致）
+            let url = if api_url.ends_with("/get") {
+                api_url.to_string()
+            } else {
+                format!("{}/get", api_url)
+            };
+
+            let mut request_payload = serde_json::json!({
+                "sid": sid,
+                "getnumber": getnumber,
+                "getstart": getstart
+            });
+
+            if let Some(cond) = download_condition {
+                if let Some(_arr) = cond.as_array() {
+                    request_payload["pars"] = cond.clone();
+                } else if let Some(_obj) = cond.as_object() {
+                    request_payload["data"] = cond.clone();
+                }
+            }
+
+            let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
+
+            if response.res != 0 {
+                return Err(response.errmsg);
+            }
+
+            if let Some(data) = response.data {
+                let response_value: Value = data.response;
+                if let Some(back) = response_value.get("back") {
+                    if let Some(arr) = back.as_array() {
+                        let mut result: Vec<HashMap<String, Value>> = Vec::new();
+                        for item in arr {
+                            if let Some(obj) = item.as_object() {
+                                result.push(obj.clone().into_iter().collect());
+                            }
+                        }
+                        return Ok(result);
+                    }
+                }
+            }
+
+            Ok(Vec::new())
+        }
     }
 
     /// 上传本地数据到服务器（与 Python 版本一致）
