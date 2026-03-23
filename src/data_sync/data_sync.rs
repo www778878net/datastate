@@ -328,19 +328,16 @@ impl DataSync {
     }
 
     /// 从 TableConfig 创建 DataSync
+    ///
+    /// URL 使用规则：
+    /// - apiurl: 业务表 API，用于首次下载（获取完整数据）
+    /// - rust_api_url: synclog API，用于增量下载（获取变更记录）和上传
     pub fn from_config(config: &crate::sync_config::TableConfig) -> Self {
-        // 根据 use_rust_synclog 选择正确的 API URL
-        let apiurl = if config.use_rust_synclog && !config.rust_api_url.is_empty() {
-            config.rust_api_url.clone()
-        } else {
-            config.apiurl.clone()
-        };
-
         Self {
             table_name: config.name.clone(),
             db: LocalDB::default_instance()
                 .unwrap_or_else(|_| LocalDB::new(None).expect("创建数据库失败")),
-            apiurl,
+            apiurl: config.apiurl.clone(),  // 保留原始业务表 API（首次下载用）
             download_interval: config.download_interval,
             upload_interval: config.upload_interval,
             download_condition: config.download_condition.clone(),
@@ -357,7 +354,7 @@ impl DataSync {
             error_message: String::new(),
             error_time: 0.0,
             use_rust_synclog: config.use_rust_synclog,
-            rust_api_url: config.rust_api_url.clone(),
+            rust_api_url: config.rust_api_url.clone(),  // synclog API（增量下载+上传用）
         }
     }
 
@@ -962,10 +959,18 @@ impl DataSync {
     }
 
     /// 单页下载（增量下载使用）
+    /// 增量下载使用 rust_api_url（synclog API），获取其他客户端的变更记录
     fn download_single_page(&self, getnumber: i32, getstart: i32) -> SyncResult {
+        // 增量下载：优先使用 rust_api_url（synclog API），否则回退到 apiurl
+        let download_url = if self.use_rust_synclog && !self.rust_api_url.is_empty() {
+            &self.rust_api_url
+        } else {
+            &self.apiurl
+        };
+
         let result = self.db.download_from_server(
             &self.table_name,
-            &self.apiurl,
+            download_url,
             getnumber,
             getstart,
             self.download_condition.as_ref(),
