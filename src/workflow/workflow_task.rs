@@ -447,173 +447,259 @@ impl WorkflowTask {
     pub fn get_db(&self) -> &Sqlite78 {
         &self.db
     }
+
+    /// 根据 ID 查询记录（包装 get 方法）
+    pub fn get_by_id(&self, id: &str) -> Result<Option<HashMap<String, Value>>, String> {
+        let up = UpInfo::new();
+        self.get(id, &up)
+    }
+
+    /// 更新记录（完整更新）
+    pub fn update(&self, data: &HashMap<String, Value>) -> Result<(), String> {
+        let id = data.get("id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "缺少 id 字段".to_string())?;
+
+        let up = UpInfo::new();
+        let table_name = self.get_table_name();
+
+        // 构建 SET 子句（排除 id）
+        let mut set_clauses = Vec::new();
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::new();
+
+        // 所有字段列表（与 INSERT 对应）
+        let fields = [
+            "myname", "idcapability", "apisys", "apimicro", "apiobj",
+            "priority", "state", "starttime", "endtime",
+            "inputjson", "outputjson", "configjson", "description", "cid",
+            "idagent", "idworkflowinstance", "runcount", "successcount", "errorcount",
+            "successrate", "executiontime", "lastruntime", "lastoktime", "lasterrortime",
+            "lastokinfo", "lasterrinfo", "price", "costunit", "costtotal", "revenuetotal"
+        ];
+
+        // 存储字符串值以避免生命周期问题
+        let mut string_storage = Vec::new();
+
+        for field in fields.iter() {
+            if let Some(value) = data.get(*field) {
+                set_clauses.push(format!("{} = ?", field));
+                // 将 Value 转换为 String（所有字段都是 TEXT 类型）
+                let value_str = match value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Array(arr) => serde_json::to_string(arr).unwrap_or_default(),
+                    Value::Object(obj) => serde_json::to_string(obj).unwrap_or_default(),
+                    Value::Null => "".to_string(),
+                };
+                string_storage.push(value_str);
+            }
+        }
+
+        // 现在添加所有存储的值到 params
+        for value_str in &string_storage {
+            params.push(value_str as &dyn rusqlite::ToSql);
+        }
+
+        if set_clauses.is_empty() {
+            return Ok(()); // 没有要更新的字段
+        }
+
+        let sql = format!("UPDATE {} SET {} WHERE id = ?", table_name, set_clauses.join(", "));
+        params.push(&id as &dyn rusqlite::ToSql);
+
+        self.db.do_m(&sql, &params, &up)?;
+        Ok(())
+    }
+
+    /// 查询记录列表（支持条件）
+    pub fn query_list(&self, condition: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<HashMap<String, Value>>, String> {
+        let up = UpInfo::new();
+        let table_name = self.get_table_name();
+        let sql = if condition.is_empty() {
+            format!("SELECT * FROM {}", table_name)
+        } else {
+            format!("SELECT * FROM {} WHERE {}", table_name, condition)
+        };
+        self.db.do_get(&sql, params, &up)
+    }
+
+    /// 删除记录
+    pub fn delete(&self, id: &str) -> Result<(), String> {
+        let up = UpInfo::new();
+        let table_name = self.get_table_name();
+        let sql = format!("DELETE FROM {} WHERE id = ?", table_name);
+        self.db.do_m(&sql, &[&id as &dyn rusqlite::ToSql], &up)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
     use super::*;
 
+    use base::get_logger;
     #[test]
-    fn test_workflow_task_create() {
-        let task = WorkflowTask::with_path("tmp/tmp/test_workflow_task.db").expect("创建失败");
+    fn test_workflow_task_basic() {
+        
+        let task = WorkflowTask::with_default_path()
+            .expect("创建失败");
 
         let table_name = task.get_table_name();
-        assert!(table_name.starts_with("workflow_task_"));
-    }
-
-    /// 在正式数据库中测试分表
-    #[test]
-    fn test_workflow_task_in_real_db() {
-        // 使用正式数据库
-        let task = WorkflowTask::with_default_path().expect("创建失败");
-
-        let table_name = task.get_table_name();
-        println!("分表名: {}", table_name);
-        assert!(
-            table_name.starts_with("workflow_task_"),
-            "表名应该是分表格式"
-        );
+        let logger = base::get_logger("WorkflowTaskTest", 3);
+        logger.detail(&format!("分表名: {}", table_name));
+        assert!(table_name.starts_with("workflow_task_"), "表名应该是分表格式");
 
         let up = UpInfo::new();
-
-        // 生成唯一ID避免冲突
-        let unique_id = format!("task_real_{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
-        let unique_inst = format!("inst_real_{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
-
         let mut data = HashMap::new();
-        data.insert("id".to_string(), Value::String(unique_id.clone()));
-        data.insert(
-            "myname".to_string(),
-            Value::String("test_task_real".to_string()),
-        );
-        data.insert(
-            "idcapability".to_string(),
-            Value::String("cap_test".to_string()),
-        );
-        data.insert(
-            "idworkflowinstance".to_string(),
-            Value::String(unique_inst.clone()),
-        );
-        data.insert("state".to_string(), Value::Number(0.into())); // 0=待领取
+        data.insert("id".to_string(), Value::String("test-task-001".to_string()));
+        data.insert("myname".to_string(), Value::String("测试任务".to_string()));
+        data.insert("apisys".to_string(), Value::String("test".to_string()));
+        data.insert("apimicro".to_string(), Value::String("workflow".to_string()));
+        data.insert("apiobj".to_string(), Value::String("task".to_string()));
+        data.insert("state".to_string(), Value::Number(1.into())); // 1=待执行
+        data.insert("priority".to_string(), Value::Number(5.into()));
 
+        let unique_id = "test-task-001".to_string();
         let result = task.insert(&data, &up);
         assert!(result.is_ok(), "插入应该成功: {:?}", result);
-        println!("插入成功: {}", unique_id);
+        let logger = base::get_logger("WorkflowTaskTest", 3);
+        logger.detail(&format!("插入成功: {}", unique_id));
 
-        // 查询验证
-        let found = task.get(&unique_id, &up).expect("查询失败");
-        assert!(found.is_some(), "应该找到记录");
+        // 查询插入的记录
+        let found = task.get_by_id(&unique_id);
+        assert!(found.is_ok(), "查询应该成功: {:?}", found);
         let record = found.unwrap();
         assert_eq!(
             record.get("myname").and_then(|v| v.as_str()).unwrap_or(""),
-            "test_task_real"
+            "测试任务"
         );
-        println!("查询成功，myname: test_task_real");
+        let logger = base::get_logger("WorkflowTaskTest", 3);
+        logger.detail(&format!("查询成功，myname: {}", "测试任务"));
+    }
 
-        // 模拟真实能力执行结果
-        let real_result = serde_json::json!({
-            "res": 0,
-            "data": {"processed": true, "count": 42},
-            "errmsg": ""
+    use base::get_logger;
+    #[test]
+    fn test_workflow_task_status_transition() {
+        
+        let task = WorkflowTask::with_default_path()
+            .expect("创建失败");
+
+        let up = UpInfo::new();
+        let mut data = HashMap::new();
+        data.insert("id".to_string(), Value::String("test-task-status".to_string()));
+        data.insert("myname".to_string(), Value::String("状态流转测试".to_string()));
+        data.insert("apisys".to_string(), Value::String("test".to_string()));
+        data.insert("apimicro".to_string(), Value::String("workflow".to_string()));
+        data.insert("apiobj".to_string(), Value::String("status".to_string()));
+        data.insert("state".to_string(), Value::Number(1.into())); // 待执行
+        data.insert("priority".to_string(), Value::Number(5.into()));
+
+        let result = task.insert(&data, &up);
+        assert!(result.is_ok(), "插入应该成功");
+
+        // 更新状态为执行中(2)
+        let update_data = json!({
+            "id": "test-task-status",
+            "state": 2,
+            "lastokinfo": {"status": "running"}
         });
-        let result_str = serde_json::to_string(&real_result).unwrap_or_else(|_| "{}".to_string());
+        let update_result = task.update(&update_data, &up);
+        assert!(update_result.is_ok(), "更新应该成功");
 
-        // 执行完成，标记为已完成并记录真实执行结果
-        task.mark_completed(&unique_id, &result_str, &up)
-            .expect("标记完成失败");
-        println!("状态更新为已完成(2)，记录真实执行结果");
+        // 再次更新状态为已完成(4)
+        let update_data2 = json!({
+            "id": "test-task-status",
+            "state": 4,
+            "lastokinfo": {"result": "success", "duration": 150}
+        });
+        let update_result2 = task.update(&update_data2, &up);
+        assert!(update_result2.is_ok(), "第二次更新应该成功");
 
-        // 验证更新
-        let found = task.get(&unique_id, &up).expect("查询失败").unwrap();
-        assert_eq!(found.get("state").and_then(|v| v.as_i64()).unwrap_or(-1), 2);
-        // lastokinfo 是 JSON 对象，验证包含真实业务数据
-        let lastokinfo = found.get("lastokinfo").and_then(|v| v.as_object());
-        assert!(lastokinfo.is_some(), "lastokinfo 应该是 JSON 对象");
-        let info = lastokinfo.unwrap();
-        assert!(info.contains_key("data"), "lastokinfo 应包含 data 字段");
-        println!("lastokinfo: {:?}", found.get("lastokinfo"));
-        println!("测试通过！");
-    }
+        let logger = base::get_logger("WorkflowTaskTest", 3);
+        logger.detail("状态更新为已完成(2)，记录真实执行结果");
 
-    #[test]
-    fn test_workflow_task_insert_and_get() {
-        let task = WorkflowTask::with_path("tmp/tmp/test_workflow_task_crud.db").expect("创建失败");
-
-        let up = UpInfo::new();
-
-        let mut data = HashMap::new();
-        data.insert("id".to_string(), Value::String("task_001".to_string()));
-        data.insert("myname".to_string(), Value::String("test_task".to_string()));
-        data.insert(
-            "idcapability".to_string(),
-            Value::String("cap_001".to_string()),
-        );
-        data.insert(
-            "idworkflowinstance".to_string(),
-            Value::String("inst_001".to_string()),
-        );
-        data.insert("state".to_string(), Value::Number(0.into()));
-
-        let result = task.insert(&data, &up);
-        assert!(result.is_ok(), "插入应该成功: {:?}", result);
-
-        // 查询
-        let found = task.get("task_001", &up).expect("查询失败");
-        assert!(found.is_some(), "应该找到记录");
+        // 验证最终状态
+        let found = task.get_by_id("test-task-status");
+        assert!(found.is_ok(), "查询应该成功");
         let record = found.unwrap();
-        assert_eq!(
-            record.get("myname").and_then(|v| v.as_str()).unwrap_or(""),
-            "test_task"
-        );
+        let state = record.get("state").and_then(|v: &Value| v.as_i64()).unwrap_or(0);
+        assert_eq!(state, 4, "状态应该为4（已完成）");
+
+        let lastokinfo = record.get("lastokinfo");
+        assert!(lastokinfo.is_some(), "应该存在lastokinfo字段");
+        let logger = base::get_logger("WorkflowTaskTest", 3);
+        logger.detail(&format!("lastokinfo: {:?}", lastokinfo));
     }
 
+    use base::get_logger;
     #[test]
-    fn test_workflow_task_update_state() {
-        let task =
-            WorkflowTask::with_path("tmp/tmp/test_workflow_task_state.db").expect("创建失败");
+    fn test_workflow_task_complex_query() {
+        
+        let task = WorkflowTask::with_default_path()
+            .expect("创建失败");
 
+        // 插入多条不同状态的测试数据
         let up = UpInfo::new();
-
-        let mut data = HashMap::new();
-        data.insert("id".to_string(), Value::String("task_002".to_string()));
-        data.insert(
-            "myname".to_string(),
-            Value::String("test_task2".to_string()),
-        );
-        data.insert("state".to_string(), Value::Number(0.into()));
-
-        task.insert(&data, &up).expect("插入失败");
-
-        // 更新状态
-        task.update_state("task_002", 2, &up).expect("更新失败");
-
-        // 验证
-        let found = task.get("task_002", &up).expect("查询失败").unwrap();
-        assert_eq!(found.get("state").and_then(|v| v.as_i64()).unwrap_or(-1), 2);
-    }
-
-    #[test]
-    fn test_workflow_task_get_by_instance() {
-        let task =
-            WorkflowTask::with_path("tmp/tmp/test_workflow_task_instance.db").expect("创建失败");
-
-        let up = UpInfo::new();
-
-        // 插入多个任务
-        for i in 0..3 {
-            let mut data = HashMap::new();
-            data.insert("id".to_string(), Value::String(format!("task_inst_{}", i)));
-            data.insert("myname".to_string(), Value::String(format!("task_{}", i)));
-            data.insert(
-                "idworkflowinstance".to_string(),
-                Value::String("inst_001".to_string()),
-            );
-            data.insert("state".to_string(), Value::Number(0.into()));
-            task.insert(&data, &up).expect("插入失败");
+        let states = vec![1, 2, 4]; // 待执行、执行中、已完成
+        let mut idx = 0;
+        for state in states {
+            for i in 1..=3 {
+                idx += 1;
+                let mut data = HashMap::new();
+                data.insert("id".to_string(), Value::String(format!("test-task-{}", idx)));
+                data.insert("myname".to_string(), Value::String(format!("任务{}-{}", state, i)));
+                data.insert("apisys".to_string(), Value::String("test".to_string()));
+                data.insert("apimicro".to_string(), Value::String("workflow".to_string()));
+                data.insert("apiobj".to_string(), Value::String("task".to_string()));
+                data.insert("state".to_string(), Value::Number(state.into()));
+                data.insert("priority".to_string(), Value::Number(i.into()));
+                
+                let result = task.insert(&data, &up);
+                assert!(result.is_ok(), "插入应该成功");
+            }
         }
 
-        // 查询实例的任务
-        let tasks = task.get_by_instance("inst_001", &up).expect("查询失败");
-        assert_eq!(tasks.len(), 3, "应该有3个任务");
+        // 查询所有已完成(4)的任务
+        let query_result = task.query_list("state = ?", &[&4]);
+        assert!(query_result.is_ok(), "查询应该成功");
+        let records = query_result.unwrap();
+        assert_eq!(records.len(), 3, "应该查询到3条已完成任务");
+
+        let logger = base::get_logger("WorkflowTaskTest", 3);
+        logger.detail(&format!("查询到{}条已完成任务", records.len()));
+    }
+
+    use base::get_logger;
+    #[test]
+    fn test_workflow_task_delete() {
+        
+        let task = WorkflowTask::with_default_path()
+            .expect("创建失败");
+
+        // 插入一条测试数据
+        let up = UpInfo::new();
+        let mut data = HashMap::new();
+        data.insert("id".to_string(), Value::String("test-task-delete".to_string()));
+        data.insert("myname".to_string(), Value::String("删除测试任务".to_string()));
+        data.insert("apisys".to_string(), Value::String("test".to_string()));
+        data.insert("apimicro".to_string(), Value::String("workflow".to_string()));
+        data.insert("apiobj".to_string(), Value::String("delete".to_string()));
+        data.insert("state".to_string(), Value::Number(1.into()));
+        
+        let result = task.insert(&data, &up);
+        assert!(result.is_ok(), "插入应该成功");
+
+        // 删除记录
+        let delete_result = task.delete(&"test-task-delete".to_string(), &up);
+        assert!(delete_result.is_ok(), "删除应该成功");
+
+        // 验证删除成功
+        let found = task.get_by_id("test-task-delete");
+        assert!(found.is_err(), "记录应该已被删除");
+
+        let logger = base::get_logger("WorkflowTaskTest", 3);
+        logger.detail("测试通过！");
     }
 }

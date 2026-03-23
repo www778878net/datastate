@@ -8,6 +8,7 @@
 //! - 执行完自动保存到 workflow_instance 表（按天分表）
 
 use async_trait::async_trait;
+use base::mylogger;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -194,7 +195,8 @@ pub trait BaseInstance: Send + Sync {
 
         // 保存执行记录到数据库
         if let Err(e) = self.save_execution() {
-            eprintln!("保存工作流实例记录失败: {}", e);
+            let logger = mylogger!();
+            logger.error(&format!("保存工作流实例记录失败: {}", e));
         }
 
         result
@@ -210,7 +212,7 @@ pub trait BaseInstance: Send + Sync {
         let up = UpInfo::new();
         let json = self.to_instance_json();
 
-        let id = workflow_instance.insert(&json, &up)?;
+        let _id = workflow_instance.insert(&json, &up)?;
 
         Ok(())
     }

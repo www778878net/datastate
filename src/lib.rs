@@ -97,6 +97,8 @@ pub use datastate::{
     DataState, DataSync, SynclogItem, SYNCLOG_CREATE_SQL,
     DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL,
     StateLog, SyncStats,
+    // Protobuf 结构
+    ProtoSynclogItem, ProtoSynclogBatch,
     // MySQL 版本
     DataStateMysql, DataSyncMysql, SynclogItemMysql, SyncStatsMysql, StateLogMysql,
     SyncResultMysql, SyncDataMysql,

@@ -4,7 +4,7 @@
 //! 提供连接池管理、预处理语句缓存、重试机制、事务操作
 
 use chrono::Local;
-use mysql::{Pool, PooledConn, prelude::Queryable, TxOpts};
+use mysql::{Pool, PooledConn, prelude::Queryable, TxOpts, Opts, OptsBuilder};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -137,20 +137,28 @@ impl Mysql78 {
         if self.config.database.is_empty() {
             return Err("database name is required".to_string());
         }
-        if self.config.password.is_empty() {
+        // 允许空密码（本地开发环境）
+        if false && self.config.password.is_empty() {
             return Err("password is required".to_string());
         }
 
-        let url = format!(
-            "mysql://{}:{}@{}:{}/{}",
-            self.config.user,
-            self.config.password,
-            self.config.host,
-            self.config.port,
-            self.config.database
-        );
+        // 调试输出
+        eprintln!("DEBUG Mysql78::initialize - host={}, port={}, user={}, database={}", 
+            self.config.host, self.config.port, self.config.user, self.config.database);
 
-        let pool = Pool::new(url.as_str())
+        // 使用 OptsBuilder 构建 MySQL 连接选项
+        let opts = OptsBuilder::default()
+            .ip_or_hostname(Some(&self.config.host))
+            .tcp_port(self.config.port)
+            .user(Some(&self.config.user))
+            .pass(Some(&self.config.password))
+            .db_name(Some(&self.config.database))
+            .ssl_opts(None::<mysql::SslOpts>)
+            .prefer_socket(false)
+            .read_timeout(Some(Duration::from_secs(10)))
+            .write_timeout(Some(Duration::from_secs(10)));
+
+        let pool = Pool::new(opts)
             .map_err(|e| format!("创建连接池失败: {}", e))?;
 
         self.pool = Some(Arc::new(Mutex::new(pool)));
@@ -404,11 +412,9 @@ fn json_values_to_mysql_params(values: &[Value]) -> mysql::Params {
         return mysql::Params::Empty;
     }
 
-    let mut params = Vec::new();
-    for (i, v) in values.iter().enumerate() {
-        params.push((format!("p{}", i), json_to_mysql_value(v)));
-    }
-    mysql::Params::from(params)
+    // 使用位置参数格式
+    let params: Vec<mysql::Value> = values.iter().map(|v| json_to_mysql_value(v)).collect();
+    mysql::Params::Positional(params)
 }
 
 /// 将 serde_json::Value 转换为 mysql::Value

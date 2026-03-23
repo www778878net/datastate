@@ -100,6 +100,14 @@ pub struct TableConfig {
     /// 是否启用上传（默认 true）
     #[serde(default = "default_true")]
     pub upload_enabled: bool,
+
+    /// 是否使用 Rust 版本的 synclog_mysql API（默认 false，使用 logsvc）
+    #[serde(default)]
+    pub use_rust_synclog: bool,
+
+    /// Rust API 地址（当 use_rust_synclog=true 时使用）
+    #[serde(default)]
+    pub rust_api_url: String,
 }
 
 fn default_true() -> bool { true }
@@ -247,6 +255,8 @@ impl Default for TableConfig {
             uidcid: default_uidcid(),
             download_enabled: true,
             upload_enabled: true,
+            use_rust_synclog: false,
+            rust_api_url: String::new(),
         }
     }
 }

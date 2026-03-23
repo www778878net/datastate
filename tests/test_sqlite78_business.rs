@@ -1,4 +1,5 @@
 //! 实际业务集成测试
+use base::mylogger::mylogger;
 //!
 //! 测试 Sqlite78 的实际建表和插入功能
 
@@ -20,7 +21,7 @@ fn test_sqlite78_initialize() {
     let mut db = Sqlite78::with_config(&db_path, true, true);
     let result = db.initialize();
 
-    println!("初始化结果: {:?}", result);
+    mylogger!().detail(&format!("初始化结果: {:?}", result));
     assert!(result.is_ok(), "数据库初始化应该成功: {:?}", result);
 }
 
@@ -35,7 +36,7 @@ fn test_create_sys_warn_table() {
     let up = UpInfo::default();
 
     let result = state.create_table(&up);
-    println!("创建 sys_warn 表结果: {:?}", result);
+    mylogger!().detail(&format!("创建 sys_warn 表结果: {:?}", result));
     assert!(result.is_ok(), "创建 sys_warn 表应该成功: {:?}", result);
 }
 
@@ -62,7 +63,7 @@ fn test_insert_sys_warn() {
     data.uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let result = state.insert(&data, &up);
-    println!("插入 sys_warn 结果: {:?}", result);
+    mylogger!().detail(&format!("插入 sys_warn 结果: {:?}", result));
     assert!(result.is_ok(), "插入 sys_warn 应该成功");
     assert!(result.unwrap() > 0, "应该返回有效的 insert_id");
 }
@@ -78,7 +79,7 @@ fn test_create_sys_sql_table() {
     let up = UpInfo::default();
 
     let result = state.create_table(&up);
-    println!("创建 sys_sql 表结果: {:?}", result);
+    mylogger!().detail(&format!("创建 sys_sql 表结果: {:?}", result));
     assert!(result.is_ok(), "创建 sys_sql 表应该成功: {:?}", result);
 }
 
@@ -106,13 +107,13 @@ fn test_insert_and_query_sys_warn() {
         data.uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         let result = state.insert(&data, &up);
-        println!("插入第 {} 条: {:?}", i, result);
+        mylogger!().detail(&format!("插入第 {} 条: {:?}", i, result));
         assert!(result.is_ok(), "插入应该成功");
     }
 
     // 查询
     let query_result = state.get_by_kind("test_1", &up);
-    println!("查询结果: {:?}", query_result);
+    mylogger!().detail(&format!("查询结果: {:?}", query_result));
     assert!(query_result.is_ok(), "查询应该成功");
 
     let records = query_result.unwrap();
@@ -122,25 +123,25 @@ fn test_insert_and_query_sys_warn() {
 
 #[test]
 fn test_full_workflow() {
-    println!("========== 开始完整业务测试 ==========");
+    mylogger!().detail(&format!("========== 开始完整业务测试 =========="));
 
     let db_path = get_test_db_path();
 
     // 1. 初始化数据库
-    println!("\n[Step 1] 初始化数据库...");
+    mylogger!().detail(&format!("\n[Step 1] 初始化数据库..."));
     let mut db = Sqlite78::with_config(&db_path, true, true);
     db.initialize().expect("初始化失败");
-    println!("数据库路径: {}", db_path);
+    mylogger!().detail(&format!("数据库路径: {}", db_path));
 
     // 2. 创建 sys_warn 表
-    println!("\n[Step 2] 创建 sys_warn 表...");
+    mylogger!().detail(&format!("\n[Step 2] 创建 sys_warn 表..."));
     let warn_state = SysWarnSqliteState::new(db);
     let up = UpInfo::default();
     warn_state.create_table(&up).expect("创建 sys_warn 表失败");
-    println!("sys_warn 表创建成功");
+    mylogger!().detail(&format!("sys_warn 表创建成功"));
 
     // 3. 插入警告数据
-    println!("\n[Step 3] 插入警告数据...");
+    mylogger!().detail(&format!("\n[Step 3] 插入警告数据..."));
     let mut warn_data = SysWarnData::new();
     warn_data.id = SysWarnData::new_id();
     warn_data.kind = "debug_test".to_string();
@@ -150,16 +151,16 @@ fn test_full_workflow() {
     warn_data.uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let insert_id = warn_state.insert(&warn_data, &up).expect("插入失败");
-    println!("插入成功, insert_id: {}", insert_id);
+    mylogger!().detail(&format!("插入成功, insert_id: {}", insert_id));
 
     // 4. 查询验证
-    println!("\n[Step 4] 查询验证...");
+    mylogger!().detail(&format!("\n[Step 4] 查询验证..."));
     let records = warn_state.get_by_kind("debug_test", &up).expect("查询失败");
-    println!("查询到 {} 条记录", records.len());
+    mylogger!().detail(&format!("查询到 {} 条记录", records.len()));
     for (i, r) in records.iter().enumerate() {
-        println!("  [{}] id={}, kind={}, content={}", i, r.id, r.kind, r.content);
+        mylogger!().detail(&format!("  [{}] id={}, kind={}, content={}", i, r.id, r.kind, r.content));
     }
     assert!(!records.is_empty(), "应该查到刚插入的记录");
 
-    println!("\n========== 测试全部通过 ==========");
+    mylogger!().detail(&format!("\n========== 测试全部通过 =========="));
 }

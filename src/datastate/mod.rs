@@ -26,6 +26,8 @@ pub use crate::data_sync::{
     SYNCLOG_CREATE_SQL, DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL,
     add_to_synclog, get_pending_count, get_pending_items,
     log_status_change, get_status_logs, update_sync_stats, get_sync_stats,
+    // Protobuf 结构
+    ProtoSynclogItem, ProtoSynclogBatch,
 };
 
 // MySQL 版本重新导出
