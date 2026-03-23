@@ -371,7 +371,7 @@ impl LocalDB {
         let columns: Vec<&str> = ordered_columns.iter().map(|s| s.as_str()).collect();
         let placeholders: Vec<&str> = (0..columns.len()).map(|_| "?").collect();
         let sql = format!(
-            "INSERT OR REPLACE INTO {} ({}) VALUES ({})",
+            "INSERT INTO {} ({}) VALUES ({})",
             table,
             columns.join(", "),
             placeholders.join(", ")

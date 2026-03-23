@@ -383,6 +383,7 @@ impl DataSync {
     // ========== 同步队列操作 ==========
 
     /// 添加记录到同步队列
+    /// 如果该记录已有未同步的日志，则更新现有日志而不是添加新日志
     pub fn add_to_queue(
         &self,
         record_id: &str,
@@ -390,7 +391,6 @@ impl DataSync {
         data: &serde_json::Value,
         worker: &str,
     ) -> Result<i64, String> {
-        let id = crate::snowflake::next_id_string();
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         // 构建 cmdtext 和 params
@@ -403,31 +403,49 @@ impl DataSync {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        let sql = "INSERT INTO synclog (id, apisys, apimicro, apiobj, tbname, action, cmdtext, params, idrow, worker, synced, cmdtextmd5, cid, upby, uptime) VALUES (?, 'v1', 'iflow', 'synclog', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)";
-
         let conn = self.db.get_conn();
         let conn_guard = conn.lock().map_err(|e| e.to_string())?;
 
-        conn_guard
-            .execute(
-                &sql,
-                rusqlite::params![
-                    id,
-                    &self.table_name,
-                    action,
-                    cmdtext,
-                    params_json,
-                    record_id,
-                    worker,
-                    cmdtextmd5,
-                    cid,
-                    worker,
-                    uptime
-                ],
-            )
-            .map_err(|e| format!("插入 synclog 失败: {}", e))?;
+        // 检查是否已有未同步的记录
+        let check_sql = "SELECT idpk FROM synclog WHERE tbname = ? AND idrow = ? AND synced = 0 LIMIT 1";
+        let existing_idpk: Option<i64> = conn_guard
+            .query_row(check_sql, rusqlite::params![&self.table_name, record_id], |row| row.get(0))
+            .ok();
 
-        Ok(conn_guard.last_insert_rowid())
+        if let Some(idpk) = existing_idpk {
+            // 更新现有记录
+            let update_sql = "UPDATE synclog SET action = ?, cmdtext = ?, params = ?, cmdtextmd5 = ?, upby = ?, uptime = ? WHERE idpk = ?";
+            conn_guard
+                .execute(
+                    update_sql,
+                    rusqlite::params![action, cmdtext, params_json, cmdtextmd5, worker, uptime, idpk],
+                )
+                .map_err(|e| format!("更新 synclog 失败: {}", e))?;
+            Ok(idpk)
+        } else {
+            // 插入新记录
+            let id = crate::snowflake::next_id_string();
+            let insert_sql = "INSERT INTO synclog (id, apisys, apimicro, apiobj, tbname, action, cmdtext, params, idrow, worker, synced, cmdtextmd5, cid, upby, uptime) VALUES (?, 'v1', 'iflow', 'synclog', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)";
+            conn_guard
+                .execute(
+                    insert_sql,
+                    rusqlite::params![
+                        id,
+                        &self.table_name,
+                        action,
+                        cmdtext,
+                        params_json,
+                        record_id,
+                        worker,
+                        cmdtextmd5,
+                        cid,
+                        worker,
+                        uptime
+                    ],
+                )
+                .map_err(|e| format!("插入 synclog 失败: {}", e))?;
+            Ok(conn_guard.last_insert_rowid())
+        }
     }
 
     /// 构建 SQL 模板和参数
@@ -935,10 +953,18 @@ impl DataSync {
         let mut updated = 0;
         let mut skipped = 0;
         let mut errors: Vec<String> = Vec::new();
+        let mut processed_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for record in records {
             if let Some(record_id) = record.get("id") {
                 if let Some(id_str) = record_id.as_str() {
+                    // 检查同一批数据中是否已处理过该id
+                    if processed_ids.contains(id_str) {
+                        skipped += 1;
+                        continue;
+                    }
+                    processed_ids.insert(id_str.to_string());
+
                     let check_sql = format!("SELECT * FROM {} WHERE id = ?", self.table_name);
                     let existing = self.db.query(&check_sql, &[&id_str]);
 
@@ -1044,14 +1070,13 @@ impl DataSync {
                 // 标记失败的记录
                 let error_messages: Vec<String> = errors.iter().map(|e| format!("{}: {}", e.idrow, e.error)).collect();
                 
-                if !errors.is_empty() {
-                    for err in &errors {
-                        let _ = self.db.execute(&format!(
-                            "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
-                            err.error.replace("'", "''"),
-                            err.idrow
-                        ));
-                    }
+                // 标记失败的记录
+                for err in &errors {
+                    let _ = self.db.execute(&format!(
+                        "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
+                        err.error.replace("'", "''"),
+                        err.idrow
+                    ));
                 }
 
                 SyncResult {
