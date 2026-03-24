@@ -5,6 +5,7 @@
 
 use crate::{Sqlite78, UpInfo};
 use super::{ShardingConfig, ShardType, ShardingManager};
+use serde_json;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
@@ -393,20 +394,137 @@ impl WorkflowInstance {
     pub fn get_db(&self) -> &Sqlite78 {
         &self.db
     }
+
+    /// 根据 ID 查询记录
+    pub fn get_by_id(&self, id: &str, up: &UpInfo) -> Result<Option<HashMap<String, Value>>, String> {
+        let table_name = self.get_table_name();
+        let sql = format!("SELECT * FROM {} WHERE id = ?", table_name);
+        let rows = self.db.do_get(&sql, &[&id as &dyn rusqlite::ToSql], up)?;
+        Ok(rows.into_iter().next())
+    }
+
+    /// 更新记录（完整更新）
+    pub fn update(&self, data: &HashMap<String, Value>, up: &UpInfo) -> Result<(), String> {
+        let id = data.get("id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "缺少 id 字段".to_string())?;
+
+        let table_name = self.get_table_name();
+
+        // 构建 SET 子句（排除 id）
+        let mut set_clauses = Vec::new();
+        let mut params: Vec<&dyn rusqlite::ToSql> = Vec::new();
+
+        // 所有字段列表（与 INSERT 对应）
+        let fields = [
+            "cid", "apisys", "apimicro", "apiobj", "myname",
+            "idworkflowdefinition", "state", "priority", "agentkind", "flowschema",
+            "inputjson", "outputjson", "maxcopy", "currentcopy", "timeout",
+            "retrylimit", "retryinterval", "resourcereq", "description", "configjson",
+            "costtotal", "revenuetotal", "profittotal", "roi", "runcount",
+            "successcount", "errorcount", "successrate", "executiontime", "lastruntime",
+            "lastoktime", "lasterrortime", "lastokinfo", "lasterrinfo", "starttime",
+            "endtime", "idagent", "idparentinstance"
+        ];
+
+        // 存储字符串值以避免生命周期问题
+        let mut string_storage = Vec::new();
+
+        for field in fields.iter() {
+            if let Some(value) = data.get(*field) {
+                set_clauses.push(format!("{} = ?", field));
+                // 将 Value 转换为 String（所有字段都是 TEXT 类型）
+                let value_str = match value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Array(arr) => serde_json::to_string(arr).unwrap_or_default(),
+                    Value::Object(obj) => serde_json::to_string(obj).unwrap_or_default(),
+                    Value::Null => "".to_string(),
+                };
+                string_storage.push(value_str);
+            }
+        }
+
+        // 现在添加所有存储的值到 params
+        for value_str in &string_storage {
+            params.push(value_str as &dyn rusqlite::ToSql);
+        }
+
+        if set_clauses.is_empty() {
+            return Ok(());
+        }
+
+        let sql = format!("UPDATE {} SET {} WHERE id = ?", table_name, set_clauses.join(", "));
+        params.push(&id as &dyn rusqlite::ToSql);
+
+        self.db.do_m(&sql, &params, up)?;
+        Ok(())
+    }
+
+    /// 查询记录列表
+    pub fn query_list(&self, condition: &str, params: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
+        let table_name = self.get_table_name();
+        let sql = if condition.is_empty() {
+            format!("SELECT * FROM {}", table_name)
+        } else {
+            format!("SELECT * FROM {} WHERE {}", table_name, condition)
+        };
+        self.db.do_get(&sql, params, up)
+    }
+
+    /// 分页查询
+    pub fn query_page(&self, condition: &str, params: &[&dyn rusqlite::ToSql], offset: i32, limit: i32, up: &UpInfo) -> Result<(Vec<HashMap<String, Value>>, i32), String> {
+        let table_name = self.get_table_name();
+        let sql = if condition.is_empty() {
+            format!("SELECT * FROM {} LIMIT ? OFFSET ?", table_name)
+        } else {
+            format!("SELECT * FROM {} WHERE {} LIMIT ? OFFSET ?", table_name, condition)
+        };
+
+        // 准备参数：先传查询参数，再传 limit 和 offset
+        let mut all_params: Vec<&dyn rusqlite::ToSql> = params.to_vec();
+        all_params.push(&limit as &dyn rusqlite::ToSql);
+        all_params.push(&offset as &dyn rusqlite::ToSql);
+
+        let records = self.db.do_get(&sql, &all_params, up)?;
+
+        // 查询总数
+        let count_sql = if condition.is_empty() {
+            format!("SELECT COUNT(*) as cnt FROM {}", table_name)
+        } else {
+            format!("SELECT COUNT(*) as cnt FROM {} WHERE {}", table_name, condition)
+        };
+        let count_rows = self.db.do_get(&count_sql, params, up)?;
+        let total = count_rows.first()
+            .and_then(|row| row.get("cnt").and_then(|v| v.as_i64()))
+            .unwrap_or(0) as i32;
+
+        Ok((records, total))
+    }
+
+    /// 删除记录
+    pub fn delete(&self, id: &str, up: &UpInfo) -> Result<(), String> {
+        let table_name = self.get_table_name();
+        let sql = format!("DELETE FROM {} WHERE id = ?", table_name);
+        self.db.do_m(&sql, &[&id as &dyn rusqlite::ToSql], up)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use base::get_logger;
     #[test]
     fn test_workflow_instance_basic() {
-        use base::mylogger;
+        
         let instance = WorkflowInstance::with_default_path()
             .expect("创建失败");
 
         let table_name = instance.get_table_name();
-        let logger = mylogger!();
+        let logger = base::get_logger("WorkflowInstanceTest", 3);
         logger.detail(&format!("分表名: {}", table_name));
         assert!(table_name.starts_with("workflow_instance_"), "表名应该是分表格式");
 
@@ -423,7 +541,7 @@ mod tests {
         let unique_id = "test-instance-001".to_string();
         let result = instance.insert(&data, &up);
         assert!(result.is_ok(), "插入应该成功: {:?}", result);
-        let logger = mylogger!();
+        let logger = base::get_logger("WorkflowInstanceTest", 3);
         logger.detail(&format!("插入成功: {}", unique_id));
 
         // 查询插入的记录
@@ -438,9 +556,10 @@ mod tests {
         logger.detail(&format!("查询成功，记录ID: {}", unique_id));
     }
 
+    use base::get_logger;
     #[test]
     fn test_workflow_instance_status_update() {
-        use base::mylogger;
+        
         let instance = WorkflowInstance::with_default_path()
             .expect("创建失败");
 
@@ -466,7 +585,7 @@ mod tests {
         let update_result = instance.update(&update_data, &up);
         assert!(update_result.is_ok(), "更新应该成功");
 
-        let logger = mylogger!();
+        let logger = base::get_logger("WorkflowInstanceTest", 3);
         logger.detail("状态更新为已完成(2)，记录真实执行结果");
 
         // 验证更新是否成功
@@ -478,13 +597,14 @@ mod tests {
 
         let lastokinfo = record.get("lastokinfo");
         assert!(lastokinfo.is_some(), "应该存在lastokinfo字段");
-        let logger = mylogger!();
+        let logger = base::get_logger("WorkflowInstanceTest", 3);
         logger.detail(&format!("lastokinfo: {:?}", lastokinfo));
     }
 
+    use base::get_logger;
     #[test]
     fn test_workflow_instance_query() {
-        use base::mylogger;
+        
         let instance = WorkflowInstance::with_default_path()
             .expect("创建失败");
 
@@ -510,13 +630,14 @@ mod tests {
         let records = query_result.unwrap();
         assert!(records.len() >= 3, "应该至少查询到3条记录");
 
-        let logger = mylogger!();
+        let logger = base::get_logger("WorkflowInstanceTest", 3);
         logger.detail(&format!("查询到{}条已完成记录", records.len()));
     }
 
+    use base::get_logger;
     #[test]
     fn test_workflow_instance_pagination() {
-        use base::mylogger;
+        
         let instance = WorkflowInstance::with_default_path()
             .expect("创建失败");
 
@@ -543,13 +664,14 @@ mod tests {
         assert_eq!(records.len(), 5, "第一页应该返回5条记录");
         assert!(total >= 10, "总数应该大于等于10");
 
-        let logger = mylogger!();
+        let logger = base::get_logger("WorkflowInstanceTest", 3);
         logger.detail(&format!("分页查询: 第1页，每页5条，共{}条", total));
     }
 
+    use base::get_logger;
     #[test]
     fn test_workflow_instance_delete() {
-        use base::mylogger;
+        
         let instance = WorkflowInstance::with_default_path()
             .expect("创建失败");
 
@@ -574,7 +696,7 @@ mod tests {
         let found = instance.get_by_id("test-delete");
         assert!(found.is_err(), "记录应该已被删除");
 
-        let logger = mylogger!();
+        let logger = base::get_logger("WorkflowInstanceTest", 3);
         logger.detail("删除测试成功");
     }
 }
