@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn test_audit_permission() {
-        use base::mylogger::mylogger;
+        use base::mylogger;
         let logger = mylogger!();
         logger.detail("\n=== 权限测试 ===");
 

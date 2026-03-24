@@ -6,6 +6,7 @@
 use crate::{Sqlite78, UpInfo};
 use super::{ShardingConfig, ShardType, ShardingManager};
 use serde_json::Value;
+use serde_json::json;
 use std::collections::HashMap;
 
 /// workflow_instance 表建表 SQL（SQLite 版本）
@@ -434,7 +435,7 @@ mod tests {
             ""
         );
         let logger = mylogger!();
-        logger.detail(&format!("查询成功，idworkflowdefinition: {}", unique_wf));
+        logger.detail(&format!("查询成功，记录ID: {}", unique_id));
     }
 
     #[test]
