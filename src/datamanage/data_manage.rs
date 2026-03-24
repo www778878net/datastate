@@ -132,8 +132,8 @@ impl DataManage {
             }
         }
 
-        // 自动首次下载（跳过本地表，apiurl为空的不下载）
-        if !config.apiurl.is_empty() {
+        // 自动首次下载（跳过本地表，apiurl为空的不下载，download_enabled=false的不下载）
+        if !config.apiurl.is_empty() && config.download_enabled {
             let result = state.datasync.download_once();
             if result.res == 0 {
                 let error_info = if let Some(ref errors) = result.datawf.errors {

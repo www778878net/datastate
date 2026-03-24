@@ -512,11 +512,18 @@ impl DataSync {
     fn build_cmdtext_and_params(&self, action: &str, data: &serde_json::Value) -> (String, Vec<serde_json::Value>) {
         let empty_map = serde_json::Map::new();
         let data_obj = data.as_object().unwrap_or(&empty_map);
-        
+
         match action {
             "insert" => {
-                // 使用固定的列顺序（按字母顺序排序）
-                let mut columns: Vec<&str> = data_obj.keys().map(|s| s.as_str()).collect();
+                // 如果配置了 upload_cols，只使用指定的字段
+                let mut columns: Vec<&str> = if let Some(ref upload_cols) = self.upload_cols {
+                    upload_cols.iter()
+                        .filter(|c| data_obj.contains_key(*c))
+                        .map(|s| s.as_str())
+                        .collect()
+                } else {
+                    data_obj.keys().map(|s| s.as_str()).collect()
+                };
                 columns.sort();
                 let placeholders: Vec<&str> = columns.iter().map(|_| "?").collect();
                 let cmdtext = format!(
@@ -531,9 +538,15 @@ impl DataSync {
                 (cmdtext, params)
             }
             "update" => {
-                // 使用固定的列顺序（按字母顺序排序，排除 id）
-                let mut columns: Vec<&str> = data_obj.keys().map(|s| s.as_str()).collect();
-                columns.retain(|c| *c != "id");
+                // 如果配置了 upload_cols，只使用指定的字段（排除 id）
+                let mut columns: Vec<&str> = if let Some(ref upload_cols) = self.upload_cols {
+                    upload_cols.iter()
+                        .filter(|c| *c != "id" && data_obj.contains_key(*c))
+                        .map(|s| s.as_str())
+                        .collect()
+                } else {
+                    data_obj.keys().filter(|c| *c != "id").map(|s| s.as_str()).collect()
+                };
                 columns.sort();
                 let set_clause = columns.iter()
                     .map(|c| format!("`{}` = ?", c))
