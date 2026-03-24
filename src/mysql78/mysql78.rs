@@ -3,8 +3,9 @@
 //! 基于 koa78-base78 Mysql78.ts 的 Rust 实现
 //! 提供连接池管理、预处理语句缓存、重试机制、事务操作
 
+use base::mylogger;
 use chrono::Local;
-use mysql::{Pool, PooledConn, prelude::Queryable, TxOpts, Opts, OptsBuilder};
+use mysql::{Pool, PooledConn, prelude::Queryable, TxOpts, OptsBuilder};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -143,8 +144,8 @@ impl Mysql78 {
         }
 
         // 调试输出
-        eprintln!("DEBUG Mysql78::initialize - host={}, port={}, user={}, database={}", 
-            self.config.host, self.config.port, self.config.user, self.config.database);
+        mylogger!().detail(&format!("Mysql78::initialize - host={}, port={}, user={}, database={}",
+            self.config.host, self.config.port, self.config.user, self.config.database));
 
         // 使用 OptsBuilder 构建 MySQL 连接选项
         let opts = OptsBuilder::default()
