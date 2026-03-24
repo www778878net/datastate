@@ -94,16 +94,21 @@ pub use snowflake::{next_id, next_id_string};
 
 // datastate 导出（包含权限相关方法和内部访问trait）
 pub use datastate::{
-    DataState, DataSync, SynclogItem, SYNCLOG_CREATE_SQL,
-    DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL,
-    StateLog, SyncStats,
+    DataState, StateLog,
+    // MySQL 版本
+    DataStateMysql, StateLogMysql,
+};
+pub use data_sync::{
+    DataSync, SynclogItem, SyncStats,
+    SYNCLOG_CREATE_SQL, DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL,
     // Protobuf 结构
     ProtoSynclogItem, ProtoSynclogBatch,
     // MySQL 版本
-    DataStateMysql, DataSyncMysql, SynclogItemMysql, SyncStatsMysql, StateLogMysql,
+    DataSyncMysql, SynclogItemMysql, SyncStatsMysql, StateLogMysql,
     SyncResultMysql, SyncDataMysql,
     SYNCLOG_CREATE_SQL_MYSQL, DATA_STATE_LOG_CREATE_SQL_MYSQL, DATA_SYNC_STATS_CREATE_SQL_MYSQL,
-    // 审计相关
+};
+pub use dataaudit::{
     DataAudit, DATA_ABILITY_LOG_CREATE_SQL, AbilityLog,
     AuditLogDataState, AuditLogRecord, AUDIT_LOG_CREATE_SQL,
     AuditPermDataState, AuditPermRecord, AUDIT_PERM_CREATE_SQL,

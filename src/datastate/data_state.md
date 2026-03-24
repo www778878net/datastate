@@ -325,7 +325,7 @@ log_ability_call(
 ```
 
 ### 测试验证
-- 测试文件：`crates/database/tests/test_audit_permissions.rs`
+- 测试文件：`crates/datastate/tests/test_audit_permissions.rs`
 - 运行测试：`cargo test -p database test_tb_permission`
 - 审计开启测试：`DATASTATE_AUDIT=1 cargo test -p database test_tb_permission`
 

@@ -133,6 +133,6 @@ let schema = BaseSchema::new();
 
 ## 文件位置
 
-- 类实现: `crates/database/src/schema/base_schema.rs`
-- 技术文档: `crates/database/src/schema/base_schema.md`
-- 模块入口: `crates/database/src/schema/mod.rs`
+- 类实现: `crates/datastate/src/schema/base_schema.rs`
+- 技术文档: `crates/datastate/src/schema/base_schema.md`
+- 模块入口: `crates/datastate/src/schema/mod.rs`

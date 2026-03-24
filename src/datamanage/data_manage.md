@@ -59,7 +59,7 @@
 - [ ] 错误 cid 数据被拒绝，synced=-1
 - [ ] lasterrinfo 记录错误信息
 - 测试用例：`test_full_sync_workflow`, `test_cid_validation_failed`
-- 测试文件：`crates/database/tests/test_tb_sync.rs`
+- 测试文件：`crates/datastate/tests/test_tb_sync.rs`
 
 ## 知识库
 
