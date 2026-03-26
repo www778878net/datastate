@@ -104,7 +104,7 @@ pub use data_sync::{
     // Protobuf 结构
     ProtoSynclogItem, ProtoSynclogBatch,
     // MySQL 版本
-    DataSyncMysql, SynclogItemMysql, SyncStatsMysql, StateLogMysql,
+    DataSyncMysql, SynclogItemMysql, SyncStatsMysql,
     SyncResultMysql, SyncDataMysql,
     SYNCLOG_CREATE_SQL_MYSQL, DATA_STATE_LOG_CREATE_SQL_MYSQL, DATA_SYNC_STATS_CREATE_SQL_MYSQL,
 };

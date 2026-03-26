@@ -7,7 +7,6 @@ use crate::{Sqlite78, UpInfo};
 use super::{ShardingConfig, ShardType, ShardingManager};
 use serde_json;
 use serde_json::Value;
-use serde_json::json;
 use std::collections::HashMap;
 
 /// workflow_instance 表建表 SQL（SQLite 版本）
@@ -515,6 +514,7 @@ impl WorkflowInstance {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     use base::get_logger;
     #[test]
