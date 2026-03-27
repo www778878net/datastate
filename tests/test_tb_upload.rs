@@ -4,7 +4,7 @@ use base::mylogger::mylogger;
 //! 测试 DataSync 的 CRUD 方法（m_add, m_save, m_del）
 //! 测试同步到服务器
 
-use database::{DataManage, TableConfig, get_system_columns, DataState, LocalDB};
+use datastate::{DataManage, TableConfig, get_system_columns, DataState, LocalDB};
 use std::collections::HashMap;
 use serde_json::Value;
 

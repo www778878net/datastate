@@ -4,7 +4,7 @@
 //!
 //! # 用法
 //! ```rust
-//! use database::LocalDB;
+//! use datastate::LocalDB;
 //!
 //! // 默认实例（三级优先级：环境变量 > 配置文件 > 默认路径）
 //! let db = LocalDB::default_instance()?;

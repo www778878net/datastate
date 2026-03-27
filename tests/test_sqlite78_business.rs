@@ -3,7 +3,7 @@ use base::mylogger::mylogger;
 //!
 //! 测试 Sqlite78 的实际建表和插入功能
 
-use database::{Sqlite78, SysWarnSqliteState, SysSqlSqliteState, SysWarnData, UpInfo};
+use datastate::{Sqlite78, SysWarnSqliteState, SysSqlSqliteState, SysWarnData, UpInfo};
 use std::path::PathBuf;
 
 fn get_test_db_path() -> String {

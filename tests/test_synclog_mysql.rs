@@ -12,7 +12,7 @@
 //! 6. 双边同时修改的冲突处理
 //! 7. guest3 用户帐套隔离测试
 
-use database::{
+use datastate::{
     DataSync, LocalDB,
     data_sync::SynclogItem,
     snowflake::next_id_string,

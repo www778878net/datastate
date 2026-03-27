@@ -6,7 +6,7 @@ use base::mylogger::mylogger;
 //! 2. 修改数据，同步到服务器（通过 synclog）
 //! 3. 删除本地数据，重新下载，验证修改后的数据是否过来
 
-use database::{DataManage, TableConfig, get_system_columns, LocalDB};
+use datastate::{DataManage, TableConfig, get_system_columns, LocalDB};
 use std::collections::HashMap;
 use serde_json::Value;
 use base::http::HttpHelper;
@@ -218,7 +218,7 @@ fn test_full_sync_workflow() {
 /// 4. 验证本地 synclog 的 synced=-1, lasterrinfo 有值
 #[test]
 fn test_cid_validation_failed() {
-    use database::data_sync::{DataSync, get_pending_count};
+    use datastate::data_sync::{DataSync, get_pending_count};
     
     mylogger!().detail(&format!("\n========================================"));
     mylogger!().detail(&format!("=== 测试 cid 验证失败场景 ==="));

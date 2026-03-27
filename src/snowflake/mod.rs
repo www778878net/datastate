@@ -5,7 +5,7 @@
 //! ## 使用方法
 //!
 //! ```rust
-//! use database::snowflake::{next_id, next_id_string, get_worker_id, init_worker_id};
+//! use datastate::snowflake::{next_id, next_id_string, get_worker_id, init_worker_id};
 //!
 //! // 自动生成ID（worker_id基于UUID自动生成）
 //! let id = next_id();  // 返回 i64
