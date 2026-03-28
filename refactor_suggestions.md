@@ -2,72 +2,88 @@
 
 本文档针对 `crates/datastate` 模块提出重构和优化建议，按照优先级排序。
 
-**文档版本**：v1.1
-**日期**：2026-03-26
+**文档版本**：v1.2
+**日期**：2026-03-28
 **适用版本**：crates/datastate v0.1.0
+
+---
+
+## 代码分析结果（2026-03-28）
+
+### 文件规模统计
+| 文件 | 行数 | 状态 |
+|------|------|------|
+| data_sync.rs | 1958 | 过长，建议拆分 |
+| local_db.rs | 1359 | 过长，建议拆分 |
+| data_manage.rs | 728 | 可接受 |
+| workflow_task.rs | 705 | 可接受 |
+| workflow_instance.rs | 702 | 可接受 |
+
+### 重复模式统计
+- `workflow_instance.rs`: 25处 `data.get().and_then(|v| v.as_str())` 重复
+- `workflow_instance.rs`: 44处 `unwrap_or()` 使用
+- 无 TODO/FIXME/HACK 标记
 
 ---
 
 ## 重点建议（3个）
 
-### 1. 提取字段解析辅助函数
+### 1. 拆分超大文件
 
-**问题**：`workflow_instance.rs` 的 `insert` 方法约150行，大量重复的字段提取模式。
+**问题**：`data_sync.rs` (1958行) 和 `local_db.rs` (1359行) 文件过长，难以维护。
+
+**分析**：
+- `data_sync.rs` 包含 25+ 个公开方法，职责过多
+- `local_db.rs` 包含 30+ 个公开方法，混合了本地操作和远程同步
+
+**建议**：
+- `data_sync.rs` 拆分为：
+  - `sync_core.rs` - 核心同步逻辑
+  - `sync_queue.rs` - 队列管理
+  - `sync_stats.rs` - 统计功能
+- `local_db.rs` 拆分为：
+  - `db_core.rs` - 数据库核心操作
+  - `db_sync.rs` - 同步相关方法
+
+**优先级**：高
+
+---
+
+### 2. 提取字段解析辅助宏
+
+**问题**：`workflow_instance.rs` 有 25 处重复的字段提取模式。
+
+**代码位置**：`workflow_instance.rs` 第184-271行
 
 **示例**：
 ```rust
 let cid = data.get("cid").and_then(|v| v.as_str()).unwrap_or("");
 let apisys = data.get("apisys").and_then(|v| v.as_str()).unwrap_or("apiwf");
-let apimicro = data.get("apimicro").and_then(|v| v.as_str()).unwrap_or("basic");
-// ... 重复40+次
+// ... 重复 25 次
 ```
 
-**建议**：
-- 创建辅助宏 `extract_str!`、`extract_i64!`、`extract_f64!`
-- 或创建 `FieldExtractor` 结构体封装解析逻辑
-
-**收益**：
-- 减少70%+ 重复代码
-- 提高可维护性
-- 降低出错风险
-
-**优先级**：高
-
----
-
-### 2. 统一日志访问方式
-
-**问题**：日志使用方式不统一。部分结构体通过字段存储 logger，而 BaseCapability 通过 trait 方法访问，BaseInstance 缺少 logger 支持。
-
-**影响**：
-- 增加代码耦合度
-- 测试难度高
-- 维护成本高
-
-**建议**：
-- 为 BaseInstance trait 添加 logger() 和 set_logger() 方法
-- 统一所有组件的日志访问模式
-- 考虑使用 `Arc<MyLogger>` 作为共享引用
+**建议**：创建辅助宏
+```rust
+macro_rules! extract_str {
+    ($data:expr, $key:expr, $default:expr) => {
+        $data.get($key).and_then(|v| v.as_str()).unwrap_or($default)
+    };
+}
+```
 
 **优先级**：高
 
 ---
 
-### 3. 提取测试公共逻辑
+### 3. 统一日志访问方式
 
-**问题**：测试文件中存在大量重复的初始化代码。
+**问题**：`BaseCapability` trait 有 `logger()` 和 `set_logger()` 方法，但 `BaseInstance` 缺少这些方法。
 
-**建议**：
-- 创建测试公共模块 `tests/common.rs`：
-  - `setup_test_db()` - 初始化测试数据库
-  - `clear_test_data()` - 清空测试数据
-  - `get_test_config()` - 获取测试配置
-- 使用 `#[cfg(test)]` 限制测试辅助代码
+**分析**：
+- `base_capability.rs` 第46-51行定义了 logger 方法
+- `base_instance.rs` 没有对应的 logger 支持
 
-**收益**：
-- 减少测试代码量
-- 提高测试执行速度
-- 便于维护
+**建议**：为 `BaseInstance` trait 添加相同的日志访问方法
 
 **优先级**：中
 
@@ -75,46 +91,27 @@ let apimicro = data.get("apimicro").and_then(|v| v.as_str()).unwrap_or("basic");
 
 ## 小优化建议（2个）
 
-### 1. 减少字符串格式化开销
+### 1. 减少 unwrap_or 重复
 
-**问题**：大量使用 `format!` 宏创建日志消息，即使日志被过滤也会执行格式化。
+**问题**：`workflow_instance.rs` 有 44 处 `unwrap_or` 调用。
 
-**优化**：
-```rust
-// 当前
-logger.detail(&format!("处理记录: id={}", id));
-
-// 优化后
-if logger.enabled() {
-    logger.detail(&format!("处理记录: id={}", id));
-}
-```
-
-**收益**：减少不必要的字符串分配，提升性能。
+**建议**：使用辅助宏或提取为方法，减少重复代码。
 
 ---
 
-### 2. 错误处理改进
+### 2. 文档与实现一致性检查
 
-**问题**：部分错误处理只打印日志但不返回错误。
+**问题**：`base_instance.md` 缺少 `InstanceResult` 结构体的文档说明。
 
-**建议**：
-- 对关键操作返回 Result
-- 添加错误上下文，便于调试
-- 使用 `thiserror` 库定义错误类型
-
-**收益**：提高错误可见性和调试效率。
-
----
-
-## 其他观察
-
-1. **模块文档完善**：当前已有40+个.md文档文件，文档覆盖良好
-2. **print语句**：已全部转换为 MyLogger，无遗留 print/println 语句
-3. **编译警告**：已处理 unused import 警告
+**建议**：补充 `InstanceResult` 的文档，包括：
+- `res` 字段说明
+- `errmsg` 字段说明
+- `to_dict()` 方法说明
+- `is_success()` 方法说明
 
 ---
 
 **历史记录**：
-- v1.1 (2026-03-26): 更新为 datastate 模块，基于代码审查更新建议
+- v1.2 (2026-03-28): 基于代码分析更新，统计了文件行数和重复模式
+- v1.1 (2026-03-26): 更新为 datastate 模块
 - v1.0 (2026-03-24): 初始版本

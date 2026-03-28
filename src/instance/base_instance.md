@@ -103,6 +103,43 @@
 - `LifecycleManager`：生命周期统计（runcount、successcount、errorcount）
 - `EconomicManager`：经济统计（costtotal、revenuetotal、roi）
 
+### InstanceResult 结构体
+
+工作流实例执行结果类，用于封装执行结果。
+
+#### 字段说明
+- `res: i32` - 执行结果，0=成功，其他=失败
+- `errmsg: String` - 错误信息
+- `result: Option<Value>` - 业务结果（JSON格式）
+- `operation: Option<String>` - 操作描述
+
+#### 方法说明
+- `new(res, errmsg, result, operation)` - 创建新的结果实例
+- `to_dict()` - 转换为JSON字典格式
+- `is_success()` - 判断是否成功（res == 0）
+- `success(result, operation)` - 创建成功结果（静态方法）
+- `error(errmsg, result)` - 创建失败结果（静态方法）
+
+#### 使用示例
+```rust
+// 创建成功结果
+let result = InstanceResult::success(
+    Some(serde_json::json!({"key": "value"})),
+    Some("操作完成".to_string())
+);
+
+// 创建失败结果
+let error = InstanceResult::error(
+    "执行失败".to_string(),
+    None
+);
+
+// 判断结果
+if result.is_success() {
+    println!("成功: {:?}", result.to_dict());
+}
+```
+
 ### 数据流向
 ```
 JSON输入 → InstanceBase → execute() → 数据库记录
