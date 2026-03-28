@@ -118,7 +118,7 @@
 - `to_dict()` - 转换为JSON字典格式
 - `is_success()` - 判断是否成功（res == 0）
 - `success(result, operation)` - 创建成功结果（静态方法）
-- `error(errmsg, result)` - 创建失败结果（静态方法）
+- `failure(errmsg, res, operation)` - 创建失败结果（静态方法）
 
 #### 使用示例
 ```rust
