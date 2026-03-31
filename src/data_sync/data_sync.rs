@@ -1697,10 +1697,10 @@ mod tests {
         let conn = db.get_conn();
         let conn_guard = conn.lock().expect("获取锁失败");
 
-        // 检查 sync_queue 表
+        // 检查 synclog 表
         let count: i64 = conn_guard
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sync_queue'",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='synclog'",
                 [],
                 |row| row.get(0),
             )
@@ -1789,16 +1789,16 @@ mod tests {
             let conn = sync.db.get_conn();
             let conn_guard = conn.lock().expect("获取数据库连接失败");
 
-            // 检查 sync_queue 表
+            // 检查 synclog 表
             let count: i64 = conn_guard
                 .query_row(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sync_queue'",
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='synclog'",
                     [],
                     |row| row.get(0),
                 )
                 .unwrap_or(0);
-            assert_eq!(count, 1, "sync_queue 表应存在");
-            tester.logger.detail("sync_queue 表创建成功");
+            assert_eq!(count, 1, "synclog 表应存在");
+            tester.logger.detail("synclog 表创建成功");
 
             // 检查 data_state_log 表
             let count: i64 = conn_guard

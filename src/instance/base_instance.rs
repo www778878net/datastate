@@ -542,6 +542,7 @@ mod tests {
     fn test_instance_base_auto_id() {
         let base = InstanceBase::from_json(&HashMap::new());
         assert!(!base.base.id.is_empty());
-        assert_eq!(base.base.id.len(), 36); // UUID
+        // 雪花ID：18-19位数字字符串
+        assert!(base.base.id.len() >= 18 && base.base.id.len() <= 19, "雪花ID长度应为18-19位");
     }
 }

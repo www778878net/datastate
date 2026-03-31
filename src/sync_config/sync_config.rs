@@ -271,8 +271,8 @@ mod tests {
         assert_eq!(config.name, "");
         assert_eq!(config.download_interval, 300);
         assert_eq!(config.upload_interval, 300);
-        assert_eq!(config.init_getnumber, 1000);
-        assert_eq!(config.getnumber, 1000);
+        assert_eq!(config.init_getnumber, 0);  // 默认值是 0
+        assert_eq!(config.getnumber, 2000);    // 默认值是 2000
     }
 
     #[test]

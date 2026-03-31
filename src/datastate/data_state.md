@@ -71,6 +71,36 @@ DataState 是一个组合类，统一管理数据同步和审计功能：
 预期：记录插入成功，sync_queue 无新记录
 ```
 
+### 其它测试（边界、异常等）
+
+#### 测试4：默认实例创建
+```
+输入：DataState::default()
+步骤：创建默认实例
+预期：返回包含 base、datasync、audit 三个组件的实例
+```
+
+#### 测试5：空表名处理
+```
+输入：table_name = ""
+步骤：DataState::new("")
+预期：实例创建成功，但 CRUD 操作需要表名
+```
+
+#### 测试6：权限检查失败场景
+```
+输入：caller 无权限调用方法
+步骤：state.m_add(&record, "unauthorized_caller", "summary")
+预期：返回权限检查错误
+```
+
+#### 测试7：雪花ID生成
+```
+输入：调用 next_id_string()
+步骤：验证生成的 ID 格式
+预期：ID 不为空，长度 >= 18
+```
+
 ---
 
 ## 知识库

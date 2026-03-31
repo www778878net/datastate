@@ -161,7 +161,6 @@ impl TableConfigManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TableConfig;
 
     #[test]
     fn test_uidcid() {

@@ -57,16 +57,65 @@ DataSync 是同步队列组件，包含三个核心功能：
 
 ## 测试方案
 
-### 基础功能测试
-- [ ] 创建 DataSync 实例成功
-- [ ] 初始化同步队列表成功
-- [ ] 添加记录到同步队列正确
-- [ ] 检查下载/上传条件正确
+### 主要逻辑测试
 
-### 同步测试
-- [ ] need_download 判断正确
-- [ ] need_upload 判断正确
-- [ ] 时间间隔检查正确
+#### 测试1：创建 DataSync 实例
+```
+输入：table_name = "test_table"
+步骤：let datasync = DataSync::new("test_table");
+预期：datasync.table_name = "test_table"，db 实例存在
+```
+
+#### 测试2：初始化同步队列表
+```
+输入：已创建的 LocalDB 实例
+步骤：DataSync::init_tables(&db)
+预期：synclog、data_state_log、data_sync_stats 表创建成功
+```
+
+#### 测试3：添加记录到同步队列
+```
+输入：record = {"id": "test_001", "data": "test"}
+步骤：datasync.add_to_queue(&record, "insert", "test_table")
+预期：sync_queue 表中新增一条记录
+```
+
+#### 测试4：检查下载/上传条件
+```
+输入：设置 last_download_time、last_upload_time
+步骤：need_download()、need_upload()
+预期：根据时间间隔返回正确的布尔值
+```
+
+### 其它测试（边界、异常等）
+
+#### 测试5：空表名处理
+```
+输入：table_name = ""
+步骤：DataSync::new("")
+预期：实例创建成功，但 CRUD 操作需要表名
+```
+
+#### 测试6：从配置创建实例
+```
+输入：TableConfig { name: "config_table", ... }
+步骤：DataSync::from_config(&config)
+预期：返回正确的实例，table_name = "config_table"
+```
+
+#### 测试7：使用指定数据库实例
+```
+输入：LocalDB 实例
+步骤：DataSync::with_db("my_table", db)
+预期：返回使用指定数据库的实例
+```
+
+#### 测试8：状态变更日志
+```
+输入：old_status = "idle", new_status = "working"
+步骤：datasync.log_status_change("idle", "working", "reason", "worker")
+预期：data_state_log 表中新增一条记录
+```
 
 ## 知识库
 

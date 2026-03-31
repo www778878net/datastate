@@ -116,35 +116,61 @@ fn wait_next_millis(last: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base::mylogger;
 
     #[test]
     fn test_next_id() {
         let id1 = next_id();
         let id2 = next_id();
         assert!(id2 > id1);
-        let logger = mylogger!();
-        logger.detail(&format!("ID1: {}", id1));
-        logger.detail(&format!("ID2: {}", id2));
-        logger.detail(&format!("worker_id: {}", get_worker_id()));
     }
 
     #[test]
     fn test_next_id_string() {
         let id = next_id_string();
         assert!(!id.is_empty());
-        let logger = mylogger!();
-        logger.detail(&format!("ID String: {}", id));
-        logger.detail(&format!("worker_id: {}", get_worker_id()));
+        assert!(id.len() >= 18);
     }
 
     #[test]
     fn test_worker_id_auto() {
-        let id = next_id();
+        let _id = next_id();
         let worker_id = get_worker_id();
         assert!(worker_id <= MAX_WORKER_ID as u64);
-        let logger = mylogger!();
-        logger.detail(&format!("自动生成的worker_id: {}", worker_id));
-        logger.detail(&format!("生成的ID: {}", id));
+    }
+
+    /// 测试 worker_id 边界值（0 和 1023）
+    #[test]
+    fn test_worker_id_boundary() {
+        // 测试最小值 0
+        init_worker_id(0);
+        assert_eq!(get_worker_id(), 0);
+
+        // 测试最大值 1023
+        init_worker_id(MAX_WORKER_ID as u64);
+        assert_eq!(get_worker_id(), MAX_WORKER_ID as u64);
+
+        // 验证 ID 生成正常
+        let id = next_id();
+        assert!(id > 0);
+    }
+
+    /// 测试 worker_id 超范围时 panic
+    #[test]
+    #[should_panic(expected = "worker_id 超出范围")]
+    fn test_worker_id_exceed_range() {
+        // 超过 MAX_WORKER_ID (1023) 应该 panic
+        init_worker_id(MAX_WORKER_ID as u64 + 1);
+    }
+
+    /// 测试连续生成 ID 的唯一性
+    #[test]
+    fn test_unique_ids() {
+        use std::collections::HashSet;
+
+        let ids: Vec<i64> = (0..1000).map(|_| next_id()).collect();
+        let unique_ids: HashSet<i64> = ids.iter().cloned().collect();
+
+        assert_eq!(ids.len(), 1000, "应该生成 1000 个 ID");
+        assert_eq!(unique_ids.len(), 1000, "所有 ID 应该唯一");
     }
 }

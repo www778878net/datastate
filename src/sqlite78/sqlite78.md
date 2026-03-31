@@ -148,3 +148,84 @@ SQL 记录表，用于记录 SQL 执行日志。
 - 所有表字段必须有默认值
 - 启用 WAL 模式和 30 秒超时
 - 线程安全（使用 Arc<Mutex<Connection>>）
+
+## 测试方案
+
+### 主要逻辑测试
+
+#### 测试1：创建实例
+```
+输入：Sqlite78::new(), with_default_path(), with_config()
+步骤：
+  let db = Sqlite78::new();
+  assert!(db.get_filename().is_empty());
+
+  let db = Sqlite78::with_default_path();
+  assert!(!db.get_filename().is_empty());
+
+  let db = Sqlite78::with_config("test.db", true, true);
+  assert_eq!(db.get_filename(), "test.db");
+预期：实例创建成功，属性正确
+```
+
+#### 测试2：初始化数据库
+```
+输入：指定路径 "tmp/tmp/test_init.db"
+步骤：
+  let mut db = Sqlite78::with_config("tmp/tmp/test_init.db", false, false);
+  let result = db.initialize();
+预期：result.is_ok()
+```
+
+#### 测试3：创建系统表
+```
+输入：已初始化的数据库实例
+步骤：
+  let mut db = Sqlite78::with_config("tmp/tmp/test_creat_tb.db", false, false);
+  db.initialize().expect("初始化失败");
+  let up = UpInfo::new();
+  let result = db.creat_tb(&up);
+预期：result.is_ok()
+```
+
+#### 测试4：查询空表
+```
+输入：已创建系统表的数据库
+步骤：
+  let mut db = Sqlite78::with_config("tmp/tmp/test_do_get.db", false, false);
+  db.initialize().expect("初始化失败");
+  db.creat_tb(&UpInfo::new()).expect("创建表失败");
+  let up = UpInfo::new();
+  let result = db.do_get("SELECT * FROM sys_warn", &[], &up);
+预期：result.is_ok()，返回空数组
+```
+
+### 其它测试（边界、异常等）
+
+#### 测试5：未初始化时获取连接
+```
+输入：未初始化的实例
+步骤：
+  let db = Sqlite78::new();
+  let result = db.get_conn();
+预期：result.is_err()
+```
+
+#### 测试6：关闭连接后获取连接
+```
+输入：已初始化并关闭的实例
+步骤：
+  let mut db = Sqlite78::with_config("tmp/tmp/test_close.db", false, false);
+  db.initialize().expect("初始化失败");
+  db.close();
+  let result = db.get_conn();
+预期：result.is_err()
+```
+
+#### 测试7：默认路径查找
+```
+输入：当前项目环境
+步骤：
+  let result = Sqlite78::find_default_db_path();
+预期：result.is_ok() 或 result.is_err()（取决于项目环境）
+```
