@@ -97,6 +97,8 @@ pub use datastate::{
     DataState, StateLog,
     // MySQL 版本
     DataStateMysql, StateLogMysql,
+    // 测试表
+    TestTb, TestTbRecord, TESTTB_CREATE_SQL,
 };
 pub use data_sync::{
     DataSync, SynclogItem, SyncStats,
