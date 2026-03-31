@@ -164,3 +164,120 @@ impl LifecycleManager {
         map
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 测试1：默认创建
+    /// 验证：runcount=0, successcount=0, errorcount=0, successrate=0.0
+    #[test]
+    fn test_lifecycle_manager_default() {
+        let manager = LifecycleManager::default();
+
+        assert_eq!(manager.runcount, 0);
+        assert_eq!(manager.successcount, 0);
+        assert_eq!(manager.errorcount, 0);
+        assert_eq!(manager.successrate, 0.0);
+        assert_eq!(manager.executiontime, 0.0);
+        assert!(manager.createtime.is_none());
+        assert!(manager.starttime.is_none());
+    }
+
+    /// 测试2：执行流程
+    /// 验证：runcount=1, successcount=1, executiontime=1.5, successrate=100.0
+    #[test]
+    fn test_lifecycle_manager_success_flow() {
+        let mut manager = LifecycleManager::default();
+
+        manager.mark_started();
+        manager.record_success(1.5);
+
+        assert_eq!(manager.runcount, 1);
+        assert_eq!(manager.successcount, 1);
+        assert_eq!(manager.executiontime, 1.5);
+        assert_eq!(manager.successrate, 100.0);
+        assert!(manager.starttime.is_some());
+        assert!(manager.lastoktime.is_some());
+    }
+
+    /// 测试3：错误记录流程
+    #[test]
+    fn test_lifecycle_manager_error_flow() {
+        let mut manager = LifecycleManager::default();
+
+        manager.mark_started();
+        manager.record_error();
+
+        assert_eq!(manager.runcount, 1);
+        assert_eq!(manager.successcount, 0);
+        assert_eq!(manager.errorcount, 1);
+        assert_eq!(manager.successrate, 0.0);
+        assert!(manager.lasterrortime.is_some());
+    }
+
+    /// 测试4：混合执行场景
+    #[test]
+    fn test_lifecycle_manager_mixed_execution() {
+        let mut manager = LifecycleManager::default();
+
+        // 第一次成功
+        manager.mark_started();
+        manager.record_success(1.0);
+
+        // 第二次失败
+        manager.mark_started();
+        manager.record_error();
+
+        // 第三次成功
+        manager.mark_started();
+        manager.record_success(2.0);
+
+        assert_eq!(manager.runcount, 3);
+        assert_eq!(manager.successcount, 2);
+        assert_eq!(manager.errorcount, 1);
+        assert_eq!(manager.executiontime, 3.0);
+        // 成功率 = 2/3 * 100 = 66.66...
+        assert!((manager.successrate - 66.66666666666666).abs() < 0.01);
+    }
+
+    /// 测试5：字典加载和转换
+    #[test]
+    fn test_lifecycle_manager_dict_operations() {
+        let mut manager = LifecycleManager::default();
+        manager.runcount = 10;
+        manager.successcount = 8;
+        manager.errorcount = 2;
+        manager.successrate = 80.0;
+        manager.executiontime = 15.5;
+
+        let dict = manager.to_dict();
+
+        assert_eq!(dict.get("runcount").and_then(|v| v.as_i64()), Some(10));
+        assert_eq!(dict.get("successcount").and_then(|v| v.as_i64()), Some(8));
+        assert_eq!(dict.get("errorcount").and_then(|v| v.as_i64()), Some(2));
+
+        let mut loaded = LifecycleManager::default();
+        loaded.load_from_dict(&dict);
+
+        assert_eq!(loaded.runcount, 10);
+        assert_eq!(loaded.successcount, 8);
+        assert_eq!(loaded.errorcount, 2);
+    }
+
+    /// 测试6：lastokinfo 和 lasterrinfo 处理
+    #[test]
+    fn test_lifecycle_manager_info_fields() {
+        let mut manager = LifecycleManager::default();
+        let ok_info = serde_json::json!({"result": "success", "data": "test"});
+        let err_info = serde_json::json!({"error": "test error"});
+
+        manager.lastokinfo = ok_info.clone();
+        manager.lasterrinfo = err_info.clone();
+
+        let dict = manager.to_dict();
+
+        assert_eq!(dict.get("lastokinfo"), Some(&ok_info));
+        assert_eq!(dict.get("lasterrinfo"), Some(&err_info));
+    }
+}

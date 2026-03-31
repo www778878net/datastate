@@ -32,6 +32,33 @@ workflow_task (实例表) ← workflow_instance (实例表)
 | WorkflowInstance | 工作流实例 |
 | WorkflowTask | 任务实例 |
 
+## 测试方案
+
+### 主要逻辑测试
+
+#### 测试1：模块导出
+```
+输入：use datastate::workflow::*;
+步骤：验证各组件可访问
+预期：WorkflowCapability、WorkflowInstance、WorkflowTask 可用
+```
+
+#### 测试2：初始化工作流表
+```
+输入：数据库连接、UpInfo
+步骤：init_workflow_tables()
+预期：所有工作流表创建成功
+```
+
+### 其它测试（边界、异常等）
+
+#### 测试3：组件功能测试
+```
+输入：各组件测试用例
+步骤：参见各组件独立测试方案
+预期：各组件测试通过
+```
+
 ## 使用方式
 
 ```rust

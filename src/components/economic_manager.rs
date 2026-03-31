@@ -136,3 +136,98 @@ impl EconomicManager {
         map
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 测试1：默认创建
+    /// 验证：pricebase=1.0, revenuetotal=0.0, roi=0.0
+    #[test]
+    fn test_economic_manager_default() {
+        let manager = EconomicManager::default();
+
+        assert_eq!(manager.pricebase, 1.0);
+        assert_eq!(manager.price, 1.0);
+        assert_eq!(manager.profittarget, 0.2);
+        assert_eq!(manager.revenuetotal, 0.0);
+        assert_eq!(manager.costtotal, 0.0);
+        assert_eq!(manager.profittotal, 0.0);
+        assert_eq!(manager.roi, 0.0);
+    }
+
+    /// 测试2：成本收入统计
+    /// 验证：profittotal=5.0, roi=50.0
+    #[test]
+    fn test_economic_manager_cost_revenue() {
+        let mut manager = EconomicManager::default();
+
+        manager.add_cost(10.0);
+        manager.add_revenue(15.0);
+
+        assert_eq!(manager.costtotal, 10.0);
+        assert_eq!(manager.revenuetotal, 15.0);
+        assert_eq!(manager.profittotal, 5.0);
+        assert_eq!(manager.roi, 50.0); // (5/10) * 100
+    }
+
+    /// 测试3：多次添加成本和收入
+    #[test]
+    fn test_economic_manager_multiple_operations() {
+        let mut manager = EconomicManager::default();
+
+        manager.add_cost(5.0);
+        manager.add_cost(5.0);
+        manager.add_revenue(20.0);
+
+        assert_eq!(manager.costtotal, 10.0);
+        assert_eq!(manager.revenuetotal, 20.0);
+        assert_eq!(manager.profittotal, 10.0);
+    }
+
+    /// 测试4：零成本时的ROI处理
+    #[test]
+    fn test_economic_manager_zero_cost_roi() {
+        let mut manager = EconomicManager::default();
+
+        // 成本为0时，ROI应为0
+        manager.add_revenue(10.0);
+
+        assert_eq!(manager.costtotal, 0.0);
+        assert_eq!(manager.revenuetotal, 10.0);
+        assert_eq!(manager.roi, 0.0);
+    }
+
+    /// 测试5：字典加载和转换
+    #[test]
+    fn test_economic_manager_dict_operations() {
+        let mut manager = EconomicManager::default();
+        manager.price = 100.0;
+        manager.costunit = 0.5;
+        manager.revenuetotal = 500.0;
+        manager.costtotal = 200.0;
+
+        let dict = manager.to_dict();
+
+        assert_eq!(dict.get("price").and_then(|v| v.as_f64()), Some(100.0));
+        assert_eq!(dict.get("costunit").and_then(|v| v.as_f64()), Some(0.5));
+
+        let mut loaded = EconomicManager::default();
+        loaded.load_from_dict(&dict);
+
+        assert_eq!(loaded.price, 100.0);
+        assert_eq!(loaded.costunit, 0.5);
+    }
+
+    /// 测试6：负利润场景
+    #[test]
+    fn test_economic_manager_negative_profit() {
+        let mut manager = EconomicManager::default();
+
+        manager.add_cost(20.0);
+        manager.add_revenue(10.0);
+
+        assert_eq!(manager.profittotal, -10.0);
+        assert_eq!(manager.roi, -50.0); // (-10/20) * 100
+    }
+}

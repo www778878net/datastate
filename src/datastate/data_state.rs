@@ -183,6 +183,284 @@ mod tests {
     use crate::datastate::{
         DATA_STATE_LOG_CREATE_SQL, DATA_SYNC_STATS_CREATE_SQL, SYNCLOG_CREATE_SQL,
     };
+    use crate::sync_config::TableConfig;
+
+    /// 辅助函数：创建带唯一表名的 DataState 实例
+    fn create_test_state(table_name: &str) -> DataState {
+        let db = LocalDB::default_instance().expect("数据库创建失败");
+        DataState::with_db(table_name, db)
+    }
+
+    /// 测试1：从配置创建实例
+    #[test]
+    fn test_from_config() {
+        let config = TableConfig::new("test_table_from_config");
+        let state = DataState::from_config(&config);
+
+        assert_eq!(state.datasync.table_name, "test_table_from_config");
+        assert_eq!(state.base.name, "test_table_from_config");
+    }
+
+    /// 测试2：使用指定数据库创建实例
+    #[test]
+    fn test_with_db() {
+        let db = LocalDB::default_instance().expect("数据库创建失败");
+        let state = DataState::with_db("test_table_with_db", db);
+
+        assert_eq!(state.datasync.table_name, "test_table_with_db");
+    }
+
+    /// 测试3：CRUD 操作 - 插入记录
+    #[test]
+    fn test_m_add() {
+        let unique_table = format!(
+            "test_crud_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        let state = create_test_state(&unique_table);
+
+        // 创建测试表
+        let conn = state.datasync.db.get_conn();
+        let conn_guard = conn.lock().expect("获取数据库连接失败");
+        conn_guard
+            .execute(
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
+                    unique_table
+                ),
+                [],
+            )
+            .expect("创建表失败");
+        drop(conn_guard);
+
+        let mut record = HashMap::new();
+        record.insert("id".to_string(), Value::String("test_001".to_string()));
+        record.insert("name".to_string(), Value::String("测试数据".to_string()));
+
+        let result = state.m_add(&record, "test_caller", "测试插入");
+        assert!(result.is_ok(), "插入应该成功: {:?}", result);
+    }
+
+    /// 测试4：CRUD 操作 - 查询记录
+    #[test]
+    fn test_get_one() {
+        let unique_table = format!(
+            "test_get_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        let state = create_test_state(&unique_table);
+
+        // 创建测试表并插入数据
+        let conn = state.datasync.db.get_conn();
+        let conn_guard = conn.lock().expect("获取数据库连接失败");
+        conn_guard
+            .execute(
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
+                    unique_table
+                ),
+                [],
+            )
+            .expect("创建表失败");
+        conn_guard
+            .execute(
+                &format!("INSERT INTO {} (id, name) VALUES ('get_001', '查询测试')", unique_table),
+                [],
+            )
+            .expect("插入数据失败");
+        drop(conn_guard);
+
+        let result = state.get_one("get_001", "test_caller", "测试查询");
+        assert!(result.is_ok(), "查询应该成功: {:?}", result);
+        let record = result.unwrap();
+        assert!(record.is_some(), "应该找到记录");
+        let record = record.unwrap();
+        assert_eq!(record.get("id").and_then(|v: &Value| v.as_str()), Some("get_001"));
+    }
+
+    /// 测试5：CRUD 操作 - 更新记录
+    #[test]
+    fn test_m_update() {
+        let unique_table = format!(
+            "test_update_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        let state = create_test_state(&unique_table);
+
+        // 创建测试表并插入数据（包含必要的元数据列）
+        let conn = state.datasync.db.get_conn();
+        let conn_guard = conn.lock().expect("获取数据库连接失败");
+        conn_guard
+            .execute(
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT, cid TEXT, upby TEXT, uptime TEXT)",
+                    unique_table
+                ),
+                [],
+            )
+            .expect("创建表失败");
+        conn_guard
+            .execute(
+                &format!("INSERT INTO {} (id, name, cid, upby, uptime) VALUES ('update_001', '原始名称', '', '', '')", unique_table),
+                [],
+            )
+            .expect("插入数据失败");
+        drop(conn_guard);
+
+        let mut record = HashMap::new();
+        record.insert("name".to_string(), Value::String("更新后名称".to_string()));
+
+        let result = state.m_update("update_001", &record, "test_caller", "测试更新");
+        assert!(result.is_ok(), "更新应该成功: {:?}", result);
+        assert!(result.unwrap(), "更新应该返回 true");
+    }
+
+    /// 测试6：同步操作 - 同步保存
+    #[test]
+    fn test_m_sync_save() {
+        let unique_table = format!(
+            "test_sync_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        let state = create_test_state(&unique_table);
+
+        // 创建测试表
+        let conn = state.datasync.db.get_conn();
+        let conn_guard = conn.lock().expect("获取数据库连接失败");
+        conn_guard
+            .execute(
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
+                    unique_table
+                ),
+                [],
+            )
+            .expect("创建表失败");
+        drop(conn_guard);
+
+        let pending_before = state.datasync.get_pending_count();
+
+        let mut record = HashMap::new();
+        record.insert("id".to_string(), Value::String("sync_001".to_string()));
+        record.insert("name".to_string(), Value::String("同步数据".to_string()));
+
+        let result = state.m_sync_save(&record);
+        assert!(result.is_ok(), "同步保存应该成功: {:?}", result);
+
+        let pending_after = state.datasync.get_pending_count();
+        assert_eq!(pending_after, pending_before, "同步操作不应产生待同步记录");
+    }
+
+    /// 测试7：默认实例创建
+    #[test]
+    fn test_default() {
+        let state = DataState::default();
+
+        assert_eq!(state.base.name, "");
+        assert_eq!(state.datasync.table_name, "");
+    }
+
+    /// 测试8：空表名实例创建
+    #[test]
+    fn test_empty_table_name() {
+        let state = create_test_state("");
+
+        assert_eq!(state.datasync.table_name, "");
+    }
+
+    /// 测试9：雪花ID生成
+    #[test]
+    fn test_snowflake_id() {
+        let id = crate::snowflake::next_id_string();
+
+        assert!(!id.is_empty());
+        assert!(id.len() >= 18);
+    }
+
+    /// 测试10：删除记录
+    #[test]
+    fn test_m_del() {
+        let unique_table = format!(
+            "test_del_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        let state = create_test_state(&unique_table);
+
+        // 创建测试表并插入数据
+        let conn = state.datasync.db.get_conn();
+        let conn_guard = conn.lock().expect("获取数据库连接失败");
+        conn_guard
+            .execute(
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
+                    unique_table
+                ),
+                [],
+            )
+            .expect("创建表失败");
+        conn_guard
+            .execute(
+                &format!("INSERT INTO {} (id, name) VALUES ('del_001', '待删除')", unique_table),
+                [],
+            )
+            .expect("插入数据失败");
+        drop(conn_guard);
+
+        let result = state.m_del("del_001", "test_caller", "测试删除");
+        assert!(result.is_ok(), "删除应该成功: {:?}", result);
+        assert!(result.unwrap(), "删除应该返回 true");
+    }
+
+    /// 测试11：统计记录数
+    #[test]
+    fn test_count() {
+        let unique_table = format!(
+            "test_count_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        let state = create_test_state(&unique_table);
+
+        // 创建测试表
+        let conn = state.datasync.db.get_conn();
+        let conn_guard = conn.lock().expect("获取数据库连接失败");
+        conn_guard
+            .execute(
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
+                    unique_table
+                ),
+                [],
+            )
+            .expect("创建表失败");
+        drop(conn_guard);
+
+        let result = state.count("test_caller", "测试统计");
+        assert!(result.is_ok(), "统计应该成功: {:?}", result);
+    }
 
     #[test]
     fn test_sync_data_default() {

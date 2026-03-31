@@ -225,3 +225,93 @@ impl BaseEntity {
         map
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 测试1：默认创建
+    /// 验证：id="", state=1, apisys="apitmp"
+    #[test]
+    fn test_base_entity_default() {
+        let entity = BaseEntity::default();
+
+        assert_eq!(entity.id, "");
+        assert_eq!(entity.state, 1);
+        assert_eq!(entity.apisys, "apitmp");
+        assert_eq!(entity.priority, 0);
+        assert!(entity.idpk.is_none());
+    }
+
+    /// 测试2：字典加载
+    /// 验证：entity.id = "test_001", entity.state = 2
+    #[test]
+    fn test_base_entity_load_from_dict() {
+        let mut entity = BaseEntity::default();
+        let mut data = HashMap::new();
+        data.insert("id".to_string(), Value::String("test_001".to_string()));
+        data.insert("state".to_string(), serde_json::json!(2));
+        data.insert("myname".to_string(), Value::String("测试".to_string()));
+        data.insert("priority".to_string(), serde_json::json!(5));
+
+        entity.load_from_dict(&data);
+
+        assert_eq!(entity.id, "test_001");
+        assert_eq!(entity.state, 2);
+        assert_eq!(entity.myname, "测试");
+        assert_eq!(entity.priority, 5);
+    }
+
+    /// 测试3：转换为字典
+    #[test]
+    fn test_base_entity_to_dict() {
+        let mut entity = BaseEntity::default();
+        entity.id = "test_id".to_string();
+        entity.state = 2;
+        entity.myname = "测试实体".to_string();
+
+        let dict = entity.to_dict();
+
+        assert_eq!(dict.get("id").and_then(|v| v.as_str()), Some("test_id"));
+        assert_eq!(dict.get("state").and_then(|v| v.as_i64()), Some(2));
+        assert_eq!(dict.get("myname").and_then(|v| v.as_str()), Some("测试实体"));
+    }
+
+    /// 测试4：加载和转换的往返一致性
+    #[test]
+    fn test_base_entity_roundtrip() {
+        let mut original = BaseEntity::default();
+        original.id = "roundtrip_test".to_string();
+        original.state = 3;
+        original.cid = "company_001".to_string();
+        original.apisys = "test_system".to_string();
+        original.apimicro = "test_micro".to_string();
+        original.apiobj = "test_obj".to_string();
+
+        let dict = original.to_dict();
+        let mut loaded = BaseEntity::default();
+        loaded.load_from_dict(&dict);
+
+        assert_eq!(loaded.id, original.id);
+        assert_eq!(loaded.state, original.state);
+        assert_eq!(loaded.cid, original.cid);
+        assert_eq!(loaded.apisys, original.apisys);
+        assert_eq!(loaded.apimicro, original.apimicro);
+        assert_eq!(loaded.apiobj, original.apiobj);
+    }
+
+    /// 测试5：边界测试 - JSON字段处理
+    #[test]
+    fn test_base_entity_json_fields() {
+        let mut entity = BaseEntity::default();
+        let json_value = serde_json::json!({"key": "value", "number": 42});
+        let mut data = HashMap::new();
+        data.insert("inputjson".to_string(), json_value.clone());
+        data.insert("outputjson".to_string(), serde_json::json!({"result": "ok"}));
+
+        entity.load_from_dict(&data);
+
+        assert_eq!(entity.inputjson, json_value);
+        assert_eq!(entity.outputjson.get("result").and_then(|v| v.as_str()), Some("ok"));
+    }
+}

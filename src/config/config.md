@@ -61,3 +61,57 @@ let timeout = config.lock().unwrap().get_int("timeout");
 
 - `CONFIG_FILE` - 配置文件路径
 - `APP_ENV` - 运行环境（development/production），默认 development
+
+## 测试方案
+
+### 主要逻辑测试
+
+#### 测试1：创建新实例
+```
+输入：Config::new_instance()
+步骤：创建新的配置实例
+预期：get("notexist") 返回 None
+```
+
+#### 测试2：设置和获取配置
+```
+输入：key1="value1", key2=123, key3=true
+步骤：config.set() 设置后 config.get_xxx() 获取
+预期：get_string("key1")="value1", get_int("key2")=123, get_bool("key3")=true
+```
+
+#### 测试3：配置项存在检查
+```
+输入：key1
+步骤：设置前 has("key1")=false, 设置后 has("key1")=true
+预期：has() 正确反映配置项是否存在
+```
+
+#### 测试4：单例模式
+```
+输入：Config::get_instance() 两次
+步骤：获取两个实例并比较指针
+预期：两个实例是同一个 Arc（ptr_eq = true）
+```
+
+### 其它测试（边界、异常等）
+
+#### 测试5：获取不存在的表配置
+```
+输入：get_table("notexist")
+步骤：查询不存在的表
+预期：返回 None
+```
+
+#### 测试6：空表名列表
+```
+输入：新创建的配置实例
+步骤：table_names()
+预期：返回空数组
+```
+
+#### 测试7：错误类型显示
+```
+输入：各类型 ConfigError
+步骤：to_string() 获取错误信息
+预期：FileNotFound 包含文件名，ParseError 包含错误信息，NotInitialized 包含"未初始化"

@@ -94,23 +94,86 @@
 
 ## 测试方案
 
-### 基础功能测试
-- [ ] 创建数据库连接成功
-- [ ] 插入数据成功
-- [ ] 查询数据成功
-- [ ] 更新数据成功
-- [ ] 删除数据成功
+### 主要逻辑测试
 
-### 表管理测试
-- [ ] 表存在检查正确
-- [ ] 确保表存在功能正常
-- [ ] 按天分表名称正确
-- [ ] 清理过期表功能正常
+#### 测试1：创建数据库连接
+```
+输入：数据库路径（或 None 使用默认路径）
+步骤：LocalDB::with_path(&db_path) 或 LocalDB::default_instance()
+预期：返回有效的数据库实例
+```
 
-### 边界测试
-- [ ] 空表查询返回空数组
-- [ ] 不存在的记录更新返回 false
-- [ ] 不存在的记录删除返回 false
+#### 测试2：插入数据
+```
+输入：表名、数据 HashMap
+步骤：db.insert("test_table", &data)
+预期：返回新记录的 ID
+```
+
+#### 测试3：查询数据
+```
+输入：SQL 语句和参数
+步骤：db.query("SELECT * FROM test_table WHERE id = ?", &[&id])
+预期：返回匹配的记录列表
+```
+
+#### 测试4：更新数据
+```
+输入：表名、ID、更新数据
+步骤：db.update("test_table", "test_001", &data)
+预期：返回 true（更新成功）
+```
+
+#### 测试5：删除数据
+```
+输入：表名、ID
+步骤：db.delete("test_table", "test_001")
+预期：返回 true（删除成功）
+```
+
+### 其它测试（边界、异常等）
+
+#### 测试6：表存在检查
+```
+输入：不存在的表名
+步骤：db.table_exists("non_existent_table")
+预期：返回 Ok(false)
+```
+
+#### 测试7：按天分表名称
+```
+输入：表名、可选日期
+步骤：LocalDB::get_daily_table_name("my_table", None)
+预期：返回 "my_table_YYYYMMDD" 格式
+```
+
+#### 测试8：空表查询
+```
+输入：空表的查询 SQL
+步骤：db.query("SELECT * FROM empty_table", &[])
+预期：返回空数组 []
+```
+
+#### 测试9：更新不存在的记录
+```
+输入：不存在的 ID
+步骤：db.update("test_table", "non_existent_id", &data)
+预期：返回 false
+```
+
+#### 测试10：删除不存在的记录
+```
+输入：不存在的 ID
+步骤：db.delete("test_table", "non_existent_id")
+预期：返回 false
+```
+
+#### 测试11：配置读取
+```
+输入：无
+步骤：LocalDBConfig::default()
+预期：返回默认配置实例
+```
 
 ## 知识库
 

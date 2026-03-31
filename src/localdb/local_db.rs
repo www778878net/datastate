@@ -1350,4 +1350,180 @@ mod tests {
         // cid/uid 可能为空（配置文件不存在时）
         assert!(config.cid.is_empty() || !config.cid.is_empty());
     }
+
+    /// 测试2：插入数据
+    #[test]
+    fn test_insert_data() {
+        let db = LocalDB::new(None).expect("数据库连接失败");
+
+        // 创建测试表
+        let table_name = format!("test_insert_{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let create_sql = format!(
+            "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT, value INTEGER)",
+            table_name
+        );
+        db.execute(&create_sql).expect("创建表失败");
+
+        // 插入数据
+        let mut data = HashMap::new();
+        data.insert("id".to_string(), Value::String("test_001".to_string()));
+        data.insert("name".to_string(), Value::String("测试名称".to_string()));
+        data.insert("value".to_string(), Value::Number(42.into()));
+
+        let result = db.insert(&table_name, &data);
+        assert!(result.is_ok(), "插入数据应该成功: {:?}", result);
+
+        // 验证数据已插入
+        let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
+        let rows = db.query(&query, &[&"test_001" as &dyn rusqlite::ToSql]).expect("查询失败");
+        assert_eq!(rows.len(), 1, "应该有一条记录");
+        assert_eq!(rows[0].get("name").and_then(|v| v.as_str()), Some("测试名称"));
+    }
+
+    /// 测试3：查询数据
+    #[test]
+    fn test_query_data() {
+        let db = LocalDB::new(None).expect("数据库连接失败");
+
+        // 创建测试表并插入数据
+        let table_name = format!("test_query_{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let create_sql = format!(
+            "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
+            table_name
+        );
+        db.execute(&create_sql).expect("创建表失败");
+
+        let mut data = HashMap::new();
+        data.insert("id".to_string(), Value::String("query_001".to_string()));
+        data.insert("name".to_string(), Value::String("查询测试".to_string()));
+        db.insert(&table_name, &data).expect("插入失败");
+
+        // 查询数据
+        let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
+        let rows = db.query(&query, &[&"query_001" as &dyn rusqlite::ToSql]).expect("查询失败");
+
+        assert_eq!(rows.len(), 1, "应该找到一条记录");
+        assert_eq!(rows[0].get("id").and_then(|v| v.as_str()), Some("query_001"));
+    }
+
+    /// 测试4：更新数据
+    #[test]
+    fn test_update_data() {
+        let db = LocalDB::new(None).expect("数据库连接失败");
+
+        // 创建测试表并插入数据
+        let table_name = format!("test_update_{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let create_sql = format!(
+            "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
+            table_name
+        );
+        db.execute(&create_sql).expect("创建表失败");
+
+        let mut data = HashMap::new();
+        data.insert("id".to_string(), Value::String("update_001".to_string()));
+        data.insert("name".to_string(), Value::String("原始名称".to_string()));
+        db.insert(&table_name, &data).expect("插入失败");
+
+        // 更新数据
+        let mut update_data = HashMap::new();
+        update_data.insert("name".to_string(), Value::String("更新后名称".to_string()));
+
+        let result = db.update(&table_name, "update_001", &update_data);
+        assert!(result.is_ok(), "更新应该成功");
+        assert!(result.unwrap(), "更新应该返回 true");
+
+        // 验证更新结果
+        let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
+        let rows = db.query(&query, &[&"update_001" as &dyn rusqlite::ToSql]).expect("查询失败");
+        assert_eq!(rows[0].get("name").and_then(|v| v.as_str()), Some("更新后名称"));
+    }
+
+    /// 测试5：删除数据
+    #[test]
+    fn test_delete_data() {
+        let db = LocalDB::new(None).expect("数据库连接失败");
+
+        // 创建测试表并插入数据
+        let table_name = format!("test_delete_{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let create_sql = format!(
+            "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
+            table_name
+        );
+        db.execute(&create_sql).expect("创建表失败");
+
+        let mut data = HashMap::new();
+        data.insert("id".to_string(), Value::String("delete_001".to_string()));
+        data.insert("name".to_string(), Value::String("待删除".to_string()));
+        db.insert(&table_name, &data).expect("插入失败");
+
+        // 删除数据
+        let result = db.delete(&table_name, "delete_001");
+        assert!(result.is_ok(), "删除应该成功");
+        assert!(result.unwrap(), "删除应该返回 true");
+
+        // 验证删除结果
+        let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
+        let rows = db.query(&query, &[&"delete_001" as &dyn rusqlite::ToSql]).expect("查询失败");
+        assert_eq!(rows.len(), 0, "记录应该已删除");
+    }
+
+    /// 测试8：空表查询
+    #[test]
+    fn test_query_empty_table() {
+        let db = LocalDB::new(None).expect("数据库连接失败");
+
+        // 创建空测试表
+        let table_name = format!("test_empty_{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let create_sql = format!(
+            "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
+            table_name
+        );
+        db.execute(&create_sql).expect("创建表失败");
+
+        // 查询空表
+        let query = format!("SELECT * FROM {}", table_name);
+        let rows = db.query(&query, &[]).expect("查询失败");
+        assert_eq!(rows.len(), 0, "空表应该返回空数组");
+    }
+
+    /// 测试9：更新不存在的记录
+    #[test]
+    fn test_update_non_existent() {
+        let db = LocalDB::new(None).expect("数据库连接失败");
+
+        // 创建测试表
+        let table_name = format!("test_update_ne_{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let create_sql = format!(
+            "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
+            table_name
+        );
+        db.execute(&create_sql).expect("创建表失败");
+
+        // 尝试更新不存在的记录
+        let mut update_data = HashMap::new();
+        update_data.insert("name".to_string(), Value::String("测试".to_string()));
+
+        let result = db.update(&table_name, "non_existent_id", &update_data);
+        assert!(result.is_ok(), "更新操作应该成功");
+        assert!(!result.unwrap(), "更新不存在的记录应该返回 false");
+    }
+
+    /// 测试10：删除不存在的记录
+    #[test]
+    fn test_delete_non_existent() {
+        let db = LocalDB::new(None).expect("数据库连接失败");
+
+        // 创建测试表
+        let table_name = format!("test_delete_ne_{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let create_sql = format!(
+            "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
+            table_name
+        );
+        db.execute(&create_sql).expect("创建表失败");
+
+        // 尝试删除不存在的记录
+        let result = db.delete(&table_name, "non_existent_id");
+        assert!(result.is_ok(), "删除操作应该成功");
+        assert!(!result.unwrap(), "删除不存在的记录应该返回 false");
+    }
 }

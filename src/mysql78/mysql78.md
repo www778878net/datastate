@@ -82,3 +82,57 @@ data.insert("name", "test");
 data.insert("email", "test@example.com");
 let id = mysql.insert("users", &data)?;
 ```
+
+## 测试方案
+
+### 主要逻辑测试
+
+#### 测试1：配置默认值
+```
+输入：MysqlConfig::default()
+步骤：验证各字段默认值
+预期：host="127.0.0.1", port=3306, user="root", max_connections=10
+```
+
+#### 测试2：创建实例
+```
+输入：MysqlConfig 配置
+步骤：Mysql78::new(config)
+预期：返回有效实例，get_host() 返回正确值
+```
+
+#### 测试3：MysqlUpInfo 创建
+```
+输入：MysqlUpInfo::new()
+步骤：创建上传信息对象
+预期：uptime 不为空，其他字段为默认值
+```
+
+#### 测试4：ID 生成
+```
+输入：MysqlUpInfo::new_id()
+步骤：连续生成两个 ID
+预期：两个 ID 不同（唯一性）
+```
+
+### 其它测试（边界、异常等）
+
+#### 测试5：空数据库名初始化
+```
+输入：database = ""
+步骤：mysql.initialize()
+预期：返回错误 "database name is required"
+```
+
+#### 测试6：默认实例
+```
+输入：Mysql78::default()
+步骤：创建默认实例
+预期：实例创建成功，host 为默认值
+```
+
+#### 测试7：Debug 输出
+```
+输入：Mysql78 实例
+步骤：format!("{:?}", mysql)
+预期：输出包含 host、config、pool 字段

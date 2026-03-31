@@ -48,57 +48,97 @@ DataState 是一个组合类，统一管理数据同步和审计功能：
 
 ## 测试方案
 
-### 主要逻辑
+### 主要逻辑测试
 
-#### 测试1：创建实例
+#### 测试1：从配置创建实例
 ```
-输入：TableConfig { name: "test_table", ... }
-步骤：DataState::from_config(&config)
-预期：返回有效实例，datasync.table_name = "test_table"
+输入：TableConfig { name: "test_table", apiurl: "http://api/test_table/get", ... }
+步骤：
+  let config = TableConfig::new("test_table");
+  let state = DataState::from_config(&config);
+预期：返回有效实例，datasync.table_name = "test_table"，base.name = "test_table"
 ```
 
-#### 测试2：CRUD 操作
+#### 测试2：使用指定数据库创建实例
+```
+输入：table_name = "my_table", db = LocalDB::default_instance()
+步骤：
+  let db = LocalDB::default_instance().unwrap();
+  let state = DataState::with_db("my_table", db);
+预期：返回有效实例，datasync.table_name = "my_table"
+```
+
+#### 测试3：CRUD 操作 - 插入记录
 ```
 输入：record = {"id": "test_001", "name": "测试"}
-步骤：state.m_add(&record, "caller", "summary")
-预期：权限检查通过，记录插入成功
+步骤：
+  state.m_add(&record, "test_caller", "测试插入")
+预期：权限检查通过，返回新记录 ID
 ```
 
-#### 测试3：同步操作
+#### 测试4：CRUD 操作 - 查询记录
+```
+输入：id = "test_001"
+步骤：
+  state.get_one("test_001", "test_caller", "测试查询")
+预期：返回记录 {"id": "test_001", "name": "测试"}
+```
+
+#### 测试5：CRUD 操作 - 更新记录
+```
+输入：id = "test_001", record = {"name": "更新后"}
+步骤：
+  state.m_update("test_001", &record, "test_caller", "测试更新")
+预期：返回 true（更新成功）
+```
+
+#### 测试6：同步操作 - 同步保存
 ```
 输入：record = {"id": "sync_001", "name": "同步数据"}
-步骤：state.m_sync_save(&record)
-预期：记录插入成功，sync_queue 无新记录
+步骤：
+  let pending_before = state.datasync.get_pending_count();
+  state.m_sync_save(&record);
+  let pending_after = state.datasync.get_pending_count();
+预期：记录插入成功，pending_after == pending_before（不产生待同步记录）
 ```
 
 ### 其它测试（边界、异常等）
 
-#### 测试4：默认实例创建
+#### 测试7：默认实例创建
 ```
 输入：DataState::default()
 步骤：创建默认实例
-预期：返回包含 base、datasync、audit 三个组件的实例
+预期：返回包含 base、datasync、audit 三个组件的实例，base.name = ""
 ```
 
-#### 测试5：空表名处理
+#### 测试8：空表名实例创建
 ```
 输入：table_name = ""
 步骤：DataState::new("")
-预期：实例创建成功，但 CRUD 操作需要表名
+预期：实例创建成功，table_name = ""
 ```
 
-#### 测试6：权限检查失败场景
-```
-输入：caller 无权限调用方法
-步骤：state.m_add(&record, "unauthorized_caller", "summary")
-预期：返回权限检查错误
-```
-
-#### 测试7：雪花ID生成
+#### 测试9：雪花ID生成
 ```
 输入：调用 next_id_string()
 步骤：验证生成的 ID 格式
 预期：ID 不为空，长度 >= 18
+```
+
+#### 测试10：删除记录
+```
+输入：id = "test_001"
+步骤：
+  state.m_del("test_001", "test_caller", "测试删除")
+预期：返回 true（删除成功）
+```
+
+#### 测试11：统计记录数
+```
+输入：无
+步骤：
+  state.count("test_caller", "测试统计")
+预期：返回记录数量
 ```
 
 ---
