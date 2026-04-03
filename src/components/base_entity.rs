@@ -123,25 +123,25 @@ impl Default for BaseEntity {
 impl BaseEntity {
     /// 从字典加载数据
     pub fn load_from_dict(&mut self, data: &HashMap<String, Value>) {
-        if let Some(v) = data.get("id").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("id").and_then(|v: &serde_json::Value| v.as_str()) {
             self.id = v.to_string();
         }
-        if let Some(v) = data.get("idpk").and_then(|v| v.as_i64()) {
+        if let Some(v) = data.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()) {
             self.idpk = Some(v);
         }
-        if let Some(v) = data.get("cid").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("cid").and_then(|v: &serde_json::Value| v.as_str()) {
             self.cid = v.to_string();
         }
-        if let Some(v) = data.get("state").and_then(|v| v.as_i64()) {
+        if let Some(v) = data.get("state").and_then(|v: &serde_json::Value| v.as_i64()) {
             self.state = v as i32;
         }
-        if let Some(v) = data.get("priority").and_then(|v| v.as_i64()) {
+        if let Some(v) = data.get("priority").and_then(|v: &serde_json::Value| v.as_i64()) {
             self.priority = v as i32;
         }
-        if let Some(v) = data.get("myname").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("myname").and_then(|v: &serde_json::Value| v.as_str()) {
             self.myname = v.to_string();
         }
-        if let Some(v) = data.get("idworkflowinstance").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("idworkflowinstance").and_then(|v: &serde_json::Value| v.as_str()) {
             self.idworkflowinstance = v.to_string();
         }
         if let Some(v) = data.get("inputjson").cloned() {
@@ -162,34 +162,34 @@ impl BaseEntity {
         if let Some(v) = data.get("preinputjson").cloned() {
             self.preinputjson = v;
         }
-        if let Some(v) = data.get("apisys").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("apisys").and_then(|v: &serde_json::Value| v.as_str()) {
             self.apisys = v.to_string();
         }
-        if let Some(v) = data.get("apimicro").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("apimicro").and_then(|v: &serde_json::Value| v.as_str()) {
             self.apimicro = v.to_string();
         }
-        if let Some(v) = data.get("apiobj").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("apiobj").and_then(|v: &serde_json::Value| v.as_str()) {
             self.apiobj = v.to_string();
         }
-        if let Some(v) = data.get("idagent").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("idagent").and_then(|v: &serde_json::Value| v.as_str()) {
             self.idagent = v.to_string();
         }
-        if let Some(v) = data.get("sid").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("sid").and_then(|v: &serde_json::Value| v.as_str()) {
             self.sid = v.to_string();
         }
-        if let Some(v) = data.get("uname").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("uname").and_then(|v: &serde_json::Value| v.as_str()) {
             self.uname = v.to_string();
         }
-        if let Some(v) = data.get("uid").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("uid").and_then(|v: &serde_json::Value| v.as_str()) {
             self.uid = v.to_string();
         }
-        if let Some(v) = data.get("money78").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("money78").and_then(|v: &serde_json::Value| v.as_str()) {
             self.money78 = v.to_string();
         }
-        if let Some(v) = data.get("consume").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("consume").and_then(|v: &serde_json::Value| v.as_str()) {
             self.consume = v.to_string();
         }
-        if let Some(v) = data.get("coname").and_then(|v| v.as_str()) {
+        if let Some(v) = data.get("coname").and_then(|v: &serde_json::Value| v.as_str()) {
             self.coname = v.to_string();
         }
     }
@@ -272,9 +272,9 @@ mod tests {
 
         let dict = entity.to_dict();
 
-        assert_eq!(dict.get("id").and_then(|v| v.as_str()), Some("test_id"));
-        assert_eq!(dict.get("state").and_then(|v| v.as_i64()), Some(2));
-        assert_eq!(dict.get("myname").and_then(|v| v.as_str()), Some("测试实体"));
+        assert_eq!(dict.get("id").and_then(|v: &serde_json::Value| v.as_str()), Some("test_id"));
+        assert_eq!(dict.get("state").and_then(|v: &serde_json::Value| v.as_i64()), Some(2));
+        assert_eq!(dict.get("myname").and_then(|v: &serde_json::Value| v.as_str()), Some("测试实体"));
     }
 
     /// 测试4：加载和转换的往返一致性
@@ -312,6 +312,6 @@ mod tests {
         entity.load_from_dict(&data);
 
         assert_eq!(entity.inputjson, json_value);
-        assert_eq!(entity.outputjson.get("result").and_then(|v| v.as_str()), Some("ok"));
+        assert_eq!(entity.outputjson.get("result").and_then(|v: &serde_json::Value| v.as_str()), Some("ok"));
     }
 }

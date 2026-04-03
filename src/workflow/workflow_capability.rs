@@ -109,7 +109,7 @@ impl WorkflowCapability {
     /// 插入或更新能力定义
     pub fn insert(&self, data: &HashMap<String, Value>, up: &UpInfo) -> Result<String, String> {
         let id = data.get("id")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or(&UpInfo::new_id())
             .to_string();
 
@@ -200,7 +200,7 @@ mod tests {
         assert!(found.is_some(), "应该找到记录");
         let record = found.unwrap();
         assert_eq!(
-            record.get("capability").and_then(|v| v.as_str()).unwrap_or(""),
+            record.get("capability").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or(""),
             "test_capability"
         );
     }

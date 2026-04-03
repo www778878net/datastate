@@ -88,19 +88,19 @@ impl SysSqlSqliteState {
         let rows = self.db.do_get(sql, &[&min_dlong as &dyn rusqlite::ToSql, &limit as &dyn rusqlite::ToSql], up)?;
 
         Ok(rows.iter().map(|row| SysSqlData {
-            id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            cid: row.get("cid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            apisys: row.get("apisys").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            apimicro: row.get("apimicro").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            apiobj: row.get("apiobj").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            cmdtext: row.get("cmdtext").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            uname: row.get("uname").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            num: row.get("num").and_then(|v| v.as_i64()).unwrap_or(0),
-            dlong: row.get("dlong").and_then(|v| v.as_i64()).unwrap_or(0),
-            downlen: row.get("downlen").and_then(|v| v.as_i64()).unwrap_or(0),
-            upby: row.get("upby").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            cmdtextmd5: row.get("cmdtextmd5").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            uptime: row.get("uptime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            apisys: row.get("apisys").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            apimicro: row.get("apimicro").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            apiobj: row.get("apiobj").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            cmdtext: row.get("cmdtext").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            uname: row.get("uname").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            num: row.get("num").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+            dlong: row.get("dlong").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+            downlen: row.get("downlen").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+            upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            cmdtextmd5: row.get("cmdtextmd5").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
             ..Default::default()
         }).collect())
     }
@@ -112,19 +112,19 @@ impl SysSqlSqliteState {
         let rows = self.db.do_get(sql, &[&min_num as &dyn rusqlite::ToSql, &limit as &dyn rusqlite::ToSql], up)?;
 
         Ok(rows.iter().map(|row| SysSqlData {
-            id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            cid: row.get("cid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            apisys: row.get("apisys").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            apimicro: row.get("apimicro").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            apiobj: row.get("apiobj").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            cmdtext: row.get("cmdtext").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            uname: row.get("uname").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            num: row.get("num").and_then(|v| v.as_i64()).unwrap_or(0),
-            dlong: row.get("dlong").and_then(|v| v.as_i64()).unwrap_or(0),
-            downlen: row.get("downlen").and_then(|v| v.as_i64()).unwrap_or(0),
-            upby: row.get("upby").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            cmdtextmd5: row.get("cmdtextmd5").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            uptime: row.get("uptime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            apisys: row.get("apisys").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            apimicro: row.get("apimicro").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            apiobj: row.get("apiobj").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            cmdtext: row.get("cmdtext").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            uname: row.get("uname").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            num: row.get("num").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+            dlong: row.get("dlong").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+            downlen: row.get("downlen").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+            upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            cmdtextmd5: row.get("cmdtextmd5").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
             ..Default::default()
         }).collect())
     }

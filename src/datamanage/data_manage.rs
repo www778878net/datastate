@@ -269,7 +269,7 @@ impl DataManage {
                 results[0]
                     .values()
                     .next()
-                    .and_then(|v| v.as_i64())
+                    .and_then(|v: &serde_json::Value| v.as_i64())
                     .map(|n| n as i32)
                     .unwrap_or_default()
             }
@@ -672,7 +672,7 @@ mod tests {
 
         // 8. 验证本地表结构
         let tables = dm.db().query("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'steam_%'", &[]).unwrap_or_default();
-        logger.detail(&format!("本地 steam 表: {:?}", tables.iter().map(|r| r.get("name").and_then(|v| v.as_str()).unwrap_or("")).collect::<Vec<_>>()));
+        logger.detail(&format!("本地 steam 表: {:?}", tables.iter().map(|r| r.get("name").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("")).collect::<Vec<_>>()));
 
         // 9. 执行同步，下载数据
         logger.detail("开始执行 dm.sync_once() 自动同步...");

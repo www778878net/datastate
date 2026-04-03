@@ -183,91 +183,91 @@ impl WorkflowInstance {
 
         let id = data
             .get("id")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or(&UpInfo::new_id())
             .to_string();
-        let cid = data.get("cid").and_then(|v| v.as_str()).unwrap_or("");
+        let cid = data.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         let apisys = data
             .get("apisys")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("apiwf");
         let apimicro = data
             .get("apimicro")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("basic");
-        let apiobj = data.get("apiobj").and_then(|v| v.as_str()).unwrap_or("");
-        let myname = data.get("myname").and_then(|v| v.as_str()).unwrap_or("");
+        let apiobj = data.get("apiobj").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+        let myname = data.get("myname").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         let idworkflowdefinition = data
             .get("idworkflowdefinition")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
-        let state = data.get("state").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let priority = data.get("priority").and_then(|v| v.as_i64()).unwrap_or(5) as i32;
-        let agentkind = data.get("agentkind").and_then(|v| v.as_str()).unwrap_or("");
+        let state = data.get("state").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32;
+        let priority = data.get("priority").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(5) as i32;
+        let agentkind = data.get("agentkind").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         let flowschema = data
             .get("flowschema")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
         let inputjson = data
             .get("inputjson")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
         let outputjson = data
             .get("outputjson")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
-        let maxcopy = data.get("maxcopy").and_then(|v| v.as_i64()).unwrap_or(1) as i32;
-        let currentcopy = data.get("currentcopy").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let timeout = data.get("timeout").and_then(|v| v.as_i64()).unwrap_or(3600) as i32;
-        let retrylimit = data.get("retrylimit").and_then(|v| v.as_i64()).unwrap_or(3) as i32;
-        let retryinterval = data.get("retryinterval").and_then(|v| v.as_i64()).unwrap_or(60) as i32;
+        let maxcopy = data.get("maxcopy").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(1) as i32;
+        let currentcopy = data.get("currentcopy").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32;
+        let timeout = data.get("timeout").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(3600) as i32;
+        let retrylimit = data.get("retrylimit").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(3) as i32;
+        let retryinterval = data.get("retryinterval").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(60) as i32;
         let resourcereq = data
             .get("resourcereq")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
         let description = data
             .get("description")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
         let configjson = data
             .get("configjson")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
         let costtotal = data.get("costtotal").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let revenuetotal = data.get("revenuetotal").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let profittotal = data.get("profittotal").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let roi = data.get("roi").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let runcount = data.get("runcount").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let successcount = data.get("successcount").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let errorcount = data.get("errorcount").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let runcount = data.get("runcount").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32;
+        let successcount = data.get("successcount").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32;
+        let errorcount = data.get("errorcount").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32;
         let successrate = data.get("successrate").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let executiontime = data.get("executiontime").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let lastruntime = data
             .get("lastruntime")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
         let lastoktime = data
             .get("lastoktime")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
         let lasterrortime = data
             .get("lasterrortime")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
         let lasterrinfo = data
             .get("lasterrinfo")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
         let lastokinfo = data
             .get("lastokinfo")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
-        let starttime = data.get("starttime").and_then(|v| v.as_str()).unwrap_or("");
-        let endtime = data.get("endtime").and_then(|v| v.as_str()).unwrap_or("");
-        let idagent = data.get("idagent").and_then(|v| v.as_str()).unwrap_or("");
+        let starttime = data.get("starttime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+        let endtime = data.get("endtime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+        let idagent = data.get("idagent").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         let idparentinstance = data
             .get("idparentinstance")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
 
         let sql = format!(
@@ -405,7 +405,7 @@ impl WorkflowInstance {
     /// 更新记录（完整更新）
     pub fn update(&self, data: &HashMap<String, Value>, up: &UpInfo) -> Result<(), String> {
         let id = data.get("id")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .ok_or_else(|| "缺少 id 字段".to_string())?;
 
         let table_name = self.get_table_name();
@@ -496,7 +496,7 @@ impl WorkflowInstance {
         };
         let count_rows = self.db.do_get(&count_sql, params, up)?;
         let total = count_rows.first()
-            .and_then(|row| row.get("cnt").and_then(|v| v.as_i64()))
+            .and_then(|row| row.get("cnt").and_then(|v: &serde_json::Value| v.as_i64()))
             .unwrap_or(0) as i32;
 
         Ok((records, total))

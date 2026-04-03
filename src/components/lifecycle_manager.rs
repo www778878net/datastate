@@ -110,13 +110,13 @@ impl LifecycleManager {
 
     /// 从字典加载数据
     pub fn load_from_dict(&mut self, data: &HashMap<String, Value>) {
-        if let Some(v) = data.get("runcount").and_then(|v| v.as_i64()) {
+        if let Some(v) = data.get("runcount").and_then(|v: &serde_json::Value| v.as_i64()) {
             self.runcount = v as i32;
         }
-        if let Some(v) = data.get("successcount").and_then(|v| v.as_i64()) {
+        if let Some(v) = data.get("successcount").and_then(|v: &serde_json::Value| v.as_i64()) {
             self.successcount = v as i32;
         }
-        if let Some(v) = data.get("errorcount").and_then(|v| v.as_i64()) {
+        if let Some(v) = data.get("errorcount").and_then(|v: &serde_json::Value| v.as_i64()) {
             self.errorcount = v as i32;
         }
         if let Some(v) = data.get("successrate").and_then(|v| v.as_f64()) {
@@ -253,9 +253,9 @@ mod tests {
 
         let dict = manager.to_dict();
 
-        assert_eq!(dict.get("runcount").and_then(|v| v.as_i64()), Some(10));
-        assert_eq!(dict.get("successcount").and_then(|v| v.as_i64()), Some(8));
-        assert_eq!(dict.get("errorcount").and_then(|v| v.as_i64()), Some(2));
+        assert_eq!(dict.get("runcount").and_then(|v: &serde_json::Value| v.as_i64()), Some(10));
+        assert_eq!(dict.get("successcount").and_then(|v: &serde_json::Value| v.as_i64()), Some(8));
+        assert_eq!(dict.get("errorcount").and_then(|v: &serde_json::Value| v.as_i64()), Some(2));
 
         let mut loaded = LifecycleManager::default();
         loaded.load_from_dict(&dict);

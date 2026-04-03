@@ -441,15 +441,15 @@ fn test_03_verify_mysql_testtb() {
 
             // 对比数据
             for local in &local_records {
-                let local_id = local.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                let local_data = local.get("data").and_then(|v| v.as_str()).unwrap_or("");
+                let local_id = local.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+                let local_data = local.get("data").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
 
                 let mysql_match = mysql_records.iter().find(|r| {
-                    r.get("id").and_then(|v| v.as_str()) == Some(local_id)
+                    r.get("id").and_then(|v: &serde_json::Value| v.as_str()) == Some(local_id)
                 });
 
                 if let Some(mysql) = mysql_match {
-                    let mysql_data = mysql.get("data").and_then(|v| v.as_str()).unwrap_or("");
+                    let mysql_data = mysql.get("data").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
                     let match_status = if local_data == mysql_data { "✓" } else { "✗" };
                 } else {
                 }
@@ -669,10 +669,10 @@ fn test_full_workflow() {
 
                     // 验证修改
                     let updated = local_records.iter().find(|r| {
-                        r.get("id").and_then(|v| v.as_str()) == Some(&ids[1])
+                        r.get("id").and_then(|v: &serde_json::Value| v.as_str()) == Some(&ids[1])
                     });
                     if let Some(r) = updated {
-                        let data = r.get("data").and_then(|v| v.as_str()).unwrap_or("");
+                        let data = r.get("data").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
                         if data == "data_1_updated" {
                         }
                     }

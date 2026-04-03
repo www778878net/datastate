@@ -111,6 +111,6 @@ mod tests {
         );
 
         let dict = result.to_dict();
-        assert_eq!(dict.get("res").and_then(|v| v.as_i64()).unwrap_or(-1), 0);
+        assert_eq!(dict.get("res").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(-1), 0);
     }
 }

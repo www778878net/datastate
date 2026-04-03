@@ -140,7 +140,7 @@ pub trait BaseInstance: Send + Sync {
         // 更新工作流ID
         let workflow_id = context78
             .get("idworkflowinstance")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or(&self.base().idworkflowinstance);
         if !workflow_id.is_empty() {
             self.base_mut().idworkflowinstance = workflow_id.to_string();
@@ -157,7 +157,7 @@ pub trait BaseInstance: Send + Sync {
         let execution_time = start_time.elapsed().as_secs_f64();
 
         // 判断执行结果
-        let res = result.get("res").and_then(|v| v.as_i64()).unwrap_or(0);
+        let res = result.get("res").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0);
 
         // 序列化结果用于存储
         let result_json = serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string());
@@ -435,32 +435,32 @@ impl InstanceBase {
         // 加载实例特有字段
         if let Some(v) = filtered_data
             .get("idworkflowdefinition")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
         {
             base.idworkflowdefinition = v.to_string();
         }
         if let Some(v) = filtered_data
             .get("idparentinstance")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
         {
             base.idparentinstance = v.to_string();
         }
-        if let Some(v) = filtered_data.get("priority").and_then(|v| v.as_i64()) {
+        if let Some(v) = filtered_data.get("priority").and_then(|v: &serde_json::Value| v.as_i64()) {
             base.priority = v as i32;
         }
-        if let Some(v) = filtered_data.get("maxcopy").and_then(|v| v.as_i64()) {
+        if let Some(v) = filtered_data.get("maxcopy").and_then(|v: &serde_json::Value| v.as_i64()) {
             base.maxcopy = v as i32;
         }
-        if let Some(v) = filtered_data.get("currentcopy").and_then(|v| v.as_i64()) {
+        if let Some(v) = filtered_data.get("currentcopy").and_then(|v: &serde_json::Value| v.as_i64()) {
             base.currentcopy = v as i32;
         }
-        if let Some(v) = filtered_data.get("timeout").and_then(|v| v.as_i64()) {
+        if let Some(v) = filtered_data.get("timeout").and_then(|v: &serde_json::Value| v.as_i64()) {
             base.timeout = v as i32;
         }
-        if let Some(v) = filtered_data.get("retrylimit").and_then(|v| v.as_i64()) {
+        if let Some(v) = filtered_data.get("retrylimit").and_then(|v: &serde_json::Value| v.as_i64()) {
             base.retrylimit = v as i32;
         }
-        if let Some(v) = filtered_data.get("retryinterval").and_then(|v| v.as_i64()) {
+        if let Some(v) = filtered_data.get("retryinterval").and_then(|v: &serde_json::Value| v.as_i64()) {
             base.retryinterval = v as i32;
         }
         if let Some(v) = filtered_data.get("flowschema").cloned() {

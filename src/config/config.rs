@@ -131,7 +131,7 @@ impl Config {
 
     /// 获取整数配置
     pub fn get_int(&self, key: &str) -> Option<i64> {
-        self.get(key).and_then(|v| v.as_i64())
+        self.get(key).and_then(|v: &serde_json::Value| v.as_i64())
     }
 
     /// 获取布尔配置

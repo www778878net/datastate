@@ -134,14 +134,14 @@ impl TestTb {
             Ok(rows) if !rows.is_empty() => {
                 let row = &rows[0];
                 Ok(Some(TestTbRecord {
-                    idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
-                    id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    cid: row.get("cid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    kind: row.get("kind").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    item: row.get("item").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    data: row.get("data").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    upby: row.get("upby").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    uptime: row.get("uptime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+                    id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    kind: row.get("kind").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    item: row.get("item").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    data: row.get("data").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                 }))
             }
             _ => Ok(None),
@@ -163,14 +163,14 @@ impl TestTb {
                 let result: Vec<TestTbRecord> = rows
                     .iter()
                     .map(|row| TestTbRecord {
-                        idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
-                        id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        cid: row.get("cid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        kind: row.get("kind").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        item: row.get("item").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        data: row.get("data").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        upby: row.get("upby").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        uptime: row.get("uptime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+                        id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        kind: row.get("kind").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        item: row.get("item").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        data: row.get("data").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                     })
                     .collect();
                 Ok(result)

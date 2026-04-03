@@ -108,11 +108,11 @@ impl DataAudit {
             Ok(results) => results
                 .iter()
                 .map(|row| AbilityLog {
-                    idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
-                    ability_name: row.get("ability_name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    caller: row.get("caller").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    action: row.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    input_params: row.get("input_params").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+                    ability_name: row.get("ability_name").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    caller: row.get("caller").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    action: row.get("action").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    input_params: row.get("input_params").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                     created_at: row.get("created_at").and_then(|v| v.as_f64()).unwrap_or(0.0),
                 })
                 .collect(),

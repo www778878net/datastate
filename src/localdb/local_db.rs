@@ -400,7 +400,7 @@ impl LocalDB {
             .map_err(|e| format!("插入失败: {}", e))?;
 
         Ok(data.get("id")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("")
             .to_string())
     }
@@ -809,7 +809,7 @@ impl LocalDB {
 
             if let Some(data) = response.data {
                 let response_value: Value = data.response;
-                if let Some(bytedata_base64) = response_value.get("bytedata").and_then(|v| v.as_str()) {
+                if let Some(bytedata_base64) = response_value.get("bytedata").and_then(|v: &serde_json::Value| v.as_str()) {
                     // 解码 base64 protobuf
                     let bytes = general_purpose::STANDARD
                         .decode(bytedata_base64)
@@ -982,7 +982,7 @@ impl LocalDB {
                 logger.info(&format!("[upload_to_server] 业务响应: {:?}", back_obj));
                 if let Some(back_res) = back_obj.get("res") {
                     if back_res.as_i64().unwrap_or(0) != 0 {
-                        let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
+                        let back_errmsg = back_obj.get("errmsg").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
                         return Err(format!("业务错误: {}", back_errmsg));
                     }
                 }
@@ -1070,7 +1070,7 @@ impl LocalDB {
                 
                 if let Some(back_res) = back_obj.get("res") {
                     if back_res.as_i64().unwrap_or(0) != 0 {
-                        let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
+                        let back_errmsg = back_obj.get("errmsg").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
                         return Err(format!("业务错误: {}", back_errmsg));
                     }
                 }
@@ -1078,7 +1078,7 @@ impl LocalDB {
                 if let Some(back) = back_obj.get("back") {
                     if let Some(back_obj) = back.as_object() {
                         // 新格式：successIdrows, failedRecords
-                        if let Some(count) = back_obj.get("successCount").and_then(|v| v.as_i64()) {
+                        if let Some(count) = back_obj.get("successCount").and_then(|v: &serde_json::Value| v.as_i64()) {
                             inserted = count as i32;
                         }
                         
@@ -1088,15 +1088,15 @@ impl LocalDB {
                                 if let Some(err_obj) = err.as_object() {
                                     errors.push(crate::data_sync::SyncValidationError {
                                         index: idx as i32,
-                                        idrow: err_obj.get("idrow").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                        error: err_obj.get("lasterrinfo").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                        idrow: err_obj.get("idrow").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                                        error: err_obj.get("lasterrinfo").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                                     });
                                 }
                             }
                         }
                         
                         // 兼容旧格式：batches, errors
-                        if let Some(count) = back_obj.get("batches").and_then(|v| v.as_i64()) {
+                        if let Some(count) = back_obj.get("batches").and_then(|v: &serde_json::Value| v.as_i64()) {
                             inserted = count as i32;
                         }
                         
@@ -1104,9 +1104,9 @@ impl LocalDB {
                             for (idx, err) in err_list.iter().enumerate() {
                                 if let Some(err_obj) = err.as_object() {
                                     errors.push(crate::data_sync::SyncValidationError {
-                                        index: err_obj.get("index").and_then(|v| v.as_i64()).unwrap_or(idx as i64) as i32,
-                                        idrow: err_obj.get("idrow").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                        error: err_obj.get("error").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                        index: err_obj.get("index").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(idx as i64) as i32,
+                                        idrow: err_obj.get("idrow").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                                        error: err_obj.get("error").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                                     });
                                 }
                             }
@@ -1377,7 +1377,7 @@ mod tests {
         let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
         let rows = db.query(&query, &[&"test_001" as &dyn rusqlite::ToSql]).expect("查询失败");
         assert_eq!(rows.len(), 1, "应该有一条记录");
-        assert_eq!(rows[0].get("name").and_then(|v| v.as_str()), Some("测试名称"));
+        assert_eq!(rows[0].get("name").and_then(|v: &serde_json::Value| v.as_str()), Some("测试名称"));
     }
 
     /// 测试3：查询数据
@@ -1403,7 +1403,7 @@ mod tests {
         let rows = db.query(&query, &[&"query_001" as &dyn rusqlite::ToSql]).expect("查询失败");
 
         assert_eq!(rows.len(), 1, "应该找到一条记录");
-        assert_eq!(rows[0].get("id").and_then(|v| v.as_str()), Some("query_001"));
+        assert_eq!(rows[0].get("id").and_then(|v: &serde_json::Value| v.as_str()), Some("query_001"));
     }
 
     /// 测试4：更新数据
@@ -1435,7 +1435,7 @@ mod tests {
         // 验证更新结果
         let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
         let rows = db.query(&query, &[&"update_001" as &dyn rusqlite::ToSql]).expect("查询失败");
-        assert_eq!(rows[0].get("name").and_then(|v| v.as_str()), Some("更新后名称"));
+        assert_eq!(rows[0].get("name").and_then(|v: &serde_json::Value| v.as_str()), Some("更新后名称"));
     }
 
     /// 测试5：删除数据

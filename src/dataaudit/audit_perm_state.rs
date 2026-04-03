@@ -175,16 +175,16 @@ impl AuditPermDataState {
                 let rows: Vec<AuditPermRecord> = results
                     .iter()
                     .map(|row| AuditPermRecord {
-                        idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
-                        id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        tablename: row.get("tablename").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        ability: row.get("ability").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        caller: row.get("caller").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        description: row.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        upby: row.get("upby").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        cid: row.get("cid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        uid: row.get("uid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        uptime: row.get("uptime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+                        id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        tablename: row.get("tablename").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        ability: row.get("ability").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        caller: row.get("caller").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        description: row.get("description").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        uid: row.get("uid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                     })
                     .collect();
                 rows.into_iter().next()
@@ -201,16 +201,16 @@ impl AuditPermDataState {
             Ok(results) => results
                 .iter()
                 .map(|row| AuditPermRecord {
-                    idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
-                    id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    tablename: row.get("tablename").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    ability: row.get("ability").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    caller: row.get("caller").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    description: row.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    upby: row.get("upby").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    cid: row.get("cid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    uid: row.get("uid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    uptime: row.get("uptime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+                    id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    tablename: row.get("tablename").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    ability: row.get("ability").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    caller: row.get("caller").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    description: row.get("description").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    uid: row.get("uid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                 })
                 .collect(),
             _ => Vec::new(),

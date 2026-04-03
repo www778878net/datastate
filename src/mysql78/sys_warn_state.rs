@@ -86,21 +86,21 @@ impl SysWarnMysqlState {
         let rows = self.db.do_get(sql, vec![serde_json::json!(kind)], up)?;
 
         Ok(rows.iter().map(|row| SysWarnData {
-            id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            uid: row.get("uid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            kind: row.get("kind").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            apimicro: row.get("apimicro").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            apiobj: row.get("apiobj").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            content: row.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            upid: row.get("upid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            upby: row.get("upby").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            uptime: row.get("uptime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            remark: row.get("remark").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            remark2: row.get("remark2").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            remark3: row.get("remark3").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            remark4: row.get("remark4").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            remark5: row.get("remark5").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            remark6: row.get("remark6").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            uid: row.get("uid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            kind: row.get("kind").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            apimicro: row.get("apimicro").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            apiobj: row.get("apiobj").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            content: row.get("content").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            upid: row.get("upid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            remark: row.get("remark").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            remark2: row.get("remark2").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            remark3: row.get("remark3").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            remark4: row.get("remark4").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            remark5: row.get("remark5").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+            remark6: row.get("remark6").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
         }).collect())
     }
 

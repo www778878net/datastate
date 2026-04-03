@@ -460,7 +460,7 @@ impl DataSync {
 
         // 从 data 中获取 cid
         let cid = data.get("cid")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
 
         let conn = self.db.get_conn();
@@ -585,7 +585,7 @@ impl DataSync {
             Ok(results) if !results.is_empty() => results[0]
                 .values()
                 .next()
-                .and_then(|v| v.as_i64())
+                .and_then(|v: &serde_json::Value| v.as_i64())
                 .map(|n| n as i32)
                 .unwrap_or(0),
             _ => 0,
@@ -598,7 +598,7 @@ impl DataSync {
         match self.db.query(&sql, &[]) {
             Ok(results) if !results.is_empty() => results[0]
                 .get("cnt")
-                .and_then(|v| v.as_i64())
+                .and_then(|v: &serde_json::Value| v.as_i64())
                 .map(|n| n as i32)
                 .unwrap_or(0),
             _ => 0,
@@ -619,25 +619,25 @@ impl DataSync {
             Ok(results) => results
                 .iter()
                 .map(|row| SynclogItem {
-                    idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
-                    apisys: row.get("apisys").and_then(|v| v.as_str()).unwrap_or("v1").to_string(),
-                    apimicro: row.get("apimicro").and_then(|v| v.as_str()).unwrap_or("iflow").to_string(),
-                    apiobj: row.get("apiobj").and_then(|v| v.as_str()).unwrap_or("synclog").to_string(),
-                    tbname: row.get("tbname").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    action: row.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    cmdtext: row.get("cmdtext").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    params: row.get("params").and_then(|v| v.as_str()).unwrap_or("[]").to_string(),
-                    idrow: row.get("idrow").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    worker: row.get("worker").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    synced: row.get("synced").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-                    cmdtextmd5: row.get("cmdtextmd5").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    num: row.get("num").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-                    dlong: row.get("dlong").and_then(|v| v.as_i64()).unwrap_or(0),
-                    downlen: row.get("downlen").and_then(|v| v.as_i64()).unwrap_or(0),
-                    id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    upby: row.get("upby").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    uptime: row.get("uptime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    cid: row.get("cid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+                    apisys: row.get("apisys").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("v1").to_string(),
+                    apimicro: row.get("apimicro").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("iflow").to_string(),
+                    apiobj: row.get("apiobj").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("synclog").to_string(),
+                    tbname: row.get("tbname").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    action: row.get("action").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    cmdtext: row.get("cmdtext").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    params: row.get("params").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("[]").to_string(),
+                    idrow: row.get("idrow").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    worker: row.get("worker").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    synced: row.get("synced").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32,
+                    cmdtextmd5: row.get("cmdtextmd5").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    num: row.get("num").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32,
+                    dlong: row.get("dlong").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+                    downlen: row.get("downlen").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+                    id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                    cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                 })
                 .collect(),
             _ => Vec::new(),
@@ -704,40 +704,40 @@ impl DataSync {
             Ok(results) => results
                 .iter()
                 .map(|row| StateLog {
-                    idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
+                    idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
                     id: row
                         .get("id")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("")
                         .to_string(),
                     table_name: row
                         .get("table_name")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("")
                         .to_string(),
                     old_status: row
                         .get("old_status")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("")
                         .to_string(),
                     new_status: row
                         .get("new_status")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("")
                         .to_string(),
                     reason: row
                         .get("reason")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("")
                         .to_string(),
                     upby: row
                         .get("upby")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("")
                         .to_string(),
                     uptime: row
                         .get("uptime")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("")
                         .to_string(),
                 })
@@ -809,34 +809,34 @@ impl DataSync {
             Ok(results) => results
                 .iter()
                 .map(|row| SyncStats {
-                    idpk: row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0),
+                    idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
                     id: row
                         .get("id")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("")
                         .to_string(),
                     table_name: row
                         .get("table_name")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("")
                         .to_string(),
-                    downloaded: row.get("downloaded").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-                    updated: row.get("updated").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-                    skipped: row.get("skipped").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-                    failed: row.get("failed").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+                    downloaded: row.get("downloaded").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32,
+                    updated: row.get("updated").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32,
+                    skipped: row.get("skipped").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32,
+                    failed: row.get("failed").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32,
                     stat_date: row
                         .get("stat_date")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("")
                         .to_string(),
                     upby: row
                         .get("upby")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("")
                         .to_string(),
                     uptime: row
                         .get("uptime")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("")
                         .to_string(),
                 })
@@ -1065,11 +1065,11 @@ impl DataSync {
                                 let local_uptime = rows
                                     .first()
                                     .and_then(|r| r.get("uptime"))
-                                    .and_then(|v| v.as_str())
+                                    .and_then(|v: &serde_json::Value| v.as_str())
                                     .unwrap_or("");
                                 let remote_uptime = record
                                     .get("uptime")
-                                    .and_then(|v| v.as_str())
+                                    .and_then(|v: &serde_json::Value| v.as_str())
                                     .unwrap_or("");
 
                                 if remote_uptime > local_uptime {
@@ -1205,7 +1205,7 @@ impl DataSync {
                 // 检查 res
                 if let Some(back_res) = back_obj.get("res") {
                     if back_res.as_i64().unwrap_or(0) != 0 {
-                        let back_errmsg = back_obj.get("errmsg").and_then(|v| v.as_str()).unwrap_or("");
+                        let back_errmsg = back_obj.get("errmsg").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
                         return SyncResult {
                             res: -1,
                             errmsg: format!("业务错误: {}", back_errmsg),
@@ -1229,8 +1229,8 @@ impl DataSync {
                         if let Some(err_obj) = err.as_object() {
                             failed.push(SyncValidationError {
                                 index: idx as i32,
-                                idrow: err_obj.get("idrow").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                error: err_obj.get("error").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                idrow: err_obj.get("idrow").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                                error: err_obj.get("error").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                             });
                         }
                     }
@@ -1348,7 +1348,7 @@ impl DataSync {
         let mut skipped = 0;
 
         for record in records {
-            let record_id = match record.get("id").and_then(|v| v.as_str()) {
+            let record_id = match record.get("id").and_then(|v: &serde_json::Value| v.as_str()) {
                 Some(id) => id,
                 None => continue,
             };
@@ -1360,9 +1360,9 @@ impl DataSync {
                     // 比较更新时间
                     let local_uptime = local_records[0]
                         .get("uptime")
-                        .and_then(|v| v.as_str())
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .unwrap_or("");
-                    let record_uptime = record.get("uptime").and_then(|v| v.as_str()).unwrap_or("");
+                    let record_uptime = record.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
 
                     if record_uptime > local_uptime {
                         // 需要更新
@@ -1433,14 +1433,14 @@ impl DataSync {
     pub fn m_add(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
         // 如果记录中已有 id，使用传入的 id；否则生成新的雪花ID
         let id = record.get("id")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .unwrap_or_else(|| crate::snowflake::next_id_string());
         
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         // 如果记录中已有 cid，使用传入的 cid；否则根据 uidcid 配置生成
-        let cid_value = if record.get("cid").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).is_some() {
+        let cid_value = if record.get("cid").and_then(|v: &serde_json::Value| v.as_str()).filter(|s| !s.is_empty()).is_some() {
             String::new() // 已经有 cid，不需要再设置
         } else {
             match self.uidcid.as_str() {
@@ -1521,7 +1521,7 @@ impl DataSync {
     /// 完整保存传入的数据，不自动填充 CID、upby、uptime
     pub fn m_sync_add(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
         let id = record.get("id")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .unwrap_or_else(|| crate::snowflake::next_id_string());

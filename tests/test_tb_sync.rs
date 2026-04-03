@@ -133,7 +133,7 @@ fn test_full_sync_workflow() {
 
     // 修改第一条数据
     let first_row = &rows[0];
-    let record_id = first_row.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    let record_id = first_row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
     mylogger!().detail(&format!("  准备修改记录: id={}", record_id));
 
     let mut update_data = HashMap::new();
@@ -185,13 +185,13 @@ fn test_full_sync_workflow() {
     // 验证修改后的数据是否存在
     let rows = state.get_all(100, "testtb", "查询所有数据").expect("查询失败");
     let updated_record = rows.iter().find(|row| {
-        row.get("id").and_then(|v| v.as_str()) == Some(record_id)
+        row.get("id").and_then(|v: &serde_json::Value| v.as_str()) == Some(record_id)
     });
     
     if let Some(record) = updated_record {
-        let kind = record.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-        let item = record.get("item").and_then(|v| v.as_str()).unwrap_or("");
-        let data = record.get("data").and_then(|v| v.as_str()).unwrap_or("");
+        let kind = record.get("kind").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+        let item = record.get("item").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+        let data = record.get("data").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         mylogger!().detail(&format!("  修改后的记录: kind={}, item={}, data={}", kind, item, data));
         
         // 验证数据已被修改
@@ -277,8 +277,8 @@ fn test_cid_validation_failed() {
     let check_sql = format!("SELECT synced, lasterrinfo FROM synclog WHERE idrow = '{}'", idrow);
     let rows = db.query(&check_sql, &[]).expect("查询 synclog 失败");
     if let Some(row) = rows.first() {
-        let synced = row.get("synced").and_then(|v| v.as_i64()).unwrap_or(0);
-        let lasterrinfo = row.get("lasterrinfo").and_then(|v| v.as_str()).unwrap_or("");
+        let synced = row.get("synced").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0);
+        let lasterrinfo = row.get("lasterrinfo").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         mylogger!().detail(&format!("  synclog 状态: synced={}, lasterrinfo={}", synced, lasterrinfo));
         
         if synced == -1 {

@@ -86,12 +86,12 @@ pub trait BaseCapability: Send + Sync {
         // 判断执行结果 - 先查顶层，再查嵌套的能力对象
         let res = result
             .get("res")
-            .and_then(|v| v.as_i64())
+            .and_then(|v: &serde_json::Value| v.as_i64())
             .or_else(|| {
                 result
                     .get(cap_name.as_str())
                     .and_then(|v| v.get("res"))
-                    .and_then(|v| v.as_i64())
+                    .and_then(|v: &serde_json::Value| v.as_i64())
             })
             .unwrap_or(-1);
 
@@ -139,7 +139,7 @@ pub trait BaseCapability: Send + Sync {
             let errmsg = result
                 .get(cap_name.as_str())
                 .and_then(|v| v.get("errmsg"))
-                .and_then(|v| v.as_str())
+                .and_then(|v: &serde_json::Value| v.as_str())
                 .unwrap_or("未知错误");
             if let Some(logger) = self.logger() {
                 logger.error(&format!(
@@ -400,19 +400,19 @@ impl CapabilityBase {
         base.economic.load_from_dict(&filtered_data);
 
         // 加载控制字段
-        if let Some(v) = filtered_data.get("capability").and_then(|v| v.as_str()) {
+        if let Some(v) = filtered_data.get("capability").and_then(|v: &serde_json::Value| v.as_str()) {
             base.capability = v.to_string();
         }
-        if let Some(v) = filtered_data.get("maxcopy").and_then(|v| v.as_i64()) {
+        if let Some(v) = filtered_data.get("maxcopy").and_then(|v: &serde_json::Value| v.as_i64()) {
             base.maxcopy = v as i32;
         }
-        if let Some(v) = filtered_data.get("timeout").and_then(|v| v.as_i64()) {
+        if let Some(v) = filtered_data.get("timeout").and_then(|v: &serde_json::Value| v.as_i64()) {
             base.timeout = v as i32;
         }
-        if let Some(v) = filtered_data.get("retrylimit").and_then(|v| v.as_i64()) {
+        if let Some(v) = filtered_data.get("retrylimit").and_then(|v: &serde_json::Value| v.as_i64()) {
             base.retrylimit = v as i32;
         }
-        if let Some(v) = filtered_data.get("retryinterval").and_then(|v| v.as_i64()) {
+        if let Some(v) = filtered_data.get("retryinterval").and_then(|v: &serde_json::Value| v.as_i64()) {
             base.retryinterval = v as i32;
         }
         if let Some(v) = filtered_data.get("dependencies").and_then(|v| v.as_array()) {
@@ -517,11 +517,11 @@ mod tests {
 
         let json = base.to_json();
 
-        assert_eq!(json.get("id").and_then(|v| v.as_str()), Some("test-id"));
+        assert_eq!(json.get("id").and_then(|v: &serde_json::Value| v.as_str()), Some("test-id"));
         assert_eq!(
-            json.get("capability").and_then(|v| v.as_str()),
+            json.get("capability").and_then(|v: &serde_json::Value| v.as_str()),
             Some("test_cap")
         );
-        assert_eq!(json.get("timeout").and_then(|v| v.as_i64()), Some(300));
+        assert_eq!(json.get("timeout").and_then(|v: &serde_json::Value| v.as_i64()), Some(300));
     }
 }

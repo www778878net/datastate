@@ -198,55 +198,55 @@ impl WorkflowTask {
 
         let id = data
             .get("id")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or(&UpInfo::new_id())
             .to_string();
-        let myname = data.get("myname").and_then(|v| v.as_str()).unwrap_or("");
+        let myname = data.get("myname").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         let idcapability = data
             .get("idcapability")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
         let apisys = data
             .get("apisys")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("apiwf");
         let apimicro = data
             .get("apimicro")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("basic");
-        let apiobj = data.get("apiobj").and_then(|v| v.as_str()).unwrap_or("");
-        let priority = data.get("priority").and_then(|v| v.as_i64()).unwrap_or(5) as i32;
-        let state = data.get("state").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let starttime = data.get("starttime").and_then(|v| v.as_str()).unwrap_or("");
-        let endtime = data.get("endtime").and_then(|v| v.as_str()).unwrap_or("");
+        let apiobj = data.get("apiobj").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+        let priority = data.get("priority").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(5) as i32;
+        let state = data.get("state").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32;
+        let starttime = data.get("starttime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+        let endtime = data.get("endtime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         let inputjson = data
             .get("inputjson")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
         let outputjson = data
             .get("outputjson")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
         let configjson = data
             .get("configjson")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
         let description = data
             .get("description")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
-        let cid = data.get("cid").and_then(|v| v.as_str()).unwrap_or("");
-        let idagent = data.get("idagent").and_then(|v| v.as_str()).unwrap_or("");
+        let cid = data.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+        let idagent = data.get("idagent").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
         let idworkflowinstance = data
             .get("idworkflowinstance")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
-        let runcount = data.get("runcount").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let runcount = data.get("runcount").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32;
         let successcount = data
             .get("successcount")
-            .and_then(|v| v.as_i64())
+            .and_then(|v: &serde_json::Value| v.as_i64())
             .unwrap_or(0) as i32;
-        let errorcount = data.get("errorcount").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let errorcount = data.get("errorcount").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32;
         let successrate = data
             .get("successrate")
             .and_then(|v| v.as_f64())
@@ -257,23 +257,23 @@ impl WorkflowTask {
             .unwrap_or(0.0);
         let lastruntime = data
             .get("lastruntime")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
         let lastoktime = data
             .get("lastoktime")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
         let lasterrortime = data
             .get("lasterrortime")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
         let lastokinfo = data
             .get("lastokinfo")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
         let lasterrinfo = data
             .get("lasterrinfo")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("{}");
         let price = data.get("price").and_then(|v| v.as_f64()).unwrap_or(1.0);
         let costunit = data.get("costunit").and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -457,7 +457,7 @@ impl WorkflowTask {
     /// 更新记录（完整更新）
     pub fn update(&self, data: &HashMap<String, Value>) -> Result<(), String> {
         let id = data.get("id")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .ok_or_else(|| "缺少 id 字段".to_string())?;
 
         let up = UpInfo::new();

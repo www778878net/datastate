@@ -299,7 +299,7 @@ impl DataSyncMysql {
     /// 保存记录（存在更新，不存在插入）
     pub fn m_save(&self, record: &HashMap<String, Value>) -> Result<String, String> {
         let id = record.get("id")
-            .and_then(|v| v.as_str())
+            .and_then(|v: &serde_json::Value| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| crate::snowflake::next_id_string());
 
@@ -356,7 +356,7 @@ impl DataSyncMysql {
         let results = self.db.do_get(&sql, vec![], &up)?;
         Ok(results.first()
             .and_then(|r| r.get("cnt"))
-            .and_then(|v| v.as_i64())
+            .and_then(|v: &serde_json::Value| v.as_i64())
             .map(|n| n as i32)
             .unwrap_or(0))
     }
@@ -429,7 +429,7 @@ impl DataSyncMysql {
         match self.db.do_get(sql, vec![Value::String(self.table_name.clone())], &up) {
             Ok(results) => results.first()
                 .and_then(|r| r.get("cnt"))
-                .and_then(|v| v.as_i64())
+                .and_then(|v: &serde_json::Value| v.as_i64())
                 .map(|n| n as i32)
                 .unwrap_or(0),
             _ => 0,
@@ -443,7 +443,7 @@ impl DataSyncMysql {
         match self.db.do_get(&sql, vec![], &up) {
             Ok(results) => results.first()
                 .and_then(|r| r.get("cnt"))
-                .and_then(|v| v.as_i64())
+                .and_then(|v: &serde_json::Value| v.as_i64())
                 .map(|n| n as i32)
                 .unwrap_or(0),
             _ => 0,
