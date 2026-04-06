@@ -779,6 +779,7 @@ impl LocalDB {
         getnumber: i32,
         getstart: i32,
         download_condition: Option<&Value>,
+        download_cols: Option<&[String]>,
     ) -> Result<Vec<HashMap<String, Value>>, String> {
         use base::http::HttpHelper;
         use base64::{Engine as _, engine::general_purpose};
@@ -875,6 +876,11 @@ impl LocalDB {
                 } else if let Some(_obj) = cond.as_object() {
                     request_payload["data"] = cond.clone();
                 }
+            }
+
+            // 添加 cols 参数（与服务器端 get 方法配合使用）
+            if let Some(cols) = download_cols {
+                request_payload["cols"] = serde_json::to_value(cols).unwrap_or(Value::Array(vec![]));
             }
 
             let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);

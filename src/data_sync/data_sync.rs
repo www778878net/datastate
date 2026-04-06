@@ -910,6 +910,7 @@ impl DataSync {
                 page_size,
                 getstart,
                 self.download_condition.as_ref(),
+                self.download_cols.as_deref(),
             );
 
             match result {
@@ -987,6 +988,7 @@ impl DataSync {
             getnumber,
             getstart,
             self.download_condition.as_ref(),
+            self.download_cols.as_deref(),
         );
 
         match result {
