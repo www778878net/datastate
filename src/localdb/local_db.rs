@@ -879,8 +879,16 @@ impl LocalDB {
             }
 
             // 添加 cols 参数（与服务器端 get 方法配合使用）
+            // 注意：cols 用于 WHERE 条件字段名，不是 SELECT 字段列表
+            // 服务器端逻辑：
+            // - 如果不传 cols，UpInfo 默认使用 ["all"]
+            // - AuthService.upcheck 会将 ["all"] 替换为 tableConfig.colsImp
+            // - Base78.get 使用 this.up.cols（已被替换为 colsImp）作为 WHERE 条件字段
+            // 所以：不传 cols 参数，让服务器端自动处理
             if let Some(cols) = download_cols {
-                request_payload["cols"] = serde_json::to_value(cols).unwrap_or(Value::Array(vec![]));
+                if !cols.is_empty() {
+                    request_payload["cols"] = serde_json::to_value(cols).unwrap_or(Value::Array(vec![]));
+                }
             }
 
             let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
@@ -1345,7 +1353,7 @@ mod tests {
     #[test]
     fn test_download_from_server() {
         let db = LocalDB::new(None).expect("数据库连接失败");
-        let result = db.download_from_server("testtb", "http://api.example.com/testtb", 10, 0, None);
+        let result = db.download_from_server("testtb", "http://api.example.com/testtb", 10, 0, None, None);
         assert!(result.is_ok() || result.is_err()); // 测试结果
     }
 

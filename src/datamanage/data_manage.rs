@@ -710,6 +710,7 @@ mod tests {
             getnumber,
             0,  // getstart
             Some(&download_condition),
+            None,  // download_cols
         );
 
         match result {
