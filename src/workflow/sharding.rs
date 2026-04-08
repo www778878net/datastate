@@ -181,7 +181,7 @@ impl ShardingManager {
     /// 执行分表维护
     /// 1. 创建当前表
     /// 2. 创建未来几天的表
-    /// 3. 删除过期表
+    /// 3. 删除所有过期表（查找所有表名开头的表）
     pub fn perform_maintenance(&mut self) -> Result<MaintenanceResult, String> {
         if self.config.shard_type == ShardType::None {
             return Ok(MaintenanceResult::default());
@@ -209,12 +209,34 @@ impl ShardingManager {
             }
         }
 
-        // 2. 删除 retention_days 天前的旧表
-        let old_date = Local::now().date_naive() - Duration::days((retention + 1) as i64);
-        let old_table = self.config.get_table_name(Some(old_date));
+        // 2. 查找所有匹配 {base_table}_ 开头的表，删除所有过期的
+        let all_tables = self.get_all_shard_tables()?;
+        let cutoff_date = Local::now().date_naive() - Duration::days(retention as i64);
+        let base_prefix = format!("{}_", self.config.base_table);
 
-        if self.drop_old_table(&old_table)? {
-            result.tables_dropped += 1;
+        for table_name in all_tables {
+            if !table_name.starts_with(&base_prefix) {
+                continue;
+            }
+
+            // 提取日期部分
+            let date_str = &table_name[base_prefix.len()..];
+            if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y%m%d") {
+                // 如果日期早于 cutoff_date，删除
+                if date < cutoff_date {
+                    if self.drop_old_table(&table_name)? {
+                        result.tables_dropped += 1;
+                    }
+                }
+            } else if let Ok(_date) = NaiveDate::parse_from_str(date_str, "%Y%m") {
+                // 按月分表的情况
+                let cutoff_month = cutoff_date.format("%Y%m").to_string();
+                if date_str < cutoff_month.as_str() {
+                    if self.drop_old_table(&table_name)? {
+                        result.tables_dropped += 1;
+                    }
+                }
+            }
         }
 
         // 更新维护日期

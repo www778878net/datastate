@@ -313,6 +313,14 @@ impl Synclog {
     pub fn get_db(&self) -> &Sqlite78 {
         &self.db
     }
+
+    /// 获取所有 synclog 分表
+    pub fn get_all_shard_tables(&self) -> Result<Vec<String>, String> {
+        if let Some(ref manager) = self.sharding_manager {
+            return manager.get_all_shard_tables();
+        }
+        Ok(vec!["synclog".to_string()])
+    }
 }
 
 #[cfg(test)]
