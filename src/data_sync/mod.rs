@@ -9,6 +9,7 @@
 
 mod data_sync;
 pub mod data_sync_mysql;
+pub mod synclog;
 
 // SQLite 版本导出
 pub use data_sync::{
@@ -28,4 +29,10 @@ pub use data_sync_mysql::{
     DataSyncMysql, SynclogItemMysql, SyncStatsMysql, StateLogMysql,
     SyncResultMysql, SyncDataMysql,
     SYNCLOG_CREATE_SQL_MYSQL, DATA_STATE_LOG_CREATE_SQL_MYSQL, DATA_SYNC_STATS_CREATE_SQL_MYSQL,
+};
+
+// Synclog 分表管理导出
+pub use synclog::{
+    Synclog,
+    SQL_CREATE_SYNCLOG, SQL_CREATE_SYNCLOG_INDEX,
 };
