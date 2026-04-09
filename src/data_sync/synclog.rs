@@ -321,6 +321,197 @@ impl Synclog {
         }
         Ok(vec!["synclog".to_string()])
     }
+
+    // ========== DataSync 配合使用的方法 ==========
+
+    /// 获取指定表名的待同步记录数
+    pub fn get_pending_count_by_tbname(&self, tbname: &str) -> Result<i32, String> {
+        let tables = self.get_default_query_tables();
+        let up = UpInfo::new();
+        let mut total = 0;
+
+        for table_name in tables {
+            let sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE tbname = ? AND synced = 0", table_name);
+            if let Ok(rows) = self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql], &up) {
+                if let Some(row) = rows.first() {
+                    if let Some(cnt) = row.get("cnt").and_then(|v| v.as_i64()) {
+                        total += cnt as i32;
+                    }
+                }
+            }
+        }
+
+        Ok(total)
+    }
+
+    /// 获取指定表名的待同步记录
+    pub fn get_pending_items_by_tbname(&self, tbname: &str, limit: i32) -> Result<Vec<HashMap<String, Value>>, String> {
+        let tables = self.get_default_query_tables();
+        let up = UpInfo::new();
+        let mut all_items = Vec::new();
+
+        for table_name in tables {
+            let sql = format!(
+                "SELECT * FROM {} WHERE tbname = ? AND synced = 0 ORDER BY idpk ASC LIMIT ?",
+                table_name
+            );
+            match self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql, &limit as &dyn rusqlite::ToSql], &up) {
+                Ok(mut items) => {
+                    all_items.append(&mut items);
+                    if all_items.len() >= limit as usize {
+                        break;
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+
+        if all_items.len() > limit as usize {
+            all_items.truncate(limit as usize);
+        }
+
+        Ok(all_items)
+    }
+
+    /// 标记已同步（接受 idpk 列表）
+    pub fn mark_synced_by_idpks(&self, idpk_list: &[i64]) -> Result<(), String> {
+        if idpk_list.is_empty() {
+            return Ok(());
+        }
+
+        // 尝试在所有分表中更新
+        let tables = self.get_default_query_tables();
+        let up = UpInfo::new();
+
+        let placeholders: Vec<String> = idpk_list.iter().map(|_| "?".to_string()).collect();
+
+        for table_name in tables {
+            let sql = format!(
+                "UPDATE {} SET synced = 1 WHERE idpk IN ({})",
+                table_name,
+                placeholders.join(", ")
+            );
+            let mut params: Vec<&dyn rusqlite::ToSql> = Vec::new();
+            for id in idpk_list {
+                params.push(id);
+            }
+            let _ = self.db.do_m(&sql, &params, &up);
+        }
+
+        Ok(())
+    }
+
+    /// 添加到同步队列（配合 DataSync 使用）
+    pub fn add_to_synclog(
+        &self,
+        tbname: &str,
+        record_id: &str,
+        action: &str,
+        cmdtext: &str,
+        params: &str,
+        worker: &str,
+        cid: &str,
+    ) -> Result<i64, String> {
+        let table_name = self.get_table_name();
+        self.create_today_table()?;
+
+        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let cmdtextmd5 = format!("{:x}", md5::compute(cmdtext));
+        let id = crate::snowflake::next_id_string();
+        let up = UpInfo::new();
+
+        // 首先检查是否已有未同步的记录
+        let check_tables = self.get_default_query_tables();
+        let mut existing_idpk: Option<i64> = None;
+
+        for check_table in &check_tables {
+            let check_sql = format!(
+                "SELECT idpk FROM {} WHERE tbname = ? AND idrow = ? AND synced = 0 LIMIT 1",
+                check_table
+            );
+            let result = self.db.do_get(
+                &check_sql,
+                &[&tbname as &dyn rusqlite::ToSql, &record_id as &dyn rusqlite::ToSql],
+                &up,
+            );
+            if let Ok(rows) = result {
+                if let Some(row) = rows.first() {
+                    if let Some(idpk) = row.get("idpk").and_then(|v| v.as_i64()) {
+                        existing_idpk = Some(idpk);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(idpk) = existing_idpk {
+            // 更新现有记录（找到它所在的表）
+            let update_tables = self.get_default_query_tables();
+            let mut updated = false;
+
+            for update_table in update_tables {
+                let update_sql = format!(
+                    "UPDATE {} SET action = ?, cmdtext = ?, params = ?, cmdtextmd5 = ?, upby = ?, uptime = ? WHERE idpk = ?",
+                    update_table
+                );
+                let result = self.db.do_m(
+                    &update_sql,
+                    &[
+                        &action as &dyn rusqlite::ToSql,
+                        &cmdtext as &dyn rusqlite::ToSql,
+                        &params as &dyn rusqlite::ToSql,
+                        &cmdtextmd5 as &dyn rusqlite::ToSql,
+                        &worker as &dyn rusqlite::ToSql,
+                        &uptime as &dyn rusqlite::ToSql,
+                        &idpk as &dyn rusqlite::ToSql,
+                    ],
+                    &up,
+                );
+                if result.is_ok() {
+                    updated = true;
+                    break;
+                }
+            }
+
+            if updated {
+                Ok(idpk)
+            } else {
+                Err("更新失败".to_string())
+            }
+        } else {
+            // 插入新记录到今天的表
+            let insert_sql = format!(
+                "INSERT OR REPLACE INTO {} (\
+                    id, apisys, apimicro, apiobj, tbname, action,\
+                    cmdtext, params, idrow, worker, synced, cmdtextmd5, cid, upby, uptime\
+                ) VALUES (?, 'v1', 'iflow', 'synclog', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
+                table_name
+            );
+
+            self.db.do_m_add(
+                &insert_sql,
+                &[
+                    &id as &dyn rusqlite::ToSql,
+                    &tbname as &dyn rusqlite::ToSql,
+                    &action as &dyn rusqlite::ToSql,
+                    &cmdtext as &dyn rusqlite::ToSql,
+                    &params as &dyn rusqlite::ToSql,
+                    &record_id as &dyn rusqlite::ToSql,
+                    &worker as &dyn rusqlite::ToSql,
+                    &cmdtextmd5 as &dyn rusqlite::ToSql,
+                    &cid as &dyn rusqlite::ToSql,
+                    &worker as &dyn rusqlite::ToSql,
+                    &uptime as &dyn rusqlite::ToSql,
+                ],
+                &up,
+            )?;
+
+            // 获取插入的 idpk
+            let conn = self.db.get_conn()?;
+            let conn_guard = conn.lock().map_err(|e| e.to_string())?;
+            Ok(conn_guard.last_insert_rowid())
+        }
+    }
 }
 
 #[cfg(test)]
