@@ -50,6 +50,12 @@ pub trait BaseCapability: Send + Sync {
     /// 设置日志器
     fn set_logger(&mut self, _logger: Arc<MyLogger>) {}
 
+    /// 是否保存 task 记录到 workflow_task 表
+    /// 默认 false，只有需要持久化的关键能力设为 true
+    fn save_task(&self) -> bool {
+        false
+    }
+
     /// 子类必须实现的业务逻辑方法
     ///
     /// 参数:
@@ -157,13 +163,15 @@ pub trait BaseCapability: Send + Sync {
             self.economic().add_revenue(price);
         }
 
-        // 保存执行记录到数据库
-        if let Some(logger) = self.logger() {
-            logger.detail(&format!("准备保存能力执行记录: {}", cap_name));
-        }
-        if let Err(e) = self.save_execution() {
+        // 保存执行记录到数据库（仅 save_task=true 时保存）
+        if self.save_task() {
             if let Some(logger) = self.logger() {
-                logger.error(&format!("保存能力执行记录失败: {}", e));
+                logger.detail(&format!("准备保存能力执行记录: {}", cap_name));
+            }
+            if let Err(e) = self.save_execution() {
+                if let Some(logger) = self.logger() {
+                    logger.error(&format!("保存能力执行记录失败: {}", e));
+                }
             }
         }
 
@@ -359,6 +367,9 @@ pub struct CapabilityBase {
     pub retrylimit: i32,
     pub retryinterval: i32,
     pub dependencies: Vec<String>,
+    /// 是否保存 task 记录到 workflow_task 表，默认 false
+    /// 只有关键步骤设为 true，内部辅助步骤保持 false 不写 DB
+    pub save_task: bool,
     pub logger: Option<Arc<MyLogger>>,
 }
 
@@ -374,6 +385,7 @@ impl Default for CapabilityBase {
             retrylimit: 3,
             retryinterval: 60,
             dependencies: Vec::new(),
+            save_task: false,
             logger: None,
         }
     }
@@ -421,6 +433,9 @@ impl CapabilityBase {
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect();
         }
+        if let Some(v) = filtered_data.get("save_task").and_then(|v| v.as_bool()) {
+            base.save_task = v;
+        }
 
         base
     }
@@ -450,6 +465,10 @@ impl CapabilityBase {
         result.insert(
             "dependencies".to_string(),
             serde_json::json!(self.dependencies),
+        );
+        result.insert(
+            "save_task".to_string(),
+            Value::Bool(self.save_task),
         );
 
         result
