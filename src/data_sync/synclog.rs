@@ -401,6 +401,92 @@ impl Synclog {
         Ok(())
     }
 
+    /// 标记已同步（接受 id 列表）
+    pub fn mark_synced_by_ids(&self, id_list: &[String]) -> Result<(), String> {
+        if id_list.is_empty() {
+            return Ok(());
+        }
+
+        let tables = self.get_default_query_tables();
+        let up = UpInfo::new();
+        let placeholders: Vec<String> = id_list.iter().map(|_| "?".to_string()).collect();
+
+        for table_name in tables {
+            let sql = format!(
+                "UPDATE {} SET synced = 1 WHERE id IN ({})",
+                table_name,
+                placeholders.join(", ")
+            );
+            let mut params: Vec<&dyn rusqlite::ToSql> = Vec::new();
+            for id in id_list {
+                params.push(id);
+            }
+            let _ = self.db.do_m(&sql, &params, &up);
+        }
+
+        Ok(())
+    }
+
+    /// 标记失败（接受 id 和错误信息）
+    pub fn mark_failed_by_id(&self, id: &str, errinfo: &str) -> Result<(), String> {
+        let tables = self.get_default_query_tables();
+        let up = UpInfo::new();
+        let escaped_errinfo = errinfo.replace("'", "''");
+
+        for table_name in tables {
+            let sql = format!(
+                "UPDATE {} SET synced = -1, lasterrinfo = '{}' WHERE id = '{}'",
+                table_name, escaped_errinfo, id
+            );
+            let _ = self.db.do_m(&sql, &[], &up);
+        }
+
+        Ok(())
+    }
+
+    /// 标记失败（接受 idrow 和错误信息）
+    pub fn mark_failed_by_idrow(&self, idrow: &str, errinfo: &str) -> Result<(), String> {
+        let tables = self.get_default_query_tables();
+        let up = UpInfo::new();
+        let escaped_errinfo = errinfo.replace("'", "''");
+
+        for table_name in tables {
+            let sql = format!(
+                "UPDATE {} SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
+                table_name, escaped_errinfo, idrow
+            );
+            let _ = self.db.do_m(&sql, &[], &up);
+        }
+
+        Ok(())
+    }
+
+    /// 标记成功（接受 idrow 列表）
+    pub fn mark_synced_by_idrows(&self, idrow_list: &[String]) -> Result<(), String> {
+        if idrow_list.is_empty() {
+            return Ok(());
+        }
+
+        let tables = self.get_default_query_tables();
+        let up = UpInfo::new();
+        let placeholders: Vec<String> = idrow_list.iter().map(|_| "?".to_string()).collect();
+
+        for table_name in tables {
+            let sql = format!(
+                "UPDATE {} SET synced = 1 WHERE idrow IN ({})",
+                table_name,
+                placeholders.join(", ")
+            );
+            let mut params: Vec<&dyn rusqlite::ToSql> = Vec::new();
+            for idrow in idrow_list {
+                params.push(idrow);
+            }
+            let _ = self.db.do_m(&sql, &params, &up);
+        }
+
+        Ok(())
+    }
+
     /// 添加到同步队列（配合 DataSync 使用）
     pub fn add_to_synclog(
         &self,
