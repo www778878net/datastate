@@ -124,6 +124,28 @@ impl DataState {
         self.datasync.m_sync_del(id)
     }
 
+    // ========== 按天分表支持（动态表名） ==========
+
+    /// 插入记录到指定表（支持按天分表）
+    /// - 权限检查：验证caller是否有权限调用此方法
+    /// - 审计日志：通过log_action_with_count记录操作摘要
+    /// - 自动写 sync_queue：产生待同步记录（tbname=动态表名）
+    /// - 自动设置 id、cid、upby、uptime
+    pub fn m_add_to_table(&self, table_name: &str, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
+        self.audit.check_permission("m_add", caller, summary)?;
+        self.datasync.m_add_to_table(table_name, record)
+    }
+
+    /// 保存记录到指定表（支持按天分表，存在更新，不存在插入）
+    /// - 权限检查：验证caller是否有权限调用此方法
+    /// - 审计日志：通过log_action_with_count记录操作摘要
+    /// - 自动写 sync_queue：产生待同步记录（tbname=动态表名）
+    /// - 自动设置 id、cid、upby、uptime
+    pub fn m_save_to_table(&self, table_name: &str, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
+        self.audit.check_permission("m_save", caller, summary)?;
+        self.datasync.m_save_to_table(table_name, record)
+    }
+
     /// 查询记录
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要

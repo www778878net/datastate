@@ -1567,6 +1567,167 @@ impl DataSync {
         Ok(true)
     }
 
+    // ========== 按天分表支持（动态表名） ==========
+
+    /// 插入记录到指定表（支持按天分表，自动填充字段，写 sync_queue）
+    /// - table_name: 目标表名（如 workflow_instance_20260409）
+    /// - record: 数据记录
+    pub fn m_add_to_table(
+        &self,
+        table_name: &str,
+        record: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<String, String> {
+        // 如果记录中已有 id，使用传入的 id；否则生成新的雪花ID
+        let id = record.get("id")
+            .and_then(|v: &serde_json::Value| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| crate::snowflake::next_id_string());
+
+        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        // 如果记录中已有 cid，使用传入的 cid；否则根据 uidcid 配置生成
+        let cid_value = if record.get("cid").and_then(|v: &serde_json::Value| v.as_str()).filter(|s| !s.is_empty()).is_some() {
+            String::new() // 已经有 cid，不需要再设置
+        } else {
+            match self.uidcid.as_str() {
+                "uid" => Self::get_uid(),
+                _ => Self::get_cid(),
+            }
+        };
+        let upby = Self::get_uname();
+
+        let mut record_with_meta = record.clone();
+        record_with_meta.insert("id".to_string(), serde_json::json!(id));
+        if !cid_value.is_empty() {
+            record_with_meta.insert("cid".to_string(), serde_json::json!(cid_value));
+        }
+        record_with_meta.insert("upby".to_string(), serde_json::json!(upby.clone()));
+        record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
+
+        self.db.insert(table_name, &record_with_meta)?;
+        self.add_to_queue_with_table(table_name, &id, "insert", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &upby)?;
+
+        Ok(id)
+    }
+
+    /// 保存记录到指定表（支持按天分表，存在更新，不存在插入）
+    /// - table_name: 目标表名（如 workflow_instance_20260409）
+    /// - record: 数据记录
+    pub fn m_save_to_table(
+        &self,
+        table_name: &str,
+        record: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<String, String> {
+        if let Some(id_value) = record.get("id") {
+            if let Some(id) = id_value.as_str() {
+                if !id.is_empty() {
+                    let sql = format!("SELECT id FROM {} WHERE id = ?", table_name);
+                    let exists = self.db.query(&sql, &[&id])?;
+                    if !exists.is_empty() {
+                        self.m_update_to_table(table_name, id, record)?;
+                        return Ok(id.to_string());
+                    }
+                }
+            }
+        }
+        self.m_add_to_table(table_name, record)
+    }
+
+    /// 更新指定表中的记录（支持按天分表，自动填充字段，写 sync_queue）
+    fn m_update_to_table(
+        &self,
+        table_name: &str,
+        id: &str,
+        record: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<bool, String> {
+        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let cid_value = match self.uidcid.as_str() {
+            "uid" => Self::get_uid(),
+            _ => Self::get_cid(),
+        };
+        let upby = Self::get_uname();
+
+        let mut record_with_meta = record.clone();
+        record_with_meta.insert("id".to_string(), serde_json::json!(id));
+        if !cid_value.is_empty() {
+            record_with_meta.insert("cid".to_string(), serde_json::json!(cid_value));
+        }
+        record_with_meta.insert("upby".to_string(), serde_json::json!(upby.clone()));
+        record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
+
+        let updated = self.db.update(table_name, id, &record_with_meta)?;
+        if updated {
+            self.add_to_queue_with_table(table_name, id, "update", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &upby)?;
+        }
+        Ok(updated)
+    }
+
+    /// 添加到同步队列（指定表名，用于按天分表）
+    fn add_to_queue_with_table(
+        &self,
+        table_name: &str,
+        record_id: &str,
+        action: &str,
+        data: &serde_json::Value,
+        worker: &str,
+    ) -> Result<i64, String> {
+        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+        // 构建 cmdtext 和 params
+        let (cmdtext, params) = self.build_cmdtext_and_params(action, data);
+        let params_json = serde_json::to_string(&params).unwrap_or_default();
+        let cmdtextmd5 = format!("{:x}", md5::compute(&cmdtext));
+
+        // 从 data 中获取 cid
+        let cid = data.get("cid")
+            .and_then(|v: &serde_json::Value| v.as_str())
+            .unwrap_or("");
+
+        let conn = self.db.get_conn();
+        let conn_guard = conn.lock().map_err(|e| e.to_string())?;
+
+        // 检查是否已有未同步的记录
+        let check_sql = "SELECT idpk FROM synclog WHERE tbname = ? AND idrow = ? AND synced = 0 LIMIT 1";
+        let existing_idpk: Option<i64> = conn_guard
+            .query_row(check_sql, rusqlite::params![table_name, record_id], |row| row.get(0))
+            .ok();
+
+        if let Some(idpk) = existing_idpk {
+            // 更新现有记录
+            let update_sql = "UPDATE synclog SET action = ?, cmdtext = ?, params = ?, cmdtextmd5 = ?, upby = ?, uptime = ? WHERE idpk = ?";
+            conn_guard
+                .execute(
+                    update_sql,
+                    rusqlite::params![action, cmdtext, params_json, cmdtextmd5, worker, uptime, idpk],
+                )
+                .map_err(|e| format!("更新 synclog 失败: {}", e))?;
+            Ok(idpk)
+        } else {
+            // 插入新记录
+            let id = crate::snowflake::next_id_string();
+            let insert_sql = "INSERT INTO synclog (id, apisys, apimicro, apiobj, tbname, action, cmdtext, params, idrow, worker, synced, cmdtextmd5, cid, upby, uptime) VALUES (?, 'v1', 'iflow', 'synclog', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)";
+            conn_guard
+                .execute(
+                    insert_sql,
+                    rusqlite::params![
+                        id,
+                        table_name,
+                        action,
+                        cmdtext,
+                        params_json,
+                        record_id,
+                        worker,
+                        cmdtextmd5,
+                        cid,
+                        worker,
+                        uptime
+                    ],
+                )
+                .map_err(|e| format!("插入 synclog 失败: {}", e))?;
+            Ok(conn_guard.last_insert_rowid())
+        }
+    }
+
     /// 查询记录
     /// where_clause 可以是条件（如 "id = ?"）或完整子句（如 "ORDER BY idpk DESC LIMIT 10"）
     pub fn get(&self, where_clause: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<std::collections::HashMap<String, serde_json::Value>>, String> {

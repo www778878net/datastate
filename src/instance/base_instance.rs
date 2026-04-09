@@ -15,7 +15,6 @@ use std::time::Instant;
 
 use crate::components::{BaseEntity, EconomicManager, LifecycleManager};
 use crate::workflow::WorkflowInstance;
-use crate::UpInfo;
 
 /// 工作流实例执行结果类
 #[derive(Debug, Clone)]
@@ -203,16 +202,22 @@ pub trait BaseInstance: Send + Sync {
     }
 
     /// 保存执行记录到数据库 - 保存到 workflow_instance 表（按天分表）
+    /// 使用 DataSync.m_save_to_table 实现按天分表的 msave
     fn save_execution(&mut self) -> Result<(), String> {
         let workflow_instance = WorkflowInstance::with_default_path()?;
 
         // 创建今天的分表
         workflow_instance.create_today_table()?;
 
-        let up = UpInfo::new();
+        // 获取今天的分表名
+        let table_name = workflow_instance.get_table_name();
+
+        // 转换为 JSON 记录
         let json = self.to_instance_json();
 
-        let _id = workflow_instance.insert(&json, &up)?;
+        // 使用 DataSync.m_save_to_table 保存（雪花ID + 自动填充字段 + sync_queue）
+        let datasync = crate::data_sync::DataSync::new("workflow_instance");
+        let _id = datasync.m_save_to_table(&table_name, &json)?;
 
         Ok(())
     }
@@ -221,13 +226,9 @@ pub trait BaseInstance: Send + Sync {
     fn to_instance_json(&mut self) -> HashMap<String, Value> {
         let mut result = HashMap::new();
 
-        // 生成实例 ID
+        // 生成实例 ID（使用雪花算法）
         let id = if self.base().id.is_empty() {
-            format!(
-                "{}_{}",
-                self.instance_name(),
-                chrono::Local::now().format("%Y%m%d%H%M%S")
-            )
+            crate::snowflake::next_id_string()
         } else {
             self.base().id.clone()
         };

@@ -20,7 +20,6 @@ use std::time::Instant;
 
 use crate::components::{BaseEntity, EconomicManager, LifecycleManager};
 use crate::workflow::{WorkflowCapability, WorkflowTask};
-use crate::UpInfo;
 use base::MyLogger;
 
 /// 能力基类 Trait
@@ -178,17 +177,23 @@ pub trait BaseCapability: Send + Sync {
         result
     }
 
-    /// 保存执行记录到数据库 - 保存到 workflow_task 表（任务实例表）
+    /// 保存执行记录到数据库 - 保存到 workflow_task 表（任务实例表，按天分表）
+    /// 使用 DataSync.m_save_to_table 实现按天分表的 msave
     fn save_execution(&mut self) -> Result<(), String> {
         let workflow_task = WorkflowTask::with_default_path()?;
 
         // 创建今天的分表
         workflow_task.create_today_table()?;
 
-        let up = UpInfo::new();
+        // 获取今天的分表名
+        let table_name = workflow_task.get_table_name();
+
+        // 转换为 JSON 记录
         let json = self.to_task_json();
 
-        let id = workflow_task.insert(&json, &up)?;
+        // 使用 DataSync.m_save_to_table 保存（雪花ID + 自动填充字段 + sync_queue）
+        let datasync = crate::data_sync::DataSync::new("workflow_task");
+        let id = datasync.m_save_to_table(&table_name, &json)?;
 
         if let Some(logger) = self.logger() {
             logger.detail(&format!("任务记录保存成功, id: {}", id));
@@ -201,12 +206,8 @@ pub trait BaseCapability: Send + Sync {
     fn to_task_json(&mut self) -> HashMap<String, Value> {
         let mut result = HashMap::new();
 
-        // 生成任务 ID
-        let id = format!(
-            "{}_{}",
-            self.capability_name(),
-            chrono::Local::now().format("%Y%m%d%H%M%S")
-        );
+        // 生成任务 ID（使用雪花算法）
+        let id = crate::snowflake::next_id_string();
         result.insert("id".to_string(), Value::String(id));
         result.insert(
             "myname".to_string(),
