@@ -9,12 +9,20 @@
 //! 3. data_sync_stats - 同步统计（按天）
 
 use crate::localdb::LocalDB;
+use crate::data_sync::synclog::Synclog;
 use base::mylogger;
 use base::project_path::ProjectPath;
 use chrono::Local;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+// ========== 全局 Synclog 单例 ==========
+
+/// 获取 Synclog 实例（每次都创建新实例）
+pub fn get_synclog() -> Result<Synclog, String> {
+    Synclog::with_default_path()
+}
 
 // ========== Protobuf 数据结构 ==========
 
@@ -451,61 +459,27 @@ impl DataSync {
         data: &serde_json::Value,
         worker: &str,
     ) -> Result<i64, String> {
-        let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-
         // 构建 cmdtext 和 params
         let (cmdtext, params) = self.build_cmdtext_and_params(action, data);
         let params_json = serde_json::to_string(&params).unwrap_or_default();
-        let cmdtextmd5 = format!("{:x}", md5::compute(&cmdtext));
-
+        
         // 从 data 中获取 cid
         let cid = data.get("cid")
             .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or("");
 
-        let conn = self.db.get_conn();
-        let conn_guard = conn.lock().map_err(|e| e.to_string())?;
-
-        // 检查是否已有未同步的记录
-        let check_sql = "SELECT idpk FROM synclog WHERE tbname = ? AND idrow = ? AND synced = 0 LIMIT 1";
-        let existing_idpk: Option<i64> = conn_guard
-            .query_row(check_sql, rusqlite::params![&self.table_name, record_id], |row| row.get(0))
-            .ok();
-
-        if let Some(idpk) = existing_idpk {
-            // 更新现有记录
-            let update_sql = "UPDATE synclog SET action = ?, cmdtext = ?, params = ?, cmdtextmd5 = ?, upby = ?, uptime = ? WHERE idpk = ?";
-            conn_guard
-                .execute(
-                    update_sql,
-                    rusqlite::params![action, cmdtext, params_json, cmdtextmd5, worker, uptime, idpk],
-                )
-                .map_err(|e| format!("更新 synclog 失败: {}", e))?;
-            Ok(idpk)
-        } else {
-            // 插入新记录
-            let id = crate::snowflake::next_id_string();
-            let insert_sql = "INSERT INTO synclog (id, apisys, apimicro, apiobj, tbname, action, cmdtext, params, idrow, worker, synced, cmdtextmd5, cid, upby, uptime) VALUES (?, 'v1', 'iflow', 'synclog', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)";
-            conn_guard
-                .execute(
-                    insert_sql,
-                    rusqlite::params![
-                        id,
-                        &self.table_name,
-                        action,
-                        cmdtext,
-                        params_json,
-                        record_id,
-                        worker,
-                        cmdtextmd5,
-                        cid,
-                        worker,
-                        uptime
-                    ],
-                )
-                .map_err(|e| format!("插入 synclog 失败: {}", e))?;
-            Ok(conn_guard.last_insert_rowid())
-        }
+        // 使用 Synclog 分表管理类
+        let synclog = get_synclog()?;
+        
+        synclog.add_to_synclog(
+            &self.table_name,
+            record_id,
+            action,
+            &cmdtext,
+            &params_json,
+            worker,
+            cid,
+        )
     }
 
     /// 构建 SQL 模板和参数
@@ -577,18 +551,15 @@ impl DataSync {
 
     /// 获取待同步的记录数
     pub fn get_pending_count(&self) -> i32 {
-        let sql = "SELECT COUNT(*) FROM synclog WHERE tbname = ? AND synced = 0";
-        match self
-            .db
-            .query(sql, &[&self.table_name as &dyn rusqlite::ToSql])
-        {
-            Ok(results) if !results.is_empty() => results[0]
-                .values()
-                .next()
-                .and_then(|v: &serde_json::Value| v.as_i64())
-                .map(|n| n as i32)
-                .unwrap_or(0),
-            _ => 0,
+        // 使用 Synclog 分表管理类
+        match get_synclog() {
+            Ok(synclog) => {
+                match synclog.get_pending_count_by_tbname(&self.table_name) {
+                    Ok(count) => count,
+                    Err(_) => 0,
+                }
+            }
+            Err(_) => 0,
         }
     }
 
@@ -607,40 +578,38 @@ impl DataSync {
 
     /// 获取待同步的记录列表
     pub fn get_pending_items(&self, limit: i32) -> Vec<SynclogItem> {
-        let sql = format!(
-            "SELECT idpk, apisys, apimicro, apiobj, tbname, action, cmdtext, params, idrow, worker, synced, cmdtextmd5, num, dlong, downlen, id, upby, uptime, cid FROM synclog WHERE tbname = ? AND synced = 0 ORDER BY idpk ASC LIMIT {}",
-            limit
-        );
-
-        match self
-            .db
-            .query(&sql, &[&self.table_name as &dyn rusqlite::ToSql])
-        {
-            Ok(results) => results
-                .iter()
-                .map(|row| SynclogItem {
-                    idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
-                    apisys: row.get("apisys").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("v1").to_string(),
-                    apimicro: row.get("apimicro").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("iflow").to_string(),
-                    apiobj: row.get("apiobj").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("synclog").to_string(),
-                    tbname: row.get("tbname").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                    action: row.get("action").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                    cmdtext: row.get("cmdtext").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                    params: row.get("params").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("[]").to_string(),
-                    idrow: row.get("idrow").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                    worker: row.get("worker").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                    synced: row.get("synced").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32,
-                    cmdtextmd5: row.get("cmdtextmd5").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                    num: row.get("num").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32,
-                    dlong: row.get("dlong").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
-                    downlen: row.get("downlen").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
-                    id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                    upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                    uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                    cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                })
-                .collect(),
-            _ => Vec::new(),
+        // 使用 Synclog 分表管理类
+        match get_synclog() {
+            Ok(synclog) => {
+                match synclog.get_pending_items_by_tbname(&self.table_name, limit) {
+                    Ok(results) => results
+                        .iter()
+                        .map(|row| SynclogItem {
+                            idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+                            apisys: row.get("apisys").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("v1").to_string(),
+                            apimicro: row.get("apimicro").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("iflow").to_string(),
+                            apiobj: row.get("apiobj").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("synclog").to_string(),
+                            tbname: row.get("tbname").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                            action: row.get("action").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                            cmdtext: row.get("cmdtext").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                            params: row.get("params").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("[]").to_string(),
+                            idrow: row.get("idrow").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                            worker: row.get("worker").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                            synced: row.get("synced").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32,
+                            cmdtextmd5: row.get("cmdtextmd5").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                            num: row.get("num").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32,
+                            dlong: row.get("dlong").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+                            downlen: row.get("downlen").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+                            id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                            upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                            uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                            cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                        })
+                        .collect(),
+                    Err(_) => Vec::new(),
+                }
+            }
+            Err(_) => Vec::new(),
         }
     }
 
@@ -650,17 +619,9 @@ impl DataSync {
             return Ok(());
         }
 
-        let placeholders: Vec<String> = idpk_list.iter().map(|_| "?".to_string()).collect();
-        let sql = format!(
-            "UPDATE synclog SET synced = 1 WHERE idpk IN ({})",
-            placeholders.join(", ")
-        );
-
-        let params: Vec<&dyn rusqlite::ToSql> = idpk_list
-            .iter()
-            .map(|id| id as &dyn rusqlite::ToSql)
-            .collect();
-        self.db.execute_with_params(&sql, &params)
+        // 使用 Synclog 分表管理类
+        let synclog = get_synclog()?;
+        synclog.mark_synced_by_idpks(idpk_list)
     }
 
     // ========== 状态变更日志 ==========
@@ -1241,24 +1202,57 @@ impl DataSync {
         }
 
         // 更新本地 synclog 状态
+        let synclog = match get_synclog() {
+            Ok(s) => s,
+            Err(_) => {
+                // 如果获取 Synclog 失败，回退到旧方式
+                let error_messages: Vec<String> = failed.iter().map(|e| format!("{}: {}", e.idrow, e.error)).collect();
+                
+                for item in items {
+                    if success_ids.contains(&item.id) {
+                        let _ = self.db.execute(&format!(
+                            "UPDATE synclog SET synced = 1 WHERE id = '{}'",
+                            item.id
+                        ));
+                    } else {
+                        let error_msg = failed.iter()
+                            .find(|f| f.idrow == item.idrow)
+                            .map(|f| f.error.clone())
+                            .unwrap_or_else(|| "未知错误".to_string());
+                        let _ = self.db.execute(&format!(
+                            "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE id = '{}'",
+                            error_msg.replace("'", "''"),
+                            item.id
+                        ));
+                    }
+                }
+                return SyncResult {
+                    res: 0,
+                    errmsg: String::new(),
+                    datawf: SyncData {
+                        inserted: success_ids.len() as i32,
+                        updated: 0,
+                        skipped: 0,
+                        failed: Some(failed.len() as i32),
+                        total: Some(items.len() as i32),
+                        errors: if error_messages.is_empty() { None } else { Some(error_messages) },
+                    },
+                };
+            }
+        };
+
+        // 使用 Synclog 分表管理类
+        let success_id_list: Vec<String> = success_ids.iter().cloned().collect();
+        let _ = synclog.mark_synced_by_ids(&success_id_list);
+
+        // 标记失败的记录
         for item in items {
-            if success_ids.contains(&item.id) {
-                let _ = self.db.execute(&format!(
-                    "UPDATE synclog SET synced = 1 WHERE id = '{}'",
-                    item.id
-                ));
-            } else {
-                // 查找对应的错误信息
+            if !success_ids.contains(&item.id) {
                 let error_msg = failed.iter()
                     .find(|f| f.idrow == item.idrow)
                     .map(|f| f.error.clone())
                     .unwrap_or_else(|| "未知错误".to_string());
-                
-                let _ = self.db.execute(&format!(
-                    "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE id = '{}'",
-                    error_msg.replace("'", "''"),
-                    item.id
-                ));
+                let _ = synclog.mark_failed_by_id(&item.id, &error_msg);
             }
         }
 
@@ -1290,32 +1284,62 @@ impl DataSync {
                 let failed_count = errors.len() as i32;
                 let success_count = inserted;
                 
-                // 构建失败记录的 idrow 集合
-                let failed_idrows: std::collections::HashSet<&str> = errors.iter()
-                    .map(|e| e.idrow.as_str())
-                    .collect();
+                // 尝试使用 Synclog 分表管理类
+                let synclog_result = get_synclog();
                 
-                // 标记成功的记录（不在失败列表中的）
-                for item in items {
-                    if !failed_idrows.contains(item.idrow.as_str()) {
+                if let Ok(synclog) = synclog_result {
+                    // 使用 Synclog 分表管理类
+                    
+                    // 构建失败记录的 idrow 集合
+                    let failed_idrows: std::collections::HashSet<String> = errors.iter()
+                        .map(|e| e.idrow.clone())
+                        .collect();
+                    
+                    // 收集成功的 idrow 列表
+                    let mut success_idrows: Vec<String> = Vec::new();
+                    for item in items {
+                        if !failed_idrows.contains(&item.idrow) {
+                            success_idrows.push(item.idrow.clone());
+                        }
+                    }
+                    
+                    // 标记成功的记录
+                    let _ = synclog.mark_synced_by_idrows(&success_idrows);
+                    
+                    // 标记失败的记录
+                    for err in &errors {
+                        let _ = synclog.mark_failed_by_idrow(&err.idrow, &err.error);
+                    }
+                } else {
+                    // 回退到旧方式
+                    
+                    // 构建失败记录的 idrow 集合
+                    let failed_idrows: std::collections::HashSet<&str> = errors.iter()
+                        .map(|e| e.idrow.as_str())
+                        .collect();
+                    
+                    // 标记成功的记录（不在失败列表中的）
+                    for item in items {
+                        if !failed_idrows.contains(item.idrow.as_str()) {
+                            let _ = self.db.execute(&format!(
+                                "UPDATE synclog SET synced = 1 WHERE idrow = '{}'",
+                                item.idrow
+                            ));
+                        }
+                    }
+                    
+                    // 标记失败的记录
+                    for err in &errors {
                         let _ = self.db.execute(&format!(
-                            "UPDATE synclog SET synced = 1 WHERE idrow = '{}'",
-                            item.idrow
+                            "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
+                            err.error.replace("'", "''"),
+                            err.idrow
                         ));
                     }
                 }
                 
-                // 标记失败的记录
+                // 构建错误信息列表
                 let error_messages: Vec<String> = errors.iter().map(|e| format!("{}: {}", e.idrow, e.error)).collect();
-                
-                // 标记失败的记录
-                for err in &errors {
-                    let _ = self.db.execute(&format!(
-                        "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
-                        err.error.replace("'", "''"),
-                        err.idrow
-                    ));
-                }
 
                 SyncResult {
                     res: 0,
