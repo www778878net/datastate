@@ -95,6 +95,36 @@ impl Synclog {
         }
     }
 
+    /// 获取上传表名（用于读操作：延迟切换策略）
+    /// 
+    /// 延迟切换策略：
+    /// - 00:00-00:30：读取昨天的分表（确保昨天的数据有充足时间同步）
+    /// - 00:30之后：读取今天的分表
+    pub fn get_upload_table_name(&self) -> String {
+        if let Some(ref _manager) = self.sharding_manager {
+            let config = ShardingConfig::new(ShardType::Daily, "synclog");
+            
+            // 获取当前时间
+            let now = chrono::Local::now();
+            let hour = now.hour();
+            let minute = now.minute();
+            
+            // 判断是否在延迟切换窗口期（00:00-00:30）
+            let is_in_delay_window = hour == 0 && minute < 30;
+            
+            if is_in_delay_window {
+                // 在延迟窗口期内，使用昨天的日期
+                let yesterday = now.date_naive() - chrono::Duration::days(1);
+                config.get_table_name(Some(yesterday))
+            } else {
+                // 其他时间，使用今天的日期
+                config.get_current_table_name()
+            }
+        } else {
+            "synclog".to_string()
+        }
+    }
+
     /// 获取需要查询的分表列表（用于读操作：查询过去N天的表）
     pub fn get_query_shard_tables(&self, days_back: i32) -> Vec<String> {
         if let Some(ref _manager) = self.sharding_manager {
@@ -116,6 +146,43 @@ impl Synclog {
     /// 获取过去7天的分表列表（默认查询范围）
     pub fn get_default_query_tables(&self) -> Vec<String> {
         self.get_query_shard_tables(7)
+    }
+
+    /// 获取上传查询的分表列表（用于读取待同步记录：延迟切换策略）
+    /// 
+    /// 延迟切换策略：
+    /// - 00:00-00:30：不包含今天的表（只查询昨天及之前的表）
+    /// - 00:30之后：包含今天的表
+    pub fn get_upload_query_tables(&self, days_back: i32) -> Vec<String> {
+        if let Some(ref _manager) = self.sharding_manager {
+            let config = ShardingConfig::new(ShardType::Daily, "synclog");
+            let now = chrono::Local::now();
+            let today = now.date_naive();
+            
+            // 判断是否在延迟切换窗口期（00:00-00:30）
+            let hour = now.hour();
+            let minute = now.minute();
+            let is_in_delay_window = hour == 0 && minute < 30;
+            
+            let mut tables = Vec::new();
+            
+            // 在延迟窗口期内，从昨天开始查询（i=1），否则从今天开始（i=0）
+            let start_i = if is_in_delay_window { 1 } else { 0 };
+            
+            for i in start_i..=days_back {
+                let date = today - chrono::Duration::days(i as i64);
+                tables.push(config.get_table_name(Some(date)));
+            }
+            
+            tables
+        } else {
+            vec!["synclog".to_string()]
+        }
+    }
+
+    /// 获取上传查询的默认分表列表（过去7天，应用延迟切换策略）
+    pub fn get_default_upload_query_tables(&self) -> Vec<String> {
+        self.get_upload_query_tables(7)
     }
 
     /// 执行分表维护
@@ -244,9 +311,56 @@ impl Synclog {
         Ok(all_items)
     }
 
+    /// 获取待上传记录（应用延迟切换策略：00:00-00:30 不查询今天的表）
+    pub fn get_pending_upload_items(&self, limit: i32) -> Result<Vec<HashMap<String, Value>>, String> {
+        let tables = self.get_default_upload_query_tables();
+        let up = UpInfo::new();
+        let mut all_items = Vec::new();
+
+        for table_name in tables {
+            let sql = format!("SELECT * FROM {} WHERE synced = 0 ORDER BY idpk ASC LIMIT ?", table_name);
+            match self.db.do_get(&sql, &[&limit as &dyn rusqlite::ToSql], &up) {
+                Ok(mut items) => {
+                    all_items.append(&mut items);
+                    if all_items.len() >= limit as usize {
+                        break;
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+
+        // 限制返回数量
+        if all_items.len() > limit as usize {
+            all_items.truncate(limit as usize);
+        }
+
+        Ok(all_items)
+    }
+
     /// 获取待同步记录数（统计默认查询范围的所有分表）
     pub fn get_pending_count(&self) -> Result<i32, String> {
         let tables = self.get_default_query_tables();
+        let up = UpInfo::new();
+        let mut total = 0;
+
+        for table_name in tables {
+            let sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE synced = 0", table_name);
+            if let Ok(rows) = self.db.do_get(&sql, &[], &up) {
+                if let Some(row) = rows.first() {
+                    if let Some(cnt) = row.get("cnt").and_then(|v| v.as_i64()) {
+                        total += cnt as i32;
+                    }
+                }
+            }
+        }
+
+        Ok(total)
+    }
+
+    /// 获取待上传记录数（应用延迟切换策略：00:00-00:30 不统计今天的表）
+    pub fn get_pending_upload_count(&self) -> Result<i32, String> {
+        let tables = self.get_default_upload_query_tables();
         let up = UpInfo::new();
         let mut total = 0;
 
