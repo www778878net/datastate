@@ -21,6 +21,7 @@ use std::time::Instant;
 use crate::components::{BaseEntity, EconomicManager, LifecycleManager};
 use crate::workflow::{WorkflowCapability, WorkflowTask};
 use base::MyLogger;
+use base::UpInfo;
 
 /// 能力基类 Trait
 ///
