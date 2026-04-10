@@ -282,6 +282,18 @@ pub struct DataSync {
     pub error_time: f64,
 }
 
+/// 截取错误信息，防止递归膨胀
+/// MySQL错误中可能包含完整SQL（含原始lasterrinfo），导致每次失败后lasterrinfo越来越大
+fn truncate_errinfo(errinfo: &str) -> String {
+    const MAX_LEN: usize = 500;
+    let escaped = errinfo.replace("'", "''");
+    if escaped.len() > MAX_LEN {
+        format!("{}...[TRUNCATED]", &escaped[..MAX_LEN])
+    } else {
+        escaped
+    }
+}
+
 impl DataSync {
     pub fn new(table_name: &str) -> Self {
         Self {
@@ -1219,9 +1231,10 @@ impl DataSync {
                             .find(|f| f.idrow == item.idrow)
                             .map(|f| f.error.clone())
                             .unwrap_or_else(|| "未知错误".to_string());
+                        let escaped_err = truncate_errinfo(&error_msg);
                         let _ = self.db.execute(&format!(
                             "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE id = '{}'",
-                            error_msg.replace("'", "''"),
+                            escaped_err,
                             item.id
                         ));
                     }
@@ -1330,9 +1343,10 @@ impl DataSync {
                     
                     // 标记失败的记录
                     for err in &errors {
+                        let escaped_err = truncate_errinfo(&err.error);
                         let _ = self.db.execute(&format!(
                             "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
-                            err.error.replace("'", "''"),
+                            escaped_err,
                             err.idrow
                         ));
                     }

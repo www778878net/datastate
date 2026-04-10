@@ -546,12 +546,13 @@ impl Synclog {
     pub fn mark_failed_by_id(&self, id: &str, errinfo: &str) -> Result<(), String> {
         let tables = self.get_default_query_tables();
         let up = UpInfo::new();
-        let escaped_errinfo = errinfo.replace("'", "''");
+        // 截取错误信息，避免递归膨胀（MySQL错误中可能包含完整SQL+原始lasterrinfo）
+        let truncated = Self::truncate_errinfo(errinfo);
 
         for table_name in tables {
             let sql = format!(
                 "UPDATE {} SET synced = -1, lasterrinfo = '{}' WHERE id = '{}'",
-                table_name, escaped_errinfo, id
+                table_name, truncated, id
             );
             let _ = self.db.do_m(&sql, &[], &up);
         }
@@ -563,17 +564,31 @@ impl Synclog {
     pub fn mark_failed_by_idrow(&self, idrow: &str, errinfo: &str) -> Result<(), String> {
         let tables = self.get_default_query_tables();
         let up = UpInfo::new();
-        let escaped_errinfo = errinfo.replace("'", "''");
+        // 截取错误信息，避免递归膨胀（MySQL错误中可能包含完整SQL+原始lasterrinfo）
+        let truncated = Self::truncate_errinfo(errinfo);
 
         for table_name in tables {
             let sql = format!(
                 "UPDATE {} SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
-                table_name, escaped_errinfo, idrow
+                table_name, truncated, idrow
             );
             let _ = self.db.do_m(&sql, &[], &up);
         }
 
         Ok(())
+    }
+
+    /// 截取错误信息，防止递归膨胀
+    /// MySQL错误信息可能包含完整SQL（含原始lasterrinfo），导致每次失败后lasterrinfo越来越大
+    fn truncate_errinfo(errinfo: &str) -> String {
+        const MAX_LEN: usize = 500;
+        let escaped = errinfo.replace("'", "''");
+        if escaped.len() > MAX_LEN {
+            // 截取前MAX_LEN个字符，并添加截断标记
+            format!("{}...[TRUNCATED]", &escaped[..MAX_LEN])
+        } else {
+            escaped
+        }
     }
 
     /// 标记成功（接受 idrow 列表）
