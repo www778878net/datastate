@@ -73,7 +73,7 @@ impl Default for LocalDBConfig {
             .unwrap_or_default();
 
         Self {
-            is_log: true,
+            is_log: false,
             is_count: true,
             cid,
             uid,
