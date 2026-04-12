@@ -469,7 +469,7 @@ impl Synclog {
 
         for synclog_table in &synclog_tables {
             let sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE tbname = ? AND synced = 0", synclog_table);
-            if let Ok(rows) = self.db.do_get(&sql, &[tbname as &dyn rusqlite::ToSql], &up) {
+            if let Ok(rows) = self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql], &up) {
                 if let Some(row) = rows.first() {
                     if let Some(cnt) = row.get("cnt").and_then(|v| v.as_i64()) {
                         total += cnt as i32;
@@ -512,7 +512,7 @@ impl Synclog {
             if remaining == 0 {
                 break;
             }
-            match self.db.do_get(&sql, &[tbname as &dyn rusqlite::ToSql, &(remaining as i32) as &dyn rusqlite::ToSql], &up) {
+            match self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql, &(remaining as i32) as &dyn rusqlite::ToSql], &up) {
                 Ok(mut items) => {
                     all_items.append(&mut items);
                     if all_items.len() >= limit as usize {
