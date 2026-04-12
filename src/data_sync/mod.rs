@@ -20,6 +20,8 @@ pub use data_sync::{
     log_status_change, get_status_logs, update_sync_stats, get_sync_stats,
     // Protobuf 结构导出
     ProtoSynclogItem, ProtoSynclogBatch,
+    // Synclog 实例获取
+    get_synclog,
 };
 
 pub use data_sync::DataSync as DataSyncQueue;

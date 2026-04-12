@@ -525,6 +525,7 @@ impl DataSync {
             }
             "update" => {
                 // 如果配置了 upload_cols，只使用指定的字段（排除 id）
+                // cid/uid 验证由服务器端 validateCidUid 方法完成，不需要在 WHERE 子句中添加
                 let mut columns: Vec<&str> = if let Some(ref upload_cols) = self.upload_cols {
                     upload_cols.iter()
                         .filter(|c| *c != "id" && data_obj.contains_key(*c))
@@ -538,10 +539,13 @@ impl DataSync {
                     .map(|c| format!("`{}` = ?", c))
                     .collect::<Vec<_>>()
                     .join(", ");
+                
                 let cmdtext = format!(
                     "UPDATE `{}` SET {} WHERE `id` = ?",
                     self.table_name, set_clause
                 );
+                
+                // 构建 params：SET 子句的值 + id
                 let mut params: Vec<serde_json::Value> = columns.iter()
                     .filter_map(|c| data_obj.get(*c).cloned())
                     .collect();
@@ -1507,19 +1511,41 @@ impl DataSync {
     /// 更新记录（自动写 sync_queue）
     /// - 自动设置 cid、upby、uptime
     /// - 根据 uidcid 配置决定 cid 字段写入公司ID还是用户ID
+    /// - 验证 CID/UID：先查询记录的 cid/uid，与当前用户比较，不匹配则拒绝
     pub fn m_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<bool, String> {
+        let user_cid = Self::get_cid();
+        let user_uid = Self::get_uid();
+        
+        // 管理员帐套不需要验证
+        let admin_cid = "d4856531-e9d3-20f3-4c22-fe3c65fb009c";
+        if user_cid != admin_cid {
+            // 查询记录的 cid/uid 字段进行验证
+            let sql = format!("SELECT cid, uid FROM {} WHERE id = ? LIMIT 1", self.table_name);
+            let rows = self.db.query(&sql, &[&id])?;
+            if let Some(row) = rows.first() {
+                // 根据 uidcid 配置验证
+                if self.uidcid == "uid" {
+                    if let Some(record_uid) = row.get("uid").and_then(|v| v.as_str()) {
+                        if !record_uid.is_empty() && record_uid != user_uid {
+                            return Err(format!("uid不匹配，期望{}，实际{}", user_uid, record_uid));
+                        }
+                    }
+                } else {
+                    if let Some(record_cid) = row.get("cid").and_then(|v| v.as_str()) {
+                        if !record_cid.is_empty() && record_cid != user_cid {
+                            return Err(format!("cid不匹配，期望{}，实际{}", user_cid, record_cid));
+                        }
+                    }
+                }
+            }
+        }
+        
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let cid_value = match self.uidcid.as_str() {
-            "uid" => Self::get_uid(),
-            _ => Self::get_cid(),
-        };
         let upby = Self::get_uname();
 
         let mut record_with_meta = record.clone();
-        record_with_meta.insert("id".to_string(), serde_json::json!(id));  // 确保 id 字段存在，用于 synclog
-        if !cid_value.is_empty() {
-            record_with_meta.insert("cid".to_string(), serde_json::json!(cid_value));
-        }
+        record_with_meta.insert("id".to_string(), serde_json::json!(id));
+        // cid/uid 不在 UPDATE 时修改，只用于验证
         record_with_meta.insert("upby".to_string(), serde_json::json!(upby.clone()));
         record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
 
@@ -1548,7 +1574,35 @@ impl DataSync {
     }
 
     /// 删除记录（自动写 sync_queue）
+    /// - 验证 CID/UID：先查询记录的 cid/uid，与当前用户比较，不匹配则拒绝
     pub fn m_del(&self, id: &str) -> Result<bool, String> {
+        let user_cid = Self::get_cid();
+        let user_uid = Self::get_uid();
+        
+        // 管理员帐套不需要验证
+        let admin_cid = "d4856531-e9d3-20f3-4c22-fe3c65fb009c";
+        if user_cid != admin_cid {
+            // 查询记录的 cid/uid 字段进行验证
+            let sql = format!("SELECT cid, uid FROM {} WHERE id = ? LIMIT 1", self.table_name);
+            let rows = self.db.query(&sql, &[&id])?;
+            if let Some(row) = rows.first() {
+                // 根据 uidcid 配置验证
+                if self.uidcid == "uid" {
+                    if let Some(record_uid) = row.get("uid").and_then(|v| v.as_str()) {
+                        if !record_uid.is_empty() && record_uid != user_uid {
+                            return Err(format!("uid不匹配，期望{}，实际{}", user_uid, record_uid));
+                        }
+                    }
+                } else {
+                    if let Some(record_cid) = row.get("cid").and_then(|v| v.as_str()) {
+                        if !record_cid.is_empty() && record_cid != user_cid {
+                            return Err(format!("cid不匹配，期望{}，实际{}", user_cid, record_cid));
+                        }
+                    }
+                }
+            }
+        }
+        
         let upby = Self::get_uname();
         let sql = format!("DELETE FROM {} WHERE id = ?", self.table_name);
         self.db.execute_with_params(&sql, &[&id])?;

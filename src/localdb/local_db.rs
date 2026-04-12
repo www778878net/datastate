@@ -1077,6 +1077,7 @@ impl LocalDB {
 
         let mut inserted = items.len() as i32;
         let mut errors: Vec<crate::data_sync::SyncValidationError> = Vec::new();
+        let mut business_error = String::new();
 
         if let Some(ref resp_data) = response.data {
             if let Some(back_obj) = resp_data.response.as_object() {
@@ -1085,7 +1086,7 @@ impl LocalDB {
                 if let Some(back_res) = back_obj.get("res") {
                     if back_res.as_i64().unwrap_or(0) != 0 {
                         let back_errmsg = back_obj.get("errmsg").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
-                        return Err(format!("业务错误: {}", back_errmsg));
+                        business_error = format!("业务错误: {}", back_errmsg);
                     }
                 }
                 

@@ -260,20 +260,18 @@ impl DataManage {
         }
     }
 
-    /// 获取待同步数据数量
+    /// 获取待同步数据数量（查询所有分表）
     fn get_pending_count(&self, sync_key: &str) -> i32 {
         let table_name = self.extract_table_name(sync_key);
-        let sql = "SELECT COUNT(*) FROM synclog WHERE tbname = ? AND synced = 0";
-        match self.db.query(sql, &[&table_name as &dyn rusqlite::ToSql]) {
-            Ok(results) if !results.is_empty() => {
-                results[0]
-                    .values()
-                    .next()
-                    .and_then(|v: &serde_json::Value| v.as_i64())
-                    .map(|n| n as i32)
-                    .unwrap_or_default()
+        match crate::data_sync::get_synclog() {
+            Ok(synclog) => {
+                let synclog: crate::data_sync::Synclog = synclog;
+                match synclog.get_pending_count_by_tbname(&table_name) {
+                    Ok(count) => count,
+                    Err(_) => 0,
+                }
             }
-            _ => 0
+            Err(_) => 0,
         }
     }
 
