@@ -460,17 +460,23 @@ impl Synclog {
     // ========== DataSync 配合使用的方法 ==========
 
     /// 获取指定表名的待同步记录数
+    /// 使用延迟切换策略确定查询哪天的分表
     pub fn get_pending_count_by_tbname(&self, tbname: &str) -> Result<i32, String> {
-        let tables = self.get_default_query_tables();
+        let synclog_tables = self.get_default_upload_query_tables();
         let up = UpInfo::new();
         let mut total = 0;
 
-        for table_name in tables {
-            let sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE tbname = ? AND synced = 0", table_name);
-            if let Ok(rows) = self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql], &up) {
-                if let Some(row) = rows.first() {
-                    if let Some(cnt) = row.get("cnt").and_then(|v| v.as_i64()) {
-                        total += cnt as i32;
+        // 根据延迟切换策略获取业务表的分表名
+        let business_tables = self.get_business_table_names(tbname);
+
+        for synclog_table in synclog_tables {
+            for business_table in &business_tables {
+                let sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE tbname = ? AND synced = 0", synclog_table);
+                if let Ok(rows) = self.db.do_get(&sql, &[business_table as &dyn rusqlite::ToSql], &up) {
+                    if let Some(row) = rows.first() {
+                        if let Some(cnt) = row.get("cnt").and_then(|v| v.as_i64()) {
+                            total += cnt as i32;
+                        }
                     }
                 }
             }
@@ -480,32 +486,67 @@ impl Synclog {
     }
 
     /// 获取指定表名的待同步记录
+    /// 使用延迟切换策略确定查询哪天的分表
     pub fn get_pending_items_by_tbname(&self, tbname: &str, limit: i32) -> Result<Vec<HashMap<String, Value>>, String> {
-        let tables = self.get_default_query_tables();
+        let synclog_tables = self.get_default_upload_query_tables();
         let up = UpInfo::new();
         let mut all_items = Vec::new();
 
-        for table_name in tables {
-            let sql = format!(
-                "SELECT * FROM {} WHERE tbname = ? AND synced = 0 ORDER BY idpk ASC LIMIT ?",
-                table_name
-            );
-            match self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql, &limit as &dyn rusqlite::ToSql], &up) {
-                Ok(mut items) => {
-                    all_items.append(&mut items);
-                    if all_items.len() >= limit as usize {
-                        break;
-                    }
+        // 根据延迟切换策略获取业务表的分表名
+        let business_tables = self.get_business_table_names(tbname);
+
+        for synclog_table in synclog_tables {
+            for business_table in &business_tables {
+                let sql = format!(
+                    "SELECT * FROM {} WHERE tbname = ? AND synced = 0 ORDER BY idpk ASC LIMIT ?",
+                    synclog_table
+                );
+                let remaining = limit as usize - all_items.len();
+                if remaining == 0 {
+                    break;
                 }
-                Err(_) => continue,
+                match self.db.do_get(&sql, &[business_table as &dyn rusqlite::ToSql, &(remaining as i32) as &dyn rusqlite::ToSql], &up) {
+                    Ok(mut items) => {
+                        all_items.append(&mut items);
+                        if all_items.len() >= limit as usize {
+                            break;
+                        }
+                    }
+                    Err(_) => continue,
+                }
+            }
+            if all_items.len() >= limit as usize {
+                break;
             }
         }
 
-        if all_items.len() > limit as usize {
-            all_items.truncate(limit as usize);
-        }
-
         Ok(all_items)
+    }
+
+    /// 根据延迟切换策略获取业务表的分表名列表
+    /// - 00:00-00:30：返回昨天的分表名
+    /// - 00:30之后：返回今天的分表名
+    fn get_business_table_names(&self, base_table: &str) -> Vec<String> {
+        let now = chrono::Local::now();
+        let today = now.date_naive();
+        
+        // 判断是否在延迟切换窗口期（00:00-00:30）
+        let hour = now.hour();
+        let minute = now.minute();
+        let is_in_delay_window = hour == 0 && minute < 30;
+        
+        let mut tables = Vec::new();
+        
+        if is_in_delay_window {
+            // 延迟窗口期：查询昨天的分表
+            let yesterday = today - chrono::Duration::days(1);
+            tables.push(format!("{}_{}", base_table, yesterday.format("%Y%m%d")));
+        } else {
+            // 正常时段：查询今天的分表
+            tables.push(format!("{}_{}", base_table, today.format("%Y%m%d")));
+        }
+        
+        tables
     }
 
     /// 标记已同步（接受 idpk 列表）
