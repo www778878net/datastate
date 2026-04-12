@@ -608,7 +608,13 @@ impl DataSync {
                             tbname: row.get("tbname").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                             action: row.get("action").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                             cmdtext: row.get("cmdtext").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                            params: row.get("params").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("[]").to_string(),
+                            params: row.get("params").map(|v| {
+                                if v.is_string() {
+                                    v.as_str().unwrap_or("[]").to_string()
+                                } else {
+                                    serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string())
+                                }
+                            }).unwrap_or_else(|| "[]".to_string()),
                             idrow: row.get("idrow").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                             worker: row.get("worker").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                             synced: row.get("synced").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32,
@@ -616,7 +622,13 @@ impl DataSync {
                             num: row.get("num").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0) as i32,
                             dlong: row.get("dlong").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
                             downlen: row.get("downlen").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
-                            id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
+                            id: row.get("id").map(|v| {
+                                if v.is_string() {
+                                    v.as_str().unwrap_or("").to_string()
+                                } else {
+                                    serde_json::to_string(v).unwrap_or_default().trim_matches('"').to_string()
+                                }
+                            }).unwrap_or_default(),
                             upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                             uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                             cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
@@ -1546,7 +1558,7 @@ impl DataSync {
         let mut record_with_meta = record.clone();
         record_with_meta.insert("id".to_string(), serde_json::json!(id));
         // cid/uid 不在 UPDATE 时修改，只用于验证
-        record_with_meta.insert("upby".to_string(), serde_json::json!(upby.clone()));
+        // upby 不在 UPDATE 时修改，只用于记录操作者
         record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
 
         let updated = self.db.update(&self.table_name, id, &record_with_meta)?;
