@@ -127,20 +127,40 @@ impl Synclog {
     }
 
     /// 获取需要查询的分表列表（用于读操作：查询过去N天的表）
+    /// 返回实际存在的分表 + 主表
     pub fn get_query_shard_tables(&self, days_back: i32) -> Vec<String> {
+        let mut tables = Vec::new();
+        
         if let Some(ref _manager) = self.sharding_manager {
             let config = ShardingConfig::new(ShardType::Daily, "synclog");
             let today = chrono::Local::now().date_naive();
-            let mut tables = Vec::new();
             
             for i in 0..=days_back {
                 let date = today - chrono::Duration::days(i as i64);
-                tables.push(config.get_table_name(Some(date)));
+                let table_name = config.get_table_name(Some(date));
+                // 只添加实际存在的表
+                if self.table_exists(&table_name) {
+                    tables.push(table_name);
+                }
             }
-            
-            tables
-        } else {
-            vec!["synclog".to_string()]
+        }
+        
+        // 始终包含主表
+        tables.push("synclog".to_string());
+        
+        tables
+    }
+
+    /// 检查表是否存在
+    fn table_exists(&self, table_name: &str) -> bool {
+        let sql = format!(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='{}'",
+            table_name
+        );
+        let up = UpInfo::new();
+        match self.db.do_get(&sql, &[], &up) {
+            Ok(rows) => !rows.is_empty(),
+            Err(_) => false,
         }
     }
 
