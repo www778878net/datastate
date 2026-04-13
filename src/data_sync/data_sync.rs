@@ -472,7 +472,7 @@ impl DataSync {
         worker: &str,
     ) -> Result<i64, String> {
         // 构建 cmdtext 和 params
-        let (cmdtext, params) = self.build_cmdtext_and_params(action, data);
+        let (cmdtext, params) = self.build_cmdtext_and_params(action, data, None);
         let params_json = serde_json::to_string(&params).unwrap_or_default();
         
         // 从 data 中获取 cid
@@ -495,9 +495,11 @@ impl DataSync {
     }
 
     /// 构建 SQL 模板和参数
-    fn build_cmdtext_and_params(&self, action: &str, data: &serde_json::Value) -> (String, Vec<serde_json::Value>) {
+    /// table_name: 可选表名，如果为 None 则使用 self.table_name
+    fn build_cmdtext_and_params(&self, action: &str, data: &serde_json::Value, table_name: Option<&str>) -> (String, Vec<serde_json::Value>) {
         let empty_map = serde_json::Map::new();
         let data_obj = data.as_object().unwrap_or(&empty_map);
+        let target_table = table_name.unwrap_or(&self.table_name);
 
         match action {
             "insert" => {
@@ -514,7 +516,7 @@ impl DataSync {
                 let placeholders: Vec<&str> = columns.iter().map(|_| "?").collect();
                 let cmdtext = format!(
                     "INSERT INTO `{}` ({}) VALUES ({})",
-                    self.table_name,
+                    target_table,
                     columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<_>>().join(", "),
                     placeholders.join(", ")
                 );
@@ -542,7 +544,7 @@ impl DataSync {
                 
                 let cmdtext = format!(
                     "UPDATE `{}` SET {} WHERE `id` = ?",
-                    self.table_name, set_clause
+                    target_table, set_clause
                 );
                 
                 // 构建 params：SET 子句的值 + id
@@ -555,7 +557,7 @@ impl DataSync {
                 (cmdtext, params)
             }
             "delete" => {
-                let cmdtext = format!("DELETE FROM `{}` WHERE `id` = ?", self.table_name);
+                let cmdtext = format!("DELETE FROM `{}` WHERE `id` = ?", target_table);
                 let params = vec![data_obj.get("id").cloned().unwrap_or(serde_json::Value::Null)];
                 (cmdtext, params)
             }
@@ -1778,7 +1780,7 @@ impl DataSync {
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         // 构建 cmdtext 和 params
-        let (cmdtext, params) = self.build_cmdtext_and_params(action, data);
+        let (cmdtext, params) = self.build_cmdtext_and_params(action, data, Some(table_name));
         let params_json = serde_json::to_string(&params).unwrap_or_default();
         let cmdtextmd5 = format!("{:x}", md5::compute(&cmdtext));
 
