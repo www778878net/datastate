@@ -238,7 +238,11 @@ impl Sqlite78 {
             Err(e) => {
                 let error_msg = e.to_string();
                 self.add_warn(&format!("{} c:{}", error_msg, cmdtext), &format!("err_{}", up.apimicro), up)?;
-                self.logger.error(&format!("sqlite_doM error: {}", error_msg));
+                if error_msg.contains("no such table") {
+                    self.logger.detail(&format!("sqlite_doM: {}", error_msg));
+                } else {
+                    self.logger.error(&format!("sqlite_doM error: {}", error_msg));
+                }
                 Ok(UpdateResult {
                     affected_rows: 0,
                     error: Some(error_msg),

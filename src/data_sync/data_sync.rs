@@ -271,6 +271,10 @@ pub struct DataSync {
     /// Rust API 地址（当 use_rust_synclog=true 时使用）
     pub rust_api_url: String,
 
+    /// 是否使用 INSERT OR REPLACE（默认 false，使用 INSERT INTO）
+    /// 对于有 UNIQUE 约束的表，设置为 true 可以避免重复插入冲突
+    pub use_replace: bool,
+
     /// 上次下载时间
     pub last_download: f64,
     /// 上次上传时间
@@ -318,6 +322,7 @@ impl DataSync {
             error_time: 0.0,
             use_rust_synclog: false,
             rust_api_url: String::new(),
+            use_replace: false,
         }
     }
 
@@ -344,6 +349,7 @@ impl DataSync {
             error_time: 0.0,
             use_rust_synclog: false,
             rust_api_url: String::new(),
+            use_replace: false,
         }
     }
 
@@ -375,6 +381,7 @@ impl DataSync {
             error_time: 0.0,
             use_rust_synclog: config.use_rust_synclog,
             rust_api_url: config.rust_api_url.clone(),  // synclog API（增量下载+上传用）
+            use_replace: config.use_replace,
         }
     }
 
@@ -514,8 +521,10 @@ impl DataSync {
                 };
                 columns.sort();
                 let placeholders: Vec<&str> = columns.iter().map(|_| "?").collect();
+                let insert_keyword = if self.use_replace { "INSERT OR REPLACE" } else { "INSERT" };
                 let cmdtext = format!(
-                    "INSERT INTO `{}` ({}) VALUES ({})",
+                    "{} INTO `{}` ({}) VALUES ({})",
+                    insert_keyword,
                     target_table,
                     columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<_>>().join(", "),
                     placeholders.join(", ")
@@ -1020,6 +1029,58 @@ impl DataSync {
         }
     }
 
+    /// 使用 INSERT OR REPLACE 插入记录
+    fn insert_or_replace(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
+        let conn = self.db.get_conn();
+        let conn = conn.lock().map_err(|e| e.to_string())?;
+
+        let table_columns: Vec<String> = conn.prepare(&format!("PRAGMA table_info({})", self.table_name))
+            .and_then(|mut stmt| {
+                let mut rows = stmt.query([])?;
+                let mut cols = Vec::new();
+                while let Some(row) = rows.next()? {
+                    let name: String = row.get(1)?;
+                    cols.push(name);
+                }
+                Ok(cols)
+            })
+            .unwrap_or_default();
+
+        let mut ordered_columns: Vec<String> = Vec::new();
+        let mut ordered_values: Vec<String> = Vec::new();
+        
+        for col in &table_columns {
+            if let Some(v) = record.get(col) {
+                ordered_columns.push(col.clone());
+                ordered_values.push(match v {
+                    serde_json::Value::Null => "".to_string(),
+                    serde_json::Value::Bool(b) => b.to_string(),
+                    serde_json::Value::Number(n) => n.to_string(),
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Array(_) | serde_json::Value::Object(_) => serde_json::to_string(v).unwrap_or_default(),
+                });
+            }
+        }
+
+        let columns: Vec<&str> = ordered_columns.iter().map(|s| s.as_str()).collect();
+        let placeholders: Vec<&str> = (0..columns.len()).map(|_| "?").collect();
+        let sql = format!(
+            "INSERT OR REPLACE INTO {} ({}) VALUES ({})",
+            self.table_name,
+            columns.join(", "),
+            placeholders.join(", ")
+        );
+
+        let params_vec: Vec<&dyn rusqlite::ToSql> = ordered_values.iter()
+            .map(|v| v as &dyn rusqlite::ToSql)
+            .collect();
+
+        conn.execute(&sql, params_vec.as_slice())
+            .map_err(|e: rusqlite::Error| e.to_string())?;
+
+        Ok(record.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string())
+    }
+
     /// 保存记录到本地数据库
     fn save_records(
         &self,
@@ -1047,11 +1108,21 @@ impl DataSync {
                     match existing {
                         Ok(rows) => {
                             if rows.is_empty() {
-                                match self.db.insert(&self.table_name, record) {
-                                    Ok(_) => inserted += 1,
-                                    Err(e) => {
-                                        skipped += 1;
-                                        errors.push(format!("插入失败 id={}: {}", id_str, e));
+                                if self.use_replace {
+                                    match self.insert_or_replace(record) {
+                                        Ok(_) => inserted += 1,
+                                        Err(e) => {
+                                            skipped += 1;
+                                            errors.push(format!("插入失败 id={}: {}", id_str, e));
+                                        }
+                                    }
+                                } else {
+                                    match self.db.insert(&self.table_name, record) {
+                                        Ok(_) => inserted += 1,
+                                        Err(e) => {
+                                            skipped += 1;
+                                            errors.push(format!("插入失败 id={}: {}", id_str, e));
+                                        }
                                     }
                                 }
                             } else {
