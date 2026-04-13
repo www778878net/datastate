@@ -460,25 +460,36 @@ impl Synclog {
     // ========== DataSync 配合使用的方法 ==========
 
     /// 获取指定表名的待同步记录数
-    /// 使用延迟切换策略确定查询哪天的分表
+    /// 直接用基础表名查询 synclog（兼容分表和非分表）
+    /// 如果昨天的数据已全部同步，更新进度文件
     pub fn get_pending_count_by_tbname(&self, tbname: &str) -> Result<i32, String> {
         let synclog_tables = self.get_default_upload_query_tables();
         let up = UpInfo::new();
         let mut total = 0;
 
-        // 根据延迟切换策略获取业务表的分表名
-        let business_tables = self.get_business_table_names(tbname);
-
-        for synclog_table in synclog_tables {
-            for business_table in &business_tables {
-                let sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE tbname = ? AND synced = 0", synclog_table);
-                if let Ok(rows) = self.db.do_get(&sql, &[business_table as &dyn rusqlite::ToSql], &up) {
-                    if let Some(row) = rows.first() {
-                        if let Some(cnt) = row.get("cnt").and_then(|v| v.as_i64()) {
-                            total += cnt as i32;
-                        }
+        for synclog_table in &synclog_tables {
+            let sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE tbname = ? AND synced = 0", synclog_table);
+            if let Ok(rows) = self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql], &up) {
+                if let Some(row) = rows.first() {
+                    if let Some(cnt) = row.get("cnt").and_then(|v| v.as_i64()) {
+                        total += cnt as i32;
                     }
                 }
+            }
+        }
+
+        let now = chrono::Local::now();
+        let today = now.date_naive();
+        let yesterday = today - chrono::Duration::days(1);
+        let yesterday_str = yesterday.format("%Y%m%d").to_string();
+
+        if total == 0 {
+            if let Some(progress_date) = Self::read_progress_date(tbname) {
+                if progress_date != yesterday_str {
+                    let _ = Self::save_progress_date(tbname, &yesterday_str);
+                }
+            } else {
+                let _ = Self::save_progress_date(tbname, &yesterday_str);
             }
         }
 
@@ -486,34 +497,29 @@ impl Synclog {
     }
 
     /// 获取指定表名的待同步记录
-    /// 使用延迟切换策略确定查询哪天的分表
+    /// 直接用基础表名查询 synclog（兼容分表和非分表）
     pub fn get_pending_items_by_tbname(&self, tbname: &str, limit: i32) -> Result<Vec<HashMap<String, Value>>, String> {
         let synclog_tables = self.get_default_upload_query_tables();
         let up = UpInfo::new();
         let mut all_items = Vec::new();
 
-        // 根据延迟切换策略获取业务表的分表名
-        let business_tables = self.get_business_table_names(tbname);
-
         for synclog_table in synclog_tables {
-            for business_table in &business_tables {
-                let sql = format!(
-                    "SELECT * FROM {} WHERE tbname = ? AND synced = 0 ORDER BY idpk ASC LIMIT ?",
-                    synclog_table
-                );
-                let remaining = limit as usize - all_items.len();
-                if remaining == 0 {
-                    break;
-                }
-                match self.db.do_get(&sql, &[business_table as &dyn rusqlite::ToSql, &(remaining as i32) as &dyn rusqlite::ToSql], &up) {
-                    Ok(mut items) => {
-                        all_items.append(&mut items);
-                        if all_items.len() >= limit as usize {
-                            break;
-                        }
+            let sql = format!(
+                "SELECT * FROM {} WHERE tbname = ? AND synced = 0 ORDER BY idpk ASC LIMIT ?",
+                synclog_table
+            );
+            let remaining = limit as usize - all_items.len();
+            if remaining == 0 {
+                break;
+            }
+            match self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql, &(remaining as i32) as &dyn rusqlite::ToSql], &up) {
+                Ok(mut items) => {
+                    all_items.append(&mut items);
+                    if all_items.len() >= limit as usize {
+                        break;
                     }
-                    Err(_) => continue,
                 }
+                Err(_) => continue,
             }
             if all_items.len() >= limit as usize {
                 break;
@@ -523,27 +529,99 @@ impl Synclog {
         Ok(all_items)
     }
 
-    /// 根据延迟切换策略获取业务表的分表名列表
+    /// 获取业务表的写表名（始终返回今天的分表名）
+    pub fn get_business_table_name_for_write(&self, base_table: &str) -> String {
+        let today = chrono::Local::now().date_naive();
+        format!("{}_{}", base_table, today.format("%Y%m%d"))
+    }
+
+    /// 获取业务表的读表名（使用延迟切换策略）
     /// - 00:00-00:30：返回昨天的分表名
     /// - 00:30之后：返回今天的分表名
-    fn get_business_table_names(&self, base_table: &str) -> Vec<String> {
+    pub fn get_business_table_name_for_read(&self, base_table: &str) -> String {
         let now = chrono::Local::now();
         let today = now.date_naive();
         
-        // 判断是否在延迟切换窗口期（00:00-00:30）
         let hour = now.hour();
         let minute = now.minute();
         let is_in_delay_window = hour == 0 && minute < 30;
         
+        if is_in_delay_window {
+            let yesterday = today - chrono::Duration::days(1);
+            format!("{}_{}", base_table, yesterday.format("%Y%m%d"))
+        } else {
+            format!("{}_{}", base_table, today.format("%Y%m%d"))
+        }
+    }
+
+    /// 获取进度文件路径
+    fn get_progress_file_path(base_table: &str) -> String {
+        format!("tmp/synclog/{}.txt", base_table)
+    }
+
+    /// 读取进度文件中的日期
+    fn read_progress_date(base_table: &str) -> Option<String> {
+        let path = Self::get_progress_file_path(base_table);
+        if std::path::Path::new(&path).exists() {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                let date_str = content.trim().to_string();
+                if !date_str.is_empty() {
+                    return Some(date_str);
+                }
+            }
+        }
+        None
+    }
+
+    /// 保存进度日期到文件
+    pub fn save_progress_date(base_table: &str, date: &str) -> Result<(), String> {
+        let path = Self::get_progress_file_path(base_table);
+        if let Some(parent) = std::path::Path::new(&path).parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("创建目录失败: {}", e))?;
+            }
+        }
+        std::fs::write(&path, date)
+            .map_err(|e| format!("写入进度文件失败: {}", e))
+    }
+
+    /// 获取需要查询的业务表分表名列表（使用进度文件优化）
+    /// 
+    /// 逻辑：
+    /// 1. 检查进度文件，如果昨天已处理完，只查今天
+    /// 2. 否则查昨天和今天
+    /// 3. 0:30 之后，昨天可以标记为已处理，只查今天
+    fn get_existing_business_table_names(&self, base_table: &str) -> Vec<String> {
+        let now = chrono::Local::now();
+        let today = now.date_naive();
+        let today_str = today.format("%Y%m%d").to_string();
+        let yesterday = today - chrono::Duration::days(1);
+        let yesterday_str = yesterday.format("%Y%m%d").to_string();
+        
+        let hour = now.hour();
+        let minute = now.minute();
+        let is_after_delay_window = hour > 0 || minute >= 30;
+        
         let mut tables = Vec::new();
         
-        if is_in_delay_window {
-            // 延迟窗口期：查询昨天的分表
-            let yesterday = today - chrono::Duration::days(1);
-            tables.push(format!("{}_{}", base_table, yesterday.format("%Y%m%d")));
+        if let Some(progress_date) = Self::read_progress_date(base_table) {
+            if progress_date == yesterday_str {
+                if is_after_delay_window {
+                    tables.push(format!("{}_{}", base_table, today_str));
+                } else {
+                    tables.push(format!("{}_{}", base_table, yesterday_str));
+                    tables.push(format!("{}_{}", base_table, today_str));
+                }
+            } else if progress_date == today_str {
+                tables.push(format!("{}_{}", base_table, today_str));
+            } else {
+                tables.push(format!("{}_{}", base_table, yesterday_str));
+                tables.push(format!("{}_{}", base_table, today_str));
+            }
         } else {
-            // 正常时段：查询今天的分表
-            tables.push(format!("{}_{}", base_table, today.format("%Y%m%d")));
+            tables.push(format!("{}_{}", base_table, yesterday_str));
+            tables.push(format!("{}_{}", base_table, today_str));
         }
         
         tables
