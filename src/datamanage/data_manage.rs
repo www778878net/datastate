@@ -98,59 +98,61 @@ impl DataManage {
 
         let sync_key = self.make_sync_key(&name, config.download_condition.as_ref());
 
+        // 使用写锁进行双重检查，避免竞态条件
         {
-            let states = self.states.read();
+            let mut states = self.states.write();
+            // 双重检查：再次检查是否已存在
             if let Some(existing) = states.get(&sync_key) {
                 return Ok(existing.clone());
             }
-        }
 
-        let state = DataState::from_config(&config);
-        self.ensure_table(&config)?;
+            let state = DataState::from_config(&config);
+            self.ensure_table(&config)?;
 
-        {
-            let mut tables = self.registered_tables.write();
-            tables.insert(name.clone(), config.clone());
-        }
+            {
+                let mut tables = self.registered_tables.write();
+                tables.insert(name.clone(), config.clone());
+            }
 
-        {
-            let mut states = self.states.write();
             states.insert(sync_key.clone(), state.clone());
-        }
+            
+            // 在写锁内完成首次上传和下载
+            drop(states);
 
-        // 自动首次上传（有待同步数据时）
-        if !config.apiurl.is_empty() {
-            let pending_count = self.get_pending_count(&sync_key);
-            if pending_count > 0 {
-                let result = state.datasync.upload_once();
-                if result.res == 0 {
-                    self.logger.detail(&format!("首次上传成功: {}, uploaded={}", sync_key,
-                        result.datawf.inserted + result.datawf.updated));
-                } else {
-                    self.logger.error(&format!("首次上传失败: {}, {}", sync_key, result.errmsg));
+            // 自动首次上传（有待同步数据时）
+            if !config.apiurl.is_empty() {
+                let pending_count = self.get_pending_count(&sync_key);
+                if pending_count > 0 {
+                    let result = state.datasync.upload_once();
+                    if result.res == 0 {
+                        self.logger.detail(&format!("首次上传成功: {}, uploaded={}", sync_key,
+                            result.datawf.inserted + result.datawf.updated));
+                    } else {
+                        self.logger.error(&format!("首次上传失败: {}, {}", sync_key, result.errmsg));
+                    }
                 }
             }
-        }
 
-        // 自动首次下载（跳过本地表，apiurl为空的不下载，download_enabled=false的不下载）
-        if !config.apiurl.is_empty() && config.download_enabled {
-            let result = state.datasync.download_once();
-            if result.res == 0 {
-                let error_info = if let Some(ref errors) = result.datawf.errors {
-                    format!(", errors={:?}", errors)
+            // 自动首次下载（跳过本地表，apiurl为空的不下载，download_enabled=false的不下载）
+            if !config.apiurl.is_empty() && config.download_enabled {
+                let result = state.datasync.download_once();
+                if result.res == 0 {
+                    let error_info = if let Some(ref errors) = result.datawf.errors {
+                        format!(", errors={:?}", errors)
+                    } else {
+                        String::new()
+                    };
+                    self.logger.detail(&format!(
+                        "首次下载成功: {}, inserted={}, updated={}, skipped={}, failed={:?}{}",
+                        sync_key, result.datawf.inserted, result.datawf.updated, result.datawf.skipped, result.datawf.failed, error_info
+                    ));
                 } else {
-                    String::new()
-                };
-                self.logger.detail(&format!(
-                    "首次下载成功: {}, inserted={}, updated={}, skipped={}, failed={:?}{}",
-                    sync_key, result.datawf.inserted, result.datawf.updated, result.datawf.skipped, result.datawf.failed, error_info
-                ));
-            } else {
-                self.logger.error(&format!("首次下载失败: {}, {}", sync_key, result.errmsg));
+                    self.logger.error(&format!("首次下载失败: {}, {}", sync_key, result.errmsg));
+                }
             }
-        }
 
-        Ok(state)
+            Ok(state)
+        }
     }
 
     /// 确保表存在
