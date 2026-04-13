@@ -108,11 +108,6 @@ pub struct TableConfig {
     /// Rust API 地址（当 use_rust_synclog=true 时使用）
     #[serde(default)]
     pub rust_api_url: String,
-
-    /// 是否使用 INSERT OR REPLACE（默认 false，使用 INSERT INTO）
-    /// 对于有 UNIQUE 约束的表，设置为 true 可以避免重复插入冲突
-    #[serde(default)]
-    pub use_replace: bool,
 }
 
 fn default_true() -> bool { true }
@@ -262,7 +257,6 @@ impl Default for TableConfig {
             upload_enabled: true,
             use_rust_synclog: false,
             rust_api_url: String::new(),
-            use_replace: false,
         }
     }
 }

@@ -271,7 +271,7 @@ impl WorkflowInstance {
             .unwrap_or("");
 
         let sql = format!(
-            "INSERT OR REPLACE INTO {} (id, cid, apisys, apimicro, apiobj, myname, idworkflowdefinition, state, priority, agentkind, flowschema, inputjson, outputjson, maxcopy, currentcopy, timeout, retrylimit, retryinterval, resourcereq, description, configjson, costtotal, revenuetotal, profittotal, roi, runcount, successcount, errorcount, successrate, executiontime, lastruntime, lastoktime, lasterrortime, lasterrinfo, lastokinfo, starttime, endtime, idagent, idparentinstance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "REPLACE INTO {} (id, cid, apisys, apimicro, apiobj, myname, idworkflowdefinition, state, priority, agentkind, flowschema, inputjson, outputjson, maxcopy, currentcopy, timeout, retrylimit, retryinterval, resourcereq, description, configjson, costtotal, revenuetotal, profittotal, roi, runcount, successcount, errorcount, successrate, executiontime, lastruntime, lastoktime, lasterrortime, lasterrinfo, lastokinfo, starttime, endtime, idagent, idparentinstance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             table_name
         );
 

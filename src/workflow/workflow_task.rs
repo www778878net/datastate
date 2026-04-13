@@ -287,7 +287,7 @@ impl WorkflowTask {
             .unwrap_or(0.0);
 
         let sql = format!(
-            "INSERT OR REPLACE INTO {} (\
+            "REPLACE INTO {} (\
                 id, myname, idcapability, apisys, apimicro,\
                 apiobj, priority, state, starttime, endtime,\
                 inputjson, outputjson, configjson, description, cid,\

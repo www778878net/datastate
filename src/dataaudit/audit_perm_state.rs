@@ -95,7 +95,7 @@ impl AuditPermDataState {
         // 生成业务主键 id: 雪花算法
         let id = crate::snowflake::next_id_string();
 
-        let sql = "INSERT OR REPLACE INTO datastate_audit (id, tablename, ability, caller, description, upby, cid, uid, uptime) VALUES (?, ?, ?, ?, ?, '', '', '', '')";
+        let sql = "REPLACE INTO datastate_audit (id, tablename, ability, caller, description, upby, cid, uid, uptime) VALUES (?, ?, ?, ?, ?, '', '', '', '')";
 
         let conn = self.datasync.db.get_conn();
         let conn_guard = conn.lock().map_err(|e| e.to_string())?;
