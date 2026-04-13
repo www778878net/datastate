@@ -1207,8 +1207,10 @@ impl DataSync {
                     }
                 }
 
-                // 解析 success_ids
-                if let Some(ids) = back_obj.get("success_ids").and_then(|v| v.as_array()) {
+                // 解析 successIds（驼峰格式）或 success_ids（下划线格式）
+                let ids = back_obj.get("successIds").and_then(|v| v.as_array())
+                    .or_else(|| back_obj.get("success_ids").and_then(|v| v.as_array()));
+                if let Some(ids) = ids {
                     for id in ids {
                         if let Some(id_str) = id.as_str() {
                             success_ids.insert(id_str.to_string());
@@ -1310,7 +1312,7 @@ impl DataSync {
         let result = self.db.upload_batch_to_server(synclog_url, items);
 
         match result {
-            Ok((inserted, errors)) => {
+            Ok((inserted, success_ids, errors)) => {
                 // errors 包含失败的记录信息（idrow 和 error）
                 let failed_count = errors.len() as i32;
                 let success_count = inserted;
@@ -1319,23 +1321,10 @@ impl DataSync {
                 let synclog_result = get_synclog();
                 
                 if let Ok(synclog) = synclog_result {
-                    // 使用 Synclog 分表管理类
-                    
-                    // 构建失败记录的 idrow 集合
-                    let failed_idrows: std::collections::HashSet<String> = errors.iter()
-                        .map(|e| e.idrow.clone())
-                        .collect();
-                    
-                    // 收集成功的 idrow 列表
-                    let mut success_idrows: Vec<String> = Vec::new();
-                    for item in items {
-                        if !failed_idrows.contains(&item.idrow) {
-                            success_idrows.push(item.idrow.clone());
-                        }
+                    // 使用服务器返回的 successIds 标记同步状态
+                    if !success_ids.is_empty() {
+                        let _ = synclog.mark_synced_by_ids(&success_ids);
                     }
-                    
-                    // 标记成功的记录
-                    let _ = synclog.mark_synced_by_idrows(&success_idrows);
                     
                     // 标记失败的记录
                     for err in &errors {
@@ -1343,18 +1332,14 @@ impl DataSync {
                     }
                 } else {
                     // 回退到旧方式
+                    let success_id_set: std::collections::HashSet<&str> = success_ids.iter().map(|s| s.as_str()).collect();
                     
-                    // 构建失败记录的 idrow 集合
-                    let failed_idrows: std::collections::HashSet<&str> = errors.iter()
-                        .map(|e| e.idrow.as_str())
-                        .collect();
-                    
-                    // 标记成功的记录（不在失败列表中的）
+                    // 标记成功的记录
                     for item in items {
-                        if !failed_idrows.contains(item.idrow.as_str()) {
+                        if success_id_set.contains(item.id.as_str()) {
                             let _ = self.db.execute(&format!(
-                                "UPDATE synclog SET synced = 1 WHERE idrow = '{}'",
-                                item.idrow
+                                "UPDATE synclog SET synced = 1 WHERE id = '{}'",
+                                item.id
                             ));
                         }
                     }

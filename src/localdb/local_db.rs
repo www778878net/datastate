@@ -1019,7 +1019,7 @@ impl LocalDB {
         &self,
         api_url: &str,
         items: &[crate::data_sync::SynclogItem],
-    ) -> Result<(i32, Vec<crate::data_sync::SyncValidationError>), String> {
+    ) -> Result<(i32, Vec<String>, Vec<crate::data_sync::SyncValidationError>), String> {
         use base::http::HttpHelper;
 
         let sid = self.get_sid();
@@ -1028,7 +1028,7 @@ impl LocalDB {
         }
 
         if items.is_empty() {
-            return Ok((0, Vec::new()));
+            return Ok((0, Vec::new(), Vec::new()));
         }
 
         let cols = vec![
@@ -1076,6 +1076,7 @@ impl LocalDB {
         }
 
         let mut inserted = items.len() as i32;
+        let mut success_ids: Vec<String> = Vec::new();
         let mut errors: Vec<crate::data_sync::SyncValidationError> = Vec::new();
         let mut business_error = String::new();
 
@@ -1092,9 +1093,20 @@ impl LocalDB {
                 
                 if let Some(back) = back_obj.get("back") {
                     if let Some(back_obj) = back.as_object() {
-                        // 新格式：successIdrows, failedRecords
+                        // 新格式：successIds, successIdrows, failedRecords
                         if let Some(count) = back_obj.get("successCount").and_then(|v: &serde_json::Value| v.as_i64()) {
                             inserted = count as i32;
+                        }
+                        
+                        // 解析 successIds（驼峰格式）或 success_ids（下划线格式）
+                        let ids = back_obj.get("successIds").and_then(|v| v.as_array())
+                            .or_else(|| back_obj.get("success_ids").and_then(|v| v.as_array()));
+                        if let Some(ids) = ids {
+                            for id in ids {
+                                if let Some(id_str) = id.as_str() {
+                                    success_ids.push(id_str.to_string());
+                                }
+                            }
                         }
                         
                         // 解析 failedRecords: [{idrow, lasterrinfo}]
@@ -1133,7 +1145,7 @@ impl LocalDB {
             }
         }
 
-        Ok((inserted, errors))
+        Ok((inserted, success_ids, errors))
     }
 
     /// 从 SQL 语句中解析表名

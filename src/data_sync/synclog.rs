@@ -723,8 +723,9 @@ impl Synclog {
         const MAX_LEN: usize = 500;
         let escaped = errinfo.replace("'", "''");
         if escaped.len() > MAX_LEN {
-            // 截取前MAX_LEN个字符，并添加截断标记
-            format!("{}...[TRUNCATED]", &escaped[..MAX_LEN])
+            // 使用字符边界截取，避免在多字节UTF-8字符中间截断
+            let truncated: String = escaped.chars().take(MAX_LEN).collect();
+            format!("{}...[TRUNCATED]", truncated)
         } else {
             escaped
         }
