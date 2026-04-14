@@ -60,7 +60,7 @@ impl Default for LocalDBConfig {
             .and_then(|p| p.load_ini_config().ok())
             .map(|config| {
                 let user_config = config.get("user7788").cloned().unwrap_or_default();
-                let default_config = config.get("DEFAULT").cloned().unwrap_or_default();
+                let default_config = config.get("default").cloned().unwrap_or_default();
                 
                 let cid = user_config.get("cid").cloned().unwrap_or_default();
                 let uid = user_config.get("uid").cloned().unwrap_or_default();

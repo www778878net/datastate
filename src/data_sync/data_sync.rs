@@ -1463,7 +1463,7 @@ impl DataSync {
             .or_else(|| {
                 ProjectPath::find()
                     .ok()
-                    .and_then(|p| p.read_ini_value("DEFAULT", "uname"))
+                    .and_then(|p| p.read_ini_value("default", "uname"))
             })
             .unwrap_or_else(|| "system".to_string())
     }
