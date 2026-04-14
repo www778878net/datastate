@@ -282,11 +282,16 @@ impl Sqlite78 {
             }
             Err(e) => {
                 let error_msg = e.to_string();
-                // Handle both "INSERT INTO table" (index 2) and "INSERT OR REPLACE INTO table" (index 4)
+                // Handle "INSERT INTO table" (index 2), "INSERT OR REPLACE INTO table" (index 4), and "REPLACE INTO table" (index 2)
                 let words: Vec<&str> = cmdtext.split_whitespace().collect();
-                let table_name = if words.len() > 2 && words[1].to_uppercase() == "OR" {
+                let table_name = if words.len() > 2 && words[0].to_uppercase() == "REPLACE" {
+                    // REPLACE INTO table ...
+                    words.get(2).unwrap_or(&"unknown")
+                } else if words.len() > 4 && words[1].to_uppercase() == "OR" {
+                    // INSERT OR REPLACE INTO table ...
                     words.get(4).unwrap_or(&"unknown")
                 } else {
+                    // INSERT INTO table ...
                     words.get(2).unwrap_or(&"unknown")
                 };
                 self.add_warn(&format!("{} c:{}", error_msg, cmdtext), &format!("err_{}", up.apimicro), up)?;

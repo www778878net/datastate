@@ -116,7 +116,7 @@ impl WorkflowCapability {
         let columns: Vec<&str> = data.keys().map(|s| s.as_str()).collect();
         let placeholders: Vec<&str> = (0..columns.len()).map(|_| "?").collect();
         let sql = format!(
-            "INSERT OR REPLACE INTO workflow_capability ({}) VALUES ({})",
+            "REPLACE INTO workflow_capability ({}) VALUES ({})",
             columns.join(", "),
             placeholders.join(", ")
         );

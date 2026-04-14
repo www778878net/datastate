@@ -262,7 +262,7 @@ impl Synclog {
         let cid = data.get("cid").and_then(|v| v.as_str()).unwrap_or("");
 
         let sql = format!(
-            "INSERT OR REPLACE INTO {} (\
+            "REPLACE INTO {} (\
                 apisys, apimicro, apiobj, tbname, action,\
                 cmdtext, params, idrow, worker, synced,\
                 lasterrinfo, cmdtextmd5, num, dlong, downlen,\
@@ -837,7 +837,7 @@ impl Synclog {
         } else {
             // 插入新记录到今天的表
             let insert_sql = format!(
-                "INSERT OR REPLACE INTO {} (\
+                "REPLACE INTO {} (\
                     id, apisys, apimicro, apiobj, tbname, action,\
                     cmdtext, params, idrow, worker, synced, cmdtextmd5, cid, upby, uptime\
                 ) VALUES (?, 'v1', 'iflow', 'synclog', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
