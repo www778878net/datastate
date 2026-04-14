@@ -1202,179 +1202,69 @@ impl DataSync {
         result
     }
 
-    /// 上传到 Rust API（protobuf 格式）
+    /// 上传到 Rust API（JSON 格式，与 logsvc 兼容）
     fn upload_to_rust_api(&self, api_url: &str, items: &[SynclogItem]) -> SyncResult {
-        use base::http::HttpHelper;
-        use prost::Message;
-        use base64::{Engine as _, engine::general_purpose};
+        let result = self.db.upload_batch_to_server(api_url, items);
 
-        let sid = self.db.get_sid();
-        if sid.is_empty() {
-            return SyncResult {
-                res: -1,
-                errmsg: "配置文件未找到 SID".to_string(),
-                datawf: SyncData::default(),
-            };
-        }
-
-        // 构建 protobuf SynclogBatch
-        let proto_items: Vec<ProtoSynclogItem> = items.iter().map(|item| ProtoSynclogItem {
-            id: item.id.clone(),
-            apisys: item.apisys.clone(),
-            apimicro: item.apimicro.clone(),
-            apiobj: item.apiobj.clone(),
-            tbname: item.tbname.clone(),
-            action: item.action.clone(),
-            cmdtext: item.cmdtext.clone(),
-            params: item.params.clone(),
-            idrow: item.idrow.clone(),
-            worker: item.worker.clone(),
-            synced: item.synced,
-            cmdtextmd5: item.cmdtextmd5.clone(),
-            cid: item.cid.clone(),
-            upby: item.upby.clone(),
-        }).collect();
-
-        let batch = ProtoSynclogBatch { items: proto_items };
-        let bytedata = batch.encode_to_vec();
-        let bytedata_base64 = general_purpose::STANDARD.encode(&bytedata);
-
-        let url = format!("{}/mAddMany", api_url.trim_end_matches('/'));
-        let request_payload = serde_json::json!({
-            "sid": sid,
-            "jsdata": bytedata_base64,
-        });
-
-        let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
-
-        let logger = mylogger!();
-        logger.info(&format!("[upload_to_rust_api] 响应: res={}, errmsg={}", response.res, response.errmsg));
-
-        if response.res != 0 {
-            return SyncResult {
-                res: -1,
-                errmsg: response.errmsg,
-                datawf: SyncData::default(),
-            };
-        }
-
-        // 解析 Rust API 响应格式: { res: 0, data: { success_ids: [...], failed: [{id, idrow, error}] } }
-        let mut success_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut failed: Vec<SyncValidationError> = Vec::new();
-
-        if let Some(ref resp_data) = response.data {
-            if let Some(back_obj) = resp_data.response.as_object() {
-                logger.info(&format!("[upload_to_rust_api] 业务响应: {:?}", back_obj));
-
-                // 检查 res
-                if let Some(back_res) = back_obj.get("res") {
-                    if back_res.as_i64().unwrap_or(0) != 0 {
-                        let back_errmsg = back_obj.get("errmsg").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
-                        return SyncResult {
-                            res: -1,
-                            errmsg: format!("业务错误: {}", back_errmsg),
-                            datawf: SyncData::default(),
-                        };
-                    }
-                }
-
-                // 解析 successIds（驼峰格式）或 success_ids（下划线格式）
-                let ids = back_obj.get("successIds").and_then(|v| v.as_array())
-                    .or_else(|| back_obj.get("success_ids").and_then(|v| v.as_array()));
-                if let Some(ids) = ids {
-                    for id in ids {
-                        if let Some(id_str) = id.as_str() {
-                            success_ids.insert(id_str.to_string());
-                        }
-                    }
-                }
-
-                // 解析 failed
-                if let Some(failed_list) = back_obj.get("failed").and_then(|v| v.as_array()) {
-                    for (idx, err) in failed_list.iter().enumerate() {
-                        if let Some(err_obj) = err.as_object() {
-                            failed.push(SyncValidationError {
-                                index: idx as i32,
-                                idrow: err_obj.get("idrow").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                                error: err_obj.get("error").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        // 更新本地 synclog 状态
-        let synclog = match get_synclog() {
-            Ok(s) => s,
-            Err(_) => {
-                // 如果获取 Synclog 失败，回退到旧方式
-                let error_messages: Vec<String> = failed.iter().map(|e| format!("{}: {}", e.idrow, e.error)).collect();
+        match result {
+            Ok((inserted, success_ids, errors)) => {
+                let failed_count = errors.len() as i32;
+                let success_count = inserted;
                 
-                for item in items {
-                    if success_ids.contains(&item.id) {
+                let synclog_result = get_synclog();
+                
+                if let Ok(synclog) = synclog_result {
+                    if !success_ids.is_empty() {
+                        let _ = synclog.mark_synced_by_ids(&success_ids);
+                    }
+                    
+                    for err in &errors {
+                        let _ = synclog.mark_failed_by_idrow(&err.idrow, &err.error);
+                    }
+                } else {
+                    let success_id_set: std::collections::HashSet<&str> = success_ids.iter().map(|s| s.as_str()).collect();
+                    
+                    for item in items {
+                        if success_id_set.contains(item.id.as_str()) {
+                            let _ = self.db.execute(&format!(
+                                "UPDATE synclog SET synced = 1 WHERE id = '{}'",
+                                item.id
+                            ));
+                        }
+                    }
+                    
+                    for err in &errors {
+                        let escaped_err = truncate_errinfo(&err.error);
                         let _ = self.db.execute(&format!(
-                            "UPDATE synclog SET synced = 1 WHERE id = '{}'",
-                            item.id
-                        ));
-                    } else {
-                        let error_msg = failed.iter()
-                            .find(|f| f.idrow == item.idrow)
-                            .map(|f| f.error.clone())
-                            .unwrap_or_else(|| "未知错误".to_string());
-                        let escaped_err = truncate_errinfo(&error_msg);
-                        let _ = self.db.execute(&format!(
-                            "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE id = '{}'",
+                            "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
                             escaped_err,
-                            item.id
+                            err.idrow
                         ));
                     }
                 }
-                return SyncResult {
+                
+                let error_messages: Vec<String> = errors.iter().map(|e| format!("{}: {}", e.idrow, e.error)).collect();
+
+                SyncResult {
                     res: 0,
                     errmsg: String::new(),
                     datawf: SyncData {
-                        inserted: success_ids.len() as i32,
+                        inserted: success_count,
                         updated: 0,
                         skipped: 0,
-                        failed: Some(failed.len() as i32),
+                        failed: Some(failed_count),
                         total: Some(items.len() as i32),
                         errors: if error_messages.is_empty() { None } else { Some(error_messages) },
                     },
-                };
+                }
             }
-        };
-
-        // 使用 Synclog 分表管理类
-        let success_id_list: Vec<String> = success_ids.iter().cloned().collect();
-        let _ = synclog.mark_synced_by_ids(&success_id_list);
-
-        // 标记失败的记录
-        for item in items {
-            if !success_ids.contains(&item.id) {
-                let error_msg = failed.iter()
-                    .find(|f| f.idrow == item.idrow)
-                    .map(|f| f.error.clone())
-                    .unwrap_or_else(|| "未知错误".to_string());
-                let _ = synclog.mark_failed_by_id(&item.id, &error_msg);
+            Err(e) => {
+                SyncResult {
+                    res: -1,
+                    errmsg: e,
+                    datawf: SyncData::default(),
+                }
             }
-        }
-
-        let success_count = success_ids.len() as i32;
-        let failed_count = failed.len() as i32;
-        let error_messages: Vec<String> = failed.iter().map(|e| format!("{}: {}", e.idrow, e.error)).collect();
-
-        SyncResult {
-            res: 0,
-            errmsg: String::new(),
-            datawf: SyncData {
-                inserted: success_count,
-                updated: 0,
-                skipped: 0,
-                failed: Some(failed_count),
-                total: Some(items.len() as i32),
-                errors: if error_messages.is_empty() { None } else { Some(error_messages) },
-            },
         }
     }
 

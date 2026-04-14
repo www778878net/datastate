@@ -148,6 +148,7 @@ impl Mysql78 {
             self.config.host, self.config.port, self.config.user, self.config.database));
 
         // 使用 OptsBuilder 构建 MySQL 连接选项
+        // 设置字符集为 utf8mb4，避免字符集转换错误
         let opts = OptsBuilder::default()
             .ip_or_hostname(Some(&self.config.host))
             .tcp_port(self.config.port)
@@ -157,7 +158,8 @@ impl Mysql78 {
             .ssl_opts(None::<mysql::SslOpts>)
             .prefer_socket(false)
             .read_timeout(Some(Duration::from_secs(10)))
-            .write_timeout(Some(Duration::from_secs(10)));
+            .write_timeout(Some(Duration::from_secs(10)))
+            .init(vec!["SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci".to_string()]);
 
         let pool = Pool::new(opts)
             .map_err(|e| format!("创建连接池失败: {}", e))?;
