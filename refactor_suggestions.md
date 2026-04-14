@@ -2,27 +2,34 @@
 
 本文档针对 `crates/datastate` 模块提出重构和优化建议，按照优先级排序。
 
-**文档版本**：v1.2
-**日期**：2026-03-28
+**文档版本**：v1.3
+**日期**：2026-04-14
 **适用版本**：crates/datastate v0.1.0
 
 ---
 
-## 代码分析结果（2026-03-28）
+## 代码分析结果（2026-04-14）
 
 ### 文件规模统计
 | 文件 | 行数 | 状态 |
 |------|------|------|
-| data_sync.rs | 1958 | 过长，建议拆分 |
-| local_db.rs | 1359 | 过长，建议拆分 |
-| data_manage.rs | 728 | 可接受 |
-| workflow_task.rs | 705 | 可接受 |
-| workflow_instance.rs | 702 | 可接受 |
+| data_sync.rs | 1850 | 过长，建议拆分 |
+| local_db.rs | 1271 | 过长，建议拆分 |
+| synclog.rs | 627 | 可接受 |
+| data_manage.rs | 606 | 可接受 |
+| data_state.rs | 538 | 可接受 |
+| workflow_instance.rs | 534 | 可接受 |
+| workflow_task.rs | 507 | 可接受 |
+| data_sync_mysql.rs | 460 | 可接受 |
+| base_instance.rs | 459 | 可接受 |
+| base_capability.rs | 457 | 可接受 |
 
 ### 重复模式统计
-- `workflow_instance.rs`: 25处 `data.get().and_then(|v| v.as_str())` 重复
-- `workflow_instance.rs`: 44处 `unwrap_or()` 使用
-- 无 TODO/FIXME/HACK 标记
+- `.and_then(|v| v.as_xxx())` 模式：398处（跨25个文件）
+- `unwrap_or()` 模式：342处（跨24个文件）
+- `workflow_instance.rs`: 41处字段提取
+- `workflow_task.rs`: 32处字段提取
+- TODO/FIXME/HACK：1处（analysis_test_coverage.rs）
 
 ---
 
@@ -112,6 +119,7 @@ macro_rules! extract_str {
 ---
 
 **历史记录**：
+- v1.3 (2026-04-14): 基于最新代码分析更新，统计了文件行数和重复模式
 - v1.2 (2026-03-28): 基于代码分析更新，统计了文件行数和重复模式
 - v1.1 (2026-03-26): 更新为 datastate 模块
 - v1.0 (2026-03-24): 初始版本
