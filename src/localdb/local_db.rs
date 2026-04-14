@@ -794,7 +794,8 @@ impl LocalDB {
 
         if is_rust_api {
             // === Rust API: protobuf 格式 ===
-            let url = format!("{}/get", api_url.trim_end_matches('/'));
+            // 使用 getByWorker 方法（过滤本地worker）
+            let url = format!("{}/getByWorker", api_url.trim_end_matches('/'));
 
             //  protobuf 格式请求：只需要 sid 和 limit
             let request_payload = serde_json::json!({
@@ -857,11 +858,15 @@ impl LocalDB {
             Ok(Vec::new())
         } else {
             // === 旧版 JSON 格式 ===
-            // 自动添加 /get 后缀（与 Python 版本一致）
-            let url = if api_url.ends_with("/get") {
+            // 判断是否为 synclog API，使用 getByWorker 方法
+            let is_synclog_api = api_url.contains("synclog");
+            let method_name = if is_synclog_api { "getByWorker" } else { "get" };
+            
+            // 自动添加方法后缀
+            let url = if api_url.ends_with(&format!("/{}", method_name)) {
                 api_url.to_string()
             } else {
-                format!("{}/get", api_url)
+                format!("{}/{}", api_url.trim_end_matches('/'), method_name)
             };
 
             let mut request_payload = serde_json::json!({
