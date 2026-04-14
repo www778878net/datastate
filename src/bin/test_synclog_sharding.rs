@@ -1,7 +1,6 @@
 //! 测试创建 synclog 分表
 
 use datastate::data_sync::Synclog;
-use datastate::workflow::MaintenanceResult;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== 创建 synclog 分表 ===\n");
