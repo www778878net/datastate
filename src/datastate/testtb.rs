@@ -64,7 +64,9 @@ impl TestTb {
 
         TableConfig {
             name: "testtb".to_string(),
-            apiurl: "http://api.example.com/testtb".to_string(),
+            apiurl: "http://www.778878.net/testtb".to_string(),
+            rust_api_url: "http://log.778878.net/apisvc/backsvc/synclog".to_string(),
+            use_rust_synclog: true,
             download_interval: 300,
             upload_interval: 300,
             init_getnumber: 0,
@@ -85,8 +87,9 @@ impl TestTb {
             let _ = db.ensure_id_is_primary_key("testtb");
         }
 
-        // 直接创建 DataState 实例，使用默认数据库
-        let state = DataState::with_db("testtb", db.clone());
+        // 使用 TableConfig 创建 DataState 实例
+        let config = Self::get_config();
+        let state = DataState::from_config(&config);
 
         Self { db, audit, state }
     }
@@ -105,8 +108,9 @@ impl TestTb {
             let _ = db.ensure_id_is_primary_key("testtb");
         }
 
-        // 直接创建 DataState 实例，使用指定的数据库路径
-        let state = DataState::with_db("testtb", db.clone());
+        // 使用 TableConfig 创建 DataState 实例
+        let config = Self::get_config();
+        let state = DataState::from_config(&config);
 
         Self { db, audit, state }
     }

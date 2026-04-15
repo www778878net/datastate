@@ -97,7 +97,12 @@ CREATE TABLE IF NOT EXISTS synclog (
 "#;
 
 /// sync_progress 表建表 SQL - 同步进度表（存储从服务端下载的 synclog 记录）
-/// 与 synclog 表结构完全一致，只是表名不同
+/// 与 synclog 表结构完全一致，表名按天分表（sync_progress_YYYYMMDD）
+/// 
+/// 索引设计：
+/// - PRIMARY KEY (idpk)
+/// - INDEX i_tbname_worker (tbname, worker) - 用于按表名和worker过滤查询
+/// - INDEX i_tbname_idpk (tbname, idpk) - 用于按表名和idpk排序查询
 pub const SYNC_PROGRESS_CREATE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS sync_progress (
     idpk INTEGER PRIMARY KEY,
@@ -122,6 +127,12 @@ CREATE TABLE IF NOT EXISTS sync_progress (
     cid TEXT NOT NULL DEFAULT ''
 )
 "#;
+
+/// sync_progress 表索引 SQL
+pub const SYNC_PROGRESS_INDEX_SQL: &str = "
+CREATE INDEX IF NOT EXISTS i_sync_progress_tbname_worker ON sync_progress(tbname, worker);
+CREATE INDEX IF NOT EXISTS i_sync_progress_tbname_idpk ON sync_progress(tbname, idpk)
+";
 
 /// data_state_log 表 - 状态变更日志
 pub const DATA_STATE_LOG_CREATE_SQL: &str = r#"
@@ -423,6 +434,15 @@ impl DataSync {
         conn_guard
             .execute(SYNC_PROGRESS_CREATE_SQL, [])
             .map_err(|e| format!("创建同步进度表失败: {}", e))?;
+
+        // 创建同步进度表索引
+        let index_sqls = SYNC_PROGRESS_INDEX_SQL;
+        for sql in index_sqls.split(';') {
+            let sql = sql.trim();
+            if !sql.is_empty() {
+                let _ = conn_guard.execute(sql, []);
+            }
+        }
 
         // 创建状态变更日志表
         conn_guard
@@ -1091,12 +1111,21 @@ impl DataSync {
             }
         };
         
-        let items: Vec<SynclogItem> = match jsdata.get("items").and_then(|v| serde_json::from_value(v.clone())) {
-            Ok(items) => items,
-            Err(e) => {
+        let items: Vec<SynclogItem> = match jsdata.get("items") {
+            Some(v) => match serde_json::from_value(v.clone()) {
+                Ok(items) => items,
+                Err(e) => {
+                    return SyncResult {
+                        res: -1,
+                        errmsg: format!("解析items失败: {}", e),
+                        datawf: SyncData::default(),
+                    };
+                }
+            },
+            None => {
                 return SyncResult {
                     res: -1,
-                    errmsg: format!("解析items失败: {}", e),
+                    errmsg: "无items字段".to_string(),
                     datawf: SyncData::default(),
                 };
             }
@@ -1549,7 +1578,7 @@ impl DataSync {
 
     /// 获取 Worker 名称
     /// 使用 ProjectPath::worker_name() 的现有实现
-    fn get_worker() -> String {
+    pub fn get_worker() -> String {
         ProjectPath::find()
             .ok()
             .and_then(|p| p.worker_name())
@@ -1947,31 +1976,48 @@ impl DataSync {
     // ========== 从数据中心同步其他客户端的修改内容 ==========
 
     /// 获取上次同步的最大服务端 idpk
-    /// 从 sync_progress 表中查询最大的 idpk（排除本地的 worker）
+    /// 从 sync_progress 表中查询最大的 idpk（按 tbname 过滤，排除本地的 worker）
     pub fn get_last_server_id(&self) -> Result<i64, String> {
         let local_worker = Self::get_worker();
-        let sql = "SELECT MAX(idpk) FROM sync_progress WHERE worker != ?";
-        let result: Option<i64> = self.db.query_one(sql, &[&local_worker])?;
-        Ok(result.unwrap_or(0))
+        let today = chrono::Local::now().format("%Y%m%d").to_string();
+        let table_name = format!("sync_progress_{}", today);
+        
+        let sql = format!(
+            "SELECT MAX(idpk) as max_idpk FROM {} WHERE tbname = ? AND worker != ?",
+            table_name
+        );
+        let rows = self.db.query(&sql, &[&self.table_name, &local_worker])?;
+        let max_idpk = rows
+            .first()
+            .and_then(|row| row.get("max_idpk"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        Ok(max_idpk)
     }
 
-    /// 保存下载的 synclog 记录到 sync_progress 表
+    /// 保存下载的 synclog 记录到 sync_progress 表（按天分表）
     fn save_sync_progress(&self, items: &[SynclogItem]) -> Result<(), String> {
         let conn = self.db.get_conn();
         let conn_guard = conn.lock().map_err(|e| e.to_string())?;
+        
+        let today = chrono::Local::now().format("%Y%m%d").to_string();
+        let table_name = format!("sync_progress_{}", today);
 
         for item in items {
-            let sql = r#"
-                INSERT OR REPLACE INTO sync_progress (
+            let sql = format!(
+                r#"
+                INSERT OR REPLACE INTO {} (
                     idpk, apisys, apimicro, apiobj, tbname, action, cmdtext, params,
                     idrow, worker, synced, lasterrinfo, cmdtextmd5, num, dlong, downlen,
                     id, upby, uptime, cid
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, '', ?)
-            "#;
+                "#,
+                table_name
+            );
             
             conn_guard
                 .execute(
-                    sql,
+                    &sql,
                     rusqlite::params![
                         item.idpk,
                         item.apisys,
