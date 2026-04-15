@@ -16,6 +16,7 @@ use chrono::Local;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+use reqwest::blocking::Client;
 
 // ========== 全局 Synclog 单例 ==========
 
@@ -1108,7 +1109,7 @@ impl DataSync {
         let cid = Self::get_cid();
         let sid = format!("{}|{}", cid, local_worker);
         
-        let client = reqwest::blocking::Client::new();
+        let client = Client::new();
         let body = serde_json::json!({
             "sid": sid,
             "getnumber": self.getnumber,
