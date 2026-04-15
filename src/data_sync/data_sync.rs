@@ -2621,6 +2621,92 @@ mod tests {
     }
 
     #[test]
+    fn test_incremental_sync_duplicate_idpk() {
+        use crate::localdb::LocalDB;
+        use base::mylogger;
+        use std::sync::Arc;
+
+        struct TestHelper {
+            logger: Arc<mylogger::MyLogger>,
+        }
+        impl TestHelper {
+            fn new() -> Self {
+                Self { logger: mylogger!() }
+            }
+            fn detail(&self, msg: &str) { self.logger.detail(msg); }
+        }
+
+        let logger = TestHelper::new();
+        logger.detail("\n========== 测试增量同步重复idpk（先全量再增量） ==========");
+
+        let db = LocalDB::new(None).expect("创建数据库失败");
+        let today = chrono::Local::now().format("%Y%m%d").to_string();
+        let progress_table = format!("sync_progress_{}", today);
+
+        DataSync::init_tables(&db).expect("初始化表失败");
+        let cleanup = format!("DELETE FROM {} WHERE tbname = 'testtb'", progress_table);
+        db.execute(&cleanup).ok();
+        let cleanup2 = "DELETE FROM testtb";
+        db.execute(cleanup2).ok();
+        logger.detail("1. 清理测试数据");
+
+        let mut sync = DataSync::with_db("testtb", db.clone());
+        sync.last_download = 1.0;
+        sync.getnumber = 100;
+        sync.use_rust_synclog = true;
+        sync.rust_api_url = "http://log.778878.net/apisvc/backsvc/synclog".to_string();
+        sync.download_enabled = true;
+
+        // Step1: 模拟第一次全量下载后，业务表有3条数据
+        let existing_data = vec![
+            vec![("id", "w1-id-1"), ("kind", "worker1-data1"), ("item", "test")],
+            vec![("id", "w1-id-2"), ("kind", "worker1-data2"), ("item", "test")],
+            vec![("id", "w2-id-1"), ("kind", "worker2-data1"), ("item", "test")],
+        ];
+        for fields in &existing_data {
+            let mut record = std::collections::HashMap::new();
+            for (k, v) in fields {
+                record.insert(k.to_string(), serde_json::json!(v));
+            }
+            db.insert("testtb", &record).ok();
+        }
+        logger.detail(&format!("2. 业务表已有 {} 条数据（模拟全量下载后）", existing_data.len()));
+
+        // Step2: 模拟第二次增量下载，返回了相同的3条数据（重复）
+        let duplicate_items = vec![
+            SynclogItem { idpk: 1001, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w1-id-1","kind":"worker1-data1","item":"test"}"#.to_string(), params: "[]".to_string(), idrow: "w1-id-1".to_string(), worker: "Worker1".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w1-id-1".to_string(), upby: "Worker1".to_string(), uptime: "2026-04-15 10:00:01".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1002, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w1-id-2","kind":"worker1-data2","item":"test"}"#.to_string(), params: "[]".to_string(), idrow: "w1-id-2".to_string(), worker: "Worker1".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w1-id-2".to_string(), upby: "Worker1".to_string(), uptime: "2026-04-15 10:00:02".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1003, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w2-id-1","kind":"worker2-data1","item":"test"}"#.to_string(), params: "[]".to_string(), idrow: "w2-id-1".to_string(), worker: "Worker2".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w2-id-1".to_string(), upby: "Worker2".to_string(), uptime: "2026-04-15 10:00:03".to_string(), cid: "GUEST000".to_string() },
+        ];
+        logger.detail(&format!("3. 第二次增量下载返回 {} 条重复数据", duplicate_items.len()));
+
+        // Step3: 保存重复数据到sync_progress（INSERT OR REPLACE不会报错）
+        sync.save_sync_progress(&duplicate_items).expect("保存sync_progress失败");
+        logger.detail("4. 保存重复数据到sync_progress成功（INSERT OR REPLACE）");
+
+        // Step4: 验证sync_progress仍然只有3条（替换而非新增）
+        let count_sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE tbname = 'testtb'", progress_table);
+        let rows = db.query(&count_sql, &[]).unwrap();
+        let count: i64 = rows.first().and_then(|r| r.get("cnt")).and_then(|v| v.as_i64()).unwrap_or(0);
+        logger.detail(&format!("5. sync_progress表仍有 {} 条记录（替换成功）", count));
+        assert_eq!(count, 3, "应该是3条，不是6条");
+
+        // Step5: 应用到业务表（id相同，不会重复插入）
+        let (inserted, updated, skipped, errors) = sync.apply_sync_progress(&duplicate_items)
+            .expect("apply_sync_progress失败");
+        logger.detail(&format!("6. apply_sync_progress: inserted={}, updated={}, skipped={}, errors={}", inserted, updated, skipped, errors.len()));
+
+        // Step6: 验证业务表仍然是3条（没有重复插入）
+        let testtb_count_sql = "SELECT COUNT(*) as cnt FROM testtb";
+        let rows = db.query(testtb_count_sql, &[]).unwrap();
+        let testtb_count: i64 = rows.first().and_then(|r| r.get("cnt")).and_then(|v| v.as_i64()).unwrap_or(0);
+        logger.detail(&format!("7. 业务表testtb仍有 {} 条记录（没有重复插入）", testtb_count));
+        assert_eq!(testtb_count, 3, "业务表应该仍然是3条，没有重复");
+
+        logger.detail("\n========== 重复idpk测试完成 ==========");
+    }
+
+    #[test]
     fn test_multi_worker_sync_progress() {
         use crate::localdb::LocalDB;
         use base::mylogger;
