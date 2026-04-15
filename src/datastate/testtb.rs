@@ -64,7 +64,7 @@ impl TestTb {
 
         TableConfig {
             name: "testtb".to_string(),
-            apiurl: "http://www.778878.net/testtb".to_string(),
+            apiurl: "http://log.778878.net/apitest/testmenu/testtb".to_string(),
             rust_api_url: "http://log.778878.net/apisvc/backsvc/synclog".to_string(),
             use_rust_synclog: true,
             download_interval: 300,
