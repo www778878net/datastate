@@ -426,14 +426,67 @@ impl DataSync {
         let conn = db.get_conn();
         let conn_guard = conn.lock().map_err(|e| e.to_string())?;
 
-        // 创建同步日志表
+        // 创建同步日志表（按天分表）
+        let today = chrono::Local::now().format("%Y%m%d").to_string();
+        let synclog_table = format!("synclog_{}", today);
+        let sql = format!(
+            "CREATE TABLE IF NOT EXISTS {} (
+                idpk INTEGER PRIMARY KEY,
+                apisys TEXT NOT NULL DEFAULT 'v1',
+                apimicro TEXT NOT NULL DEFAULT 'iflow',
+                apiobj TEXT NOT NULL DEFAULT 'synclog',
+                tbname TEXT NOT NULL DEFAULT '',
+                action TEXT NOT NULL DEFAULT '',
+                cmdtext TEXT NOT NULL DEFAULT '',
+                params TEXT NOT NULL DEFAULT '[]',
+                idrow TEXT NOT NULL DEFAULT '',
+                worker TEXT NOT NULL DEFAULT '',
+                synced INTEGER NOT NULL DEFAULT 0,
+                lasterrinfo TEXT NOT NULL DEFAULT '',
+                cmdtextmd5 TEXT NOT NULL DEFAULT '',
+                num INTEGER NOT NULL DEFAULT 0,
+                dlong INTEGER NOT NULL DEFAULT 0,
+                downlen INTEGER NOT NULL DEFAULT 0,
+                id TEXT NOT NULL DEFAULT '',
+                upby TEXT NOT NULL DEFAULT '',
+                uptime TEXT NOT NULL DEFAULT '',
+                cid TEXT NOT NULL DEFAULT ''
+            )",
+            synclog_table
+        );
         conn_guard
-            .execute(SYNCLOG_CREATE_SQL, [])
+            .execute(&sql, [])
             .map_err(|e| format!("创建同步日志表失败: {}", e))?;
 
-        // 创建同步进度表
+        // 创建同步进度表（按天分表）
+        let sync_progress_table = format!("sync_progress_{}", today);
+        let sql = format!(
+            "CREATE TABLE IF NOT EXISTS {} (
+                idpk INTEGER PRIMARY KEY,
+                apisys TEXT NOT NULL DEFAULT 'v1',
+                apimicro TEXT NOT NULL DEFAULT 'iflow',
+                apiobj TEXT NOT NULL DEFAULT 'synclog',
+                tbname TEXT NOT NULL DEFAULT '',
+                action TEXT NOT NULL DEFAULT '',
+                cmdtext TEXT NOT NULL DEFAULT '',
+                params TEXT NOT NULL DEFAULT '[]',
+                idrow TEXT NOT NULL DEFAULT '',
+                worker TEXT NOT NULL DEFAULT '',
+                synced INTEGER NOT NULL DEFAULT 0,
+                lasterrinfo TEXT NOT NULL DEFAULT '',
+                cmdtextmd5 TEXT NOT NULL DEFAULT '',
+                num INTEGER NOT NULL DEFAULT 0,
+                dlong INTEGER NOT NULL DEFAULT 0,
+                downlen INTEGER NOT NULL DEFAULT 0,
+                id TEXT NOT NULL DEFAULT '',
+                upby TEXT NOT NULL DEFAULT '',
+                uptime TEXT NOT NULL DEFAULT '',
+                cid TEXT NOT NULL DEFAULT ''
+            )",
+            sync_progress_table
+        );
         conn_guard
-            .execute(SYNC_PROGRESS_CREATE_SQL, [])
+            .execute(&sql, [])
             .map_err(|e| format!("创建同步进度表失败: {}", e))?;
 
         // 创建同步进度表索引
@@ -441,7 +494,8 @@ impl DataSync {
         for sql in index_sqls.split(';') {
             let sql = sql.trim();
             if !sql.is_empty() {
-                let _ = conn_guard.execute(sql, []);
+                let sql = sql.replace("sync_progress(", &format!("{}(", sync_progress_table));
+                let _ = conn_guard.execute(&sql, []);
             }
         }
 
@@ -2464,5 +2518,195 @@ mod tests {
         tester.logger.detail("3. 向后兼容 - 通过");
         tester.logger.detail("   - 现有代码无需修改");
         tester.logger.detail("   - 方法签名保持不变");
+    }
+
+    #[test]
+    fn test_incremental_sync_with_existing_data() {
+        use crate::localdb::LocalDB;
+        use base::mylogger;
+        use std::sync::Arc;
+
+        struct TestHelper {
+            logger: Arc<mylogger::MyLogger>,
+        }
+        impl TestHelper {
+            fn new() -> Self {
+                Self { logger: mylogger!() }
+            }
+            fn detail(&self, msg: &str) { self.logger.detail(msg); }
+        }
+
+        let logger = TestHelper::new();
+        logger.detail("\n========== 测试增量同步（业务表有数据场景） ==========");
+
+        let db = LocalDB::new(None).expect("创建数据库失败");
+        let today = chrono::Local::now().format("%Y%m%d").to_string();
+        let progress_table = format!("sync_progress_{}", today);
+
+        DataSync::init_tables(&db).expect("初始化表失败");
+        logger.detail("1. 初始化同步表成功");
+
+        let cleanup = format!("DELETE FROM {} WHERE tbname = 'testtb'", progress_table);
+        db.execute(&cleanup).ok();
+        let cleanup2 = "DELETE FROM testtb";
+        db.execute(cleanup2).ok();
+        logger.detail("2. 清理测试数据");
+
+        let mut sync = DataSync::with_db("testtb", db.clone());
+        sync.last_download = 1.0;
+        sync.getnumber = 100;
+        sync.use_rust_synclog = true;
+        sync.rust_api_url = "http://log.778878.net/apisvc/backsvc/synclog".to_string();
+        sync.download_enabled = true;
+
+        // Step1: 模拟业务表已有数据（相当于全量下载后）
+        let existing_data = vec![
+            vec![("id", "w1-id-1"), ("kind", "worker1-data1"), ("item", "test")],
+            vec![("id", "w1-id-2"), ("kind", "worker1-data2"), ("item", "test")],
+        ];
+        for fields in &existing_data {
+            let mut record = std::collections::HashMap::new();
+            for (k, v) in fields {
+                record.insert(k.to_string(), serde_json::json!(v));
+            }
+            db.insert("testtb", &record).ok();
+        }
+        logger.detail(&format!("3. 业务表已插入 {} 条数据（模拟全量下载后）", existing_data.len()));
+
+        // Step2: 模拟getbyworker返回的增量数据（其他Worker新增的）
+        let mock_items = vec![
+            SynclogItem { idpk: 1001, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w2-id-1","kind":"worker2-data1","item":"test"}"#.to_string(), params: "[]".to_string(), idrow: "w2-id-1".to_string(), worker: "Worker2".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w2-id-1".to_string(), upby: "Worker2".to_string(), uptime: "2026-04-15 10:00:01".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1002, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w2-id-2","kind":"worker2-data2","item":"test"}"#.to_string(), params: "[]".to_string(), idrow: "w2-id-2".to_string(), worker: "Worker2".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w2-id-2".to_string(), upby: "Worker2".to_string(), uptime: "2026-04-15 10:00:02".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1003, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w3-id-1","kind":"worker3-data1","item":"test"}"#.to_string(), params: "[]".to_string(), idrow: "w3-id-1".to_string(), worker: "Worker3".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w3-id-1".to_string(), upby: "Worker3".to_string(), uptime: "2026-04-15 10:00:03".to_string(), cid: "GUEST000".to_string() },
+        ];
+        logger.detail(&format!("4. 模拟getbyworker返回 {} 条增量数据", mock_items.len()));
+
+        // Step3: 保存到sync_progress
+        sync.save_sync_progress(&mock_items).expect("保存sync_progress失败");
+        logger.detail("5. 保存到sync_progress表成功");
+
+        // Step4: 验证sync_progress有数据
+        let count_sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE tbname = 'testtb'", progress_table);
+        let rows = db.query(&count_sql, &[]).unwrap();
+        let count: i64 = rows.first().and_then(|r| r.get("cnt")).and_then(|v| v.as_i64()).unwrap_or(0);
+        logger.detail(&format!("6. sync_progress表有 {} 条记录", count));
+        assert_eq!(count, 3, "应该有3条");
+
+        // Step5: 验证get_last_server_id
+        let last_id = sync.get_last_server_id().expect("获取last_server_id失败");
+        logger.detail(&format!("7. get_last_server_id = {}", last_id));
+        assert_eq!(last_id, 1003, "最大idpk应该是1003");
+
+        // Step6: 应用增量到业务表
+        let (inserted, updated, skipped, errors) = sync.apply_sync_progress(&mock_items)
+            .expect("apply_sync_progress失败");
+        logger.detail(&format!("8. apply_sync_progress: inserted={}, updated={}, skipped={}, errors={}", inserted, updated, skipped, errors.len()));
+
+        // Step7: 验证业务表数据
+        let testtb_count_sql = "SELECT COUNT(*) as cnt FROM testtb";
+        let rows = db.query(testtb_count_sql, &[]).unwrap();
+        let testtb_count: i64 = rows.first().and_then(|r| r.get("cnt")).and_then(|v| v.as_i64()).unwrap_or(0);
+        logger.detail(&format!("9. 业务表testtb有 {} 条记录", testtb_count));
+        assert_eq!(testtb_count, 5, "业务表应该有5条记录(原来2条+新增3条)");
+
+        // Step8: 验证数据正确
+        let sql = "SELECT id, kind FROM testtb ORDER BY id";
+        let rows = db.query(sql, &[]).unwrap();
+        let ids: Vec<String> = rows.iter().filter_map(|r| r.get("id").and_then(|v| v.as_str()).map(|s| s.to_string())).collect();
+        logger.detail(&format!("10. 业务表所有id: {:?}", ids));
+        assert!(ids.contains(&"w1-id-1".to_string()), "应该有w1-id-1");
+        assert!(ids.contains(&"w2-id-1".to_string()), "应该有w2-id-1");
+        assert!(ids.contains(&"w3-id-1".to_string()), "应该有w3-id-1");
+
+        logger.detail("\n========== 增量同步测试完成 ==========");
+    }
+
+    #[test]
+    fn test_multi_worker_sync_progress() {
+        use crate::localdb::LocalDB;
+        use base::mylogger;
+        use std::sync::Arc;
+
+        struct TestHelper {
+            logger: Arc<mylogger::MyLogger>,
+        }
+        impl TestHelper {
+            fn new() -> Self {
+                Self { logger: mylogger!() }
+            }
+            fn detail(&self, msg: &str) { self.logger.detail(msg); }
+        }
+
+        let logger = TestHelper::new();
+        logger.detail("\n========== 测试多Worker同步进度保存和查询 ==========");
+
+        let db = LocalDB::new(None).expect("创建数据库失败");
+        let today = chrono::Local::now().format("%Y%m%d").to_string();
+        let progress_table = format!("sync_progress_{}", today);
+
+        DataSync::init_tables(&db).expect("初始化表失败");
+        logger.detail("1. 初始化同步表成功");
+
+        let cleanup = format!("DELETE FROM {} WHERE tbname = 'testtb'", progress_table);
+        db.execute(&cleanup).ok();
+        logger.detail("2. 清理sync_progress测试数据");
+
+        let sync = DataSync::with_db("testtb", db.clone());
+
+        let mock_items = vec![
+            SynclogItem { idpk: 1001, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w1-id-1"}"#.to_string(), params: "[]".to_string(), idrow: "w1-id-1".to_string(), worker: "Worker1".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w1-id-1".to_string(), upby: "Worker1".to_string(), uptime: "2026-04-15 10:00:00".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1002, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w1-id-2"}"#.to_string(), params: "[]".to_string(), idrow: "w1-id-2".to_string(), worker: "Worker1".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w1-id-2".to_string(), upby: "Worker1".to_string(), uptime: "2026-04-15 10:00:01".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1003, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w2-id-1"}"#.to_string(), params: "[]".to_string(), idrow: "w2-id-1".to_string(), worker: "Worker2".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w2-id-1".to_string(), upby: "Worker2".to_string(), uptime: "2026-04-15 10:00:02".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1004, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w2-id-2"}"#.to_string(), params: "[]".to_string(), idrow: "w2-id-2".to_string(), worker: "Worker2".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w2-id-2".to_string(), upby: "Worker2".to_string(), uptime: "2026-04-15 10:00:03".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1005, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w3-id-1"}"#.to_string(), params: "[]".to_string(), idrow: "w3-id-1".to_string(), worker: "Worker3".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w3-id-1".to_string(), upby: "Worker3".to_string(), uptime: "2026-04-15 10:00:04".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1006, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w3-id-2"}"#.to_string(), params: "[]".to_string(), idrow: "w3-id-2".to_string(), worker: "Worker3".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w3-id-2".to_string(), upby: "Worker3".to_string(), uptime: "2026-04-15 10:00:05".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1007, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w4-id-1"}"#.to_string(), params: "[]".to_string(), idrow: "w4-id-1".to_string(), worker: "Worker4".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w4-id-1".to_string(), upby: "Worker4".to_string(), uptime: "2026-04-15 10:00:06".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1008, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w4-id-2"}"#.to_string(), params: "[]".to_string(), idrow: "w4-id-2".to_string(), worker: "Worker4".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w4-id-2".to_string(), upby: "Worker4".to_string(), uptime: "2026-04-15 10:00:07".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1009, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w5-id-1"}"#.to_string(), params: "[]".to_string(), idrow: "w5-id-1".to_string(), worker: "Worker5".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w5-id-1".to_string(), upby: "Worker5".to_string(), uptime: "2026-04-15 10:00:08".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1010, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w5-id-2"}"#.to_string(), params: "[]".to_string(), idrow: "w5-id-2".to_string(), worker: "Worker5".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w5-id-2".to_string(), upby: "Worker5".to_string(), uptime: "2026-04-15 10:00:09".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1011, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w6-id-1"}"#.to_string(), params: "[]".to_string(), idrow: "w6-id-1".to_string(), worker: "Worker6".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w6-id-1".to_string(), upby: "Worker6".to_string(), uptime: "2026-04-15 10:00:10".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1012, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w6-id-2"}"#.to_string(), params: "[]".to_string(), idrow: "w6-id-2".to_string(), worker: "Worker6".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w6-id-2".to_string(), upby: "Worker6".to_string(), uptime: "2026-04-15 10:00:11".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1013, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w7-id-1"}"#.to_string(), params: "[]".to_string(), idrow: "w7-id-1".to_string(), worker: "Worker7".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w7-id-1".to_string(), upby: "Worker7".to_string(), uptime: "2026-04-15 10:00:12".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1014, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w7-id-2"}"#.to_string(), params: "[]".to_string(), idrow: "w7-id-2".to_string(), worker: "Worker7".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w7-id-2".to_string(), upby: "Worker7".to_string(), uptime: "2026-04-15 10:00:13".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1015, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w8-id-1"}"#.to_string(), params: "[]".to_string(), idrow: "w8-id-1".to_string(), worker: "Worker8".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w8-id-1".to_string(), upby: "Worker8".to_string(), uptime: "2026-04-15 10:00:14".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1016, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w8-id-2"}"#.to_string(), params: "[]".to_string(), idrow: "w8-id-2".to_string(), worker: "Worker8".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w8-id-2".to_string(), upby: "Worker8".to_string(), uptime: "2026-04-15 10:00:15".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1017, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w9-id-1"}"#.to_string(), params: "[]".to_string(), idrow: "w9-id-1".to_string(), worker: "Worker9".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w9-id-1".to_string(), upby: "Worker9".to_string(), uptime: "2026-04-15 10:00:16".to_string(), cid: "GUEST000".to_string() },
+            SynclogItem { idpk: 1018, apisys: "v1".to_string(), apimicro: "iflow".to_string(), apiobj: "synclog".to_string(), tbname: "testtb".to_string(), action: "insert".to_string(), cmdtext: r#"{"id":"w9-id-2"}"#.to_string(), params: "[]".to_string(), idrow: "w9-id-2".to_string(), worker: "Worker9".to_string(), synced: 1, cmdtextmd5: "".to_string(), num: 0, dlong: 0, downlen: 0, id: "w9-id-2".to_string(), upby: "Worker9".to_string(), uptime: "2026-04-15 10:00:17".to_string(), cid: "GUEST000".to_string() },
+        ];
+        logger.detail("3. 模拟18条数据 (9个Worker x 2条)");
+
+        sync.save_sync_progress(&mock_items).expect("保存sync_progress失败");
+        logger.detail("4. 保存18条到sync_progress表成功");
+
+        let count_sql = format!("SELECT COUNT(*) as cnt FROM {}", progress_table);
+        let rows = db.query(&count_sql, &[]).unwrap();
+        let count: i64 = rows.first().and_then(|r| r.get("cnt")).and_then(|v| v.as_i64()).unwrap_or(0);
+        logger.detail(&format!("5. sync_progress表中有 {} 条记录", count));
+        assert_eq!(count, 18, "应该有18条");
+
+        let last_id = sync.get_last_server_id().expect("获取last_server_id失败");
+        logger.detail(&format!("6. Worker10的get_last_server_id = {}", last_id));
+        assert_eq!(last_id, 1018, "最大idpk应该是1018");
+
+        let workers_sql = format!(
+            "SELECT DISTINCT worker FROM {} WHERE tbname = 'testtb' AND worker != 'Worker10'",
+            progress_table
+        );
+        let workers: Vec<String> = db.query(&workers_sql, &[]).unwrap().iter()
+            .filter_map(|r| r.get("worker").and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .collect();
+        logger.detail(&format!("7. 获取到的Worker数量: {}", workers.len()));
+        assert_eq!(workers.len(), 9, "应该有9个Worker");
+
+        let worker1_sql = format!(
+            "SELECT MAX(idpk) as max_idpk FROM {} WHERE tbname = 'testtb' AND worker != 'Worker1'",
+            progress_table
+        );
+        let rows = db.query(&worker1_sql, &[]).unwrap();
+        let worker1_last: i64 = rows.first().and_then(|r| r.get("max_idpk")).and_then(|v| v.as_i64()).unwrap_or(0);
+        logger.detail(&format!("8. Worker1的last_server_id = {}", worker1_last));
+        assert_eq!(worker1_last, 1018, "Worker1应该获取到1018");
+
+        logger.detail("\n========== 多Worker同步进度测试完成 ==========");
     }
 }
