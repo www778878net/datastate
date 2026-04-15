@@ -29,6 +29,8 @@ pub fn get_synclog() -> Result<Synclog, String> {
 /// synclog 项（protobuf 编码用）
 #[derive(Clone, PartialEq, Message, Serialize, Deserialize)]
 pub struct ProtoSynclogItem {
+    #[prost(int64, tag = "15")]
+    pub idpk: i64,
     #[prost(string, tag = "1")]
     pub id: String,
     #[prost(string, tag = "2")]
@@ -72,6 +74,33 @@ pub struct ProtoSynclogBatch {
 pub const SYNCLOG_CREATE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS synclog (
     idpk INTEGER PRIMARY KEY AUTOINCREMENT,
+    apisys TEXT NOT NULL DEFAULT 'v1',
+    apimicro TEXT NOT NULL DEFAULT 'iflow',
+    apiobj TEXT NOT NULL DEFAULT 'synclog',
+    tbname TEXT NOT NULL DEFAULT '',
+    action TEXT NOT NULL DEFAULT '',
+    cmdtext TEXT NOT NULL DEFAULT '',
+    params TEXT NOT NULL DEFAULT '[]',
+    idrow TEXT NOT NULL DEFAULT '',
+    worker TEXT NOT NULL DEFAULT '',
+    synced INTEGER NOT NULL DEFAULT 0,
+    lasterrinfo TEXT NOT NULL DEFAULT '',
+    cmdtextmd5 TEXT NOT NULL DEFAULT '',
+    num INTEGER NOT NULL DEFAULT 0,
+    dlong INTEGER NOT NULL DEFAULT 0,
+    downlen INTEGER NOT NULL DEFAULT 0,
+    id TEXT NOT NULL DEFAULT '',
+    upby TEXT NOT NULL DEFAULT '',
+    uptime TEXT NOT NULL DEFAULT '',
+    cid TEXT NOT NULL DEFAULT ''
+)
+"#;
+
+/// sync_progress 表建表 SQL - 同步进度表（存储从服务端下载的 synclog 记录）
+/// 与 synclog 表结构完全一致，只是表名不同
+pub const SYNC_PROGRESS_CREATE_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS sync_progress (
+    idpk INTEGER PRIMARY KEY,
     apisys TEXT NOT NULL DEFAULT 'v1',
     apimicro TEXT NOT NULL DEFAULT 'iflow',
     apiobj TEXT NOT NULL DEFAULT 'synclog',
@@ -389,6 +418,11 @@ impl DataSync {
         conn_guard
             .execute(SYNCLOG_CREATE_SQL, [])
             .map_err(|e| format!("创建同步日志表失败: {}", e))?;
+
+        // 创建同步进度表
+        conn_guard
+            .execute(SYNC_PROGRESS_CREATE_SQL, [])
+            .map_err(|e| format!("创建同步进度表失败: {}", e))?;
 
         // 创建状态变更日志表
         conn_guard
@@ -965,58 +999,156 @@ impl DataSync {
     }
 
     /// 单页下载（增量下载使用）
-    /// 增量下载使用 rust_api_url（synclog API），获取其他客户端的变更记录
-    fn download_single_page(&self, getnumber: i32, getstart: i32) -> SyncResult {
-        // 增量下载：优先使用 rust_api_url（synclog API），否则回退到 apiurl
-        let download_url = if self.use_rust_synclog && !self.rust_api_url.is_empty() {
-            &self.rust_api_url
-        } else {
-            &self.apiurl
+    /// 
+    /// 增量下载使用 getbyworker API：
+    /// 1. 获取本地 last_server_id
+    /// 2. 调用 getbyworker API 获取 idpk > last_server_id 的记录
+    /// 3. 保存到 sync_progress 表
+    /// 4. 应用到业务表
+    fn download_single_page(&self, _getnumber: i32, _getstart: i32) -> SyncResult {
+        if !self.download_enabled {
+            return SyncResult::default();
+        }
+
+        // 增量下载：必须使用 rust_api_url（synclog API）
+        if !self.use_rust_synclog || self.rust_api_url.is_empty() {
+            return SyncResult {
+                res: -1,
+                errmsg: "增量下载需要配置 use_rust_synclog=true 和 rust_api_url".to_string(),
+                datawf: SyncData::default(),
+            };
+        }
+
+        let local_worker = Self::get_worker();
+        let last_server_id = match self.get_last_server_id() {
+            Ok(id) => id,
+            Err(e) => {
+                return SyncResult {
+                    res: -1,
+                    errmsg: format!("获取last_server_id失败: {}", e),
+                    datawf: SyncData::default(),
+                };
+            }
         };
 
-        let result = self.db.download_from_server(
-            &self.table_name,
-            download_url,
-            getnumber,
-            getstart,
-            self.download_condition.as_ref(),
-            self.download_cols.as_deref(),
-        );
-
-        match result {
-            Ok(records) => {
-                let (inserted, updated, skipped, errors) = self.save_records(&records);
-
-                if !errors.is_empty() {
-                    let logger = mylogger!();
-                    logger.error(&format!(
-                        "[DataSync] {} 同步错误: {}",
-                        self.table_name,
-                        errors.join("; ")
-                    ));
-                }
-
-                SyncResult {
-                    res: 0,
-                    errmsg: String::new(),
-                    datawf: SyncData {
-                        inserted,
-                        updated,
-                        skipped,
-                        failed: Some(errors.len() as i32),
-                        total: Some((inserted + updated + skipped) as i32),
-                        errors: if errors.is_empty() {
-                            None
-                        } else {
-                            Some(errors)
-                        },
-                    },
-                }
+        let cid = Self::get_cid();
+        let sid = format!("{}|{}", cid, local_worker);
+        
+        let client = reqwest::blocking::Client::new();
+        let body = serde_json::json!({
+            "sid": sid,
+            "getnumber": self.getnumber,
+            "midpk": last_server_id,
+        });
+        
+        let response = match client
+            .post(format!("{}/getbyworker", self.rust_api_url))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return SyncResult {
+                    res: -1,
+                    errmsg: format!("请求失败: {}", e),
+                    datawf: SyncData::default(),
+                };
             }
-            Err(e) => SyncResult {
+        };
+        
+        let json: serde_json::Value = match response.json() {
+            Ok(j) => j,
+            Err(e) => {
+                return SyncResult {
+                    res: -1,
+                    errmsg: format!("解析响应失败: {}", e),
+                    datawf: SyncData::default(),
+                };
+            }
+        };
+        
+        let res = json.get("res").and_then(|v| v.as_i64()).unwrap_or(-1);
+        if res != 0 {
+            let errmsg = json.get("errmsg").and_then(|v| v.as_str()).unwrap_or("未知错误");
+            return SyncResult {
                 res: -1,
-                errmsg: e,
+                errmsg: errmsg.to_string(),
                 datawf: SyncData::default(),
+            };
+        }
+
+        // 解析 JSON 格式的返回数据（不使用 protobuf）
+        let jsdata = json.get("jsdata").ok_or_else(|| "无jsdata".to_string());
+        let jsdata = match jsdata {
+            Ok(j) => j,
+            Err(e) => {
+                return SyncResult {
+                    res: -1,
+                    errmsg: e,
+                    datawf: SyncData::default(),
+                };
+            }
+        };
+        
+        let items: Vec<SynclogItem> = match jsdata.get("items").and_then(|v| serde_json::from_value(v.clone())) {
+            Ok(items) => items,
+            Err(e) => {
+                return SyncResult {
+                    res: -1,
+                    errmsg: format!("解析items失败: {}", e),
+                    datawf: SyncData::default(),
+                };
+            }
+        };
+        
+        if items.is_empty() {
+            return SyncResult {
+                res: 0,
+                errmsg: String::new(),
+                datawf: SyncData::default(),
+            };
+        }
+
+        let count = items.len();
+        if let Err(e) = self.save_sync_progress(&items) {
+            return SyncResult {
+                res: -1,
+                errmsg: format!("保存sync_progress失败: {}", e),
+                datawf: SyncData::default(),
+            };
+        }
+        
+        let (inserted, updated, skipped, errors) = match self.apply_sync_progress(&items) {
+            Ok(result) => result,
+            Err(e) => {
+                return SyncResult {
+                    res: -1,
+                    errmsg: format!("应用sync_progress失败: {}", e),
+                    datawf: SyncData::default(),
+                };
+            }
+        };
+
+        if !errors.is_empty() {
+            let logger = mylogger!();
+            logger.error(&format!(
+                "[DataSync] {} 增量同步错误: {}",
+                self.table_name,
+                errors.join("; ")
+            ));
+        }
+
+        SyncResult {
+            res: 0,
+            errmsg: String::new(),
+            datawf: SyncData {
+                inserted,
+                updated,
+                skipped,
+                failed: Some(errors.len() as i32),
+                total: Some(count as i32),
+                errors: if errors.is_empty() { None } else { Some(errors) },
             },
         }
     }
@@ -1415,6 +1547,15 @@ impl DataSync {
             .unwrap_or_else(|| "system".to_string())
     }
 
+    /// 获取 Worker 名称
+    /// 使用 ProjectPath::worker_name() 的现有实现
+    fn get_worker() -> String {
+        ProjectPath::find()
+            .ok()
+            .and_then(|p| p.worker_name())
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+
     /// 插入记录（自动写 sync_queue）
     /// - 自动设置 id、cid、upby、uptime
     /// - 根据 uidcid 配置决定 cid 字段写入公司ID还是用户ID
@@ -1439,6 +1580,7 @@ impl DataSync {
             }
         };
         let upby = Self::get_uname();
+        let worker = Self::get_worker();
 
         let mut record_with_meta = record.clone();
         record_with_meta.insert("id".to_string(), serde_json::json!(id));
@@ -1449,7 +1591,7 @@ impl DataSync {
         record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
 
         self.db.insert(&self.table_name, &record_with_meta)?;
-        self.add_to_queue(&id, "insert", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &upby)?;
+        self.add_to_queue(&id, "insert", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &worker)?;
 
         Ok(id)
     }
@@ -1488,6 +1630,7 @@ impl DataSync {
         
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let upby = Self::get_uname();
+        let worker = Self::get_worker();
 
         let mut record_with_meta = record.clone();
         record_with_meta.insert("id".to_string(), serde_json::json!(id));
@@ -1497,7 +1640,7 @@ impl DataSync {
 
         let updated = self.db.update(&self.table_name, id, &record_with_meta)?;
         if updated {
-            self.add_to_queue(id, "update", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &upby)?;
+            self.add_to_queue(id, "update", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &worker)?;
         }
         Ok(updated)
     }
@@ -1550,9 +1693,10 @@ impl DataSync {
         }
         
         let upby = Self::get_uname();
+        let worker = Self::get_worker();
         let sql = format!("DELETE FROM {} WHERE id = ?", self.table_name);
         self.db.execute_with_params(&sql, &[&id])?;
-        self.add_to_queue(id, "delete", &serde_json::json!({"id": id}), &upby)?;
+        self.add_to_queue(id, "delete", &serde_json::json!({"id": id}), &worker)?;
         Ok(true)
     }
 
@@ -1798,6 +1942,124 @@ impl DataSync {
     /// 返回影响的行数
     pub fn do_m(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<usize, String> {
         self.db.execute_with_params_affected(sql, params)
+    }
+
+    // ========== 从数据中心同步其他客户端的修改内容 ==========
+
+    /// 获取上次同步的最大服务端 idpk
+    /// 从 sync_progress 表中查询最大的 idpk（排除本地的 worker）
+    pub fn get_last_server_id(&self) -> Result<i64, String> {
+        let local_worker = Self::get_worker();
+        let sql = "SELECT MAX(idpk) FROM sync_progress WHERE worker != ?";
+        let result: Option<i64> = self.db.query_one(sql, &[&local_worker])?;
+        Ok(result.unwrap_or(0))
+    }
+
+    /// 保存下载的 synclog 记录到 sync_progress 表
+    fn save_sync_progress(&self, items: &[SynclogItem]) -> Result<(), String> {
+        let conn = self.db.get_conn();
+        let conn_guard = conn.lock().map_err(|e| e.to_string())?;
+
+        for item in items {
+            let sql = r#"
+                INSERT OR REPLACE INTO sync_progress (
+                    idpk, apisys, apimicro, apiobj, tbname, action, cmdtext, params,
+                    idrow, worker, synced, lasterrinfo, cmdtextmd5, num, dlong, downlen,
+                    id, upby, uptime, cid
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, '', ?)
+            "#;
+            
+            conn_guard
+                .execute(
+                    sql,
+                    rusqlite::params![
+                        item.idpk,
+                        item.apisys,
+                        item.apimicro,
+                        item.apiobj,
+                        item.tbname,
+                        item.action,
+                        item.cmdtext,
+                        item.params,
+                        item.idrow,
+                        item.worker,
+                        item.synced,
+                        item.cmdtextmd5,
+                        item.num,
+                        item.dlong,
+                        item.downlen,
+                        item.id,
+                        item.upby,
+                        item.cid,
+                    ],
+                )
+                .map_err(|e| format!("保存sync_progress失败: {}", e))?;
+        }
+
+        Ok(())
+    }
+
+    /// 将 sync_progress 中的记录应用到业务表
+    /// 
+    /// getbyworker API 返回的数据：
+    /// - cmdtext: 业务表的 JSON 数据（对于 insert/update）
+    /// - params: "[]"（下载时不需要参数）
+    fn apply_sync_progress(&self, items: &[SynclogItem]) -> Result<(i32, i32, i32, Vec<String>), String> {
+        let mut inserted = 0;
+        let mut updated = 0;
+        let mut skipped = 0;
+        let mut errors: Vec<String> = Vec::new();
+
+        for item in items {
+            if item.tbname != self.table_name {
+                continue;
+            }
+
+            let result = match item.action.as_str() {
+                "insert" | "update" => {
+                    // cmdtext 是业务表的 JSON 数据
+                    let record: std::collections::HashMap<String, serde_json::Value> = 
+                        serde_json::from_str(&item.cmdtext)
+                            .map_err(|e| format!("解析cmdtext失败: {}", e))?;
+                    
+                    if item.action == "insert" {
+                        self.m_sync_save(&record).map(|_| ()).map_err(|e| e)
+                    } else {
+                        // update 需要获取 id
+                        let id = record.get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&item.idrow)
+                            .to_string();
+                        self.m_sync_update(&id, &record).map(|_| ()).map_err(|e| e)
+                    }
+                }
+                "delete" => {
+                    self.m_sync_del(&item.idrow).map(|_| ()).map_err(|e| e)
+                }
+                _ => {
+                    errors.push(format!("未知的action: {}", item.action));
+                    continue;
+                }
+            };
+
+            match result {
+                Ok(_) => {
+                    if item.action == "insert" {
+                        inserted += 1;
+                    } else if item.action == "update" {
+                        updated += 1;
+                    } else {
+                        skipped += 1;
+                    }
+                }
+                Err(e) => {
+                    skipped += 1;
+                    errors.push(format!("{}失败: {}", item.action, e));
+                }
+            }
+        }
+
+        Ok((inserted, updated, skipped, errors))
     }
 }
 
