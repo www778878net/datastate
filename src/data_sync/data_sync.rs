@@ -1691,8 +1691,8 @@ impl DataSync {
         // 管理员帐套不需要验证
         let admin_cid = "d4856531-e9d3-20f3-4c22-fe3c65fb009c";
         if user_cid != admin_cid {
-            // 查询记录的 cid/uid 字段进行验证
-            let sql = format!("SELECT cid, uid FROM {} WHERE id = ? LIMIT 1", self.table_name);
+            // 只查询 uidcid 指定的字段进行验证
+            let sql = format!("SELECT {} FROM {} WHERE id = ? LIMIT 1", self.uidcid, self.table_name);
             let rows = self.db.query(&sql, &[&id])?;
             if let Some(row) = rows.first() {
                 // 根据 uidcid 配置验证
