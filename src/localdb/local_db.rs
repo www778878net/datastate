@@ -1109,12 +1109,15 @@ impl LocalDB {
                             }
                         }
                         
-                        // 解析 failedRecords: [{idrow, lasterrinfo}]
+                        // 解析 failedRecords: [{id, idrow, lasterrinfo}]
+                        // id: synclog表的主键id
+                        // idrow: 业务记录的id（可能为空）
                         if let Some(failed_list) = back_obj.get("failedRecords").and_then(|v| v.as_array()) {
                             for (idx, err) in failed_list.iter().enumerate() {
                                 if let Some(err_obj) = err.as_object() {
                                     errors.push(crate::data_sync::SyncValidationError {
                                         index: idx as i32,
+                                        id: err_obj.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                                         idrow: err_obj.get("idrow").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                                         error: err_obj.get("lasterrinfo").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                                     });
@@ -1132,6 +1135,7 @@ impl LocalDB {
                                 if let Some(err_obj) = err.as_object() {
                                     errors.push(crate::data_sync::SyncValidationError {
                                         index: err_obj.get("index").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(idx as i64) as i32,
+                                        id: err_obj.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                                         idrow: err_obj.get("idrow").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                                         error: err_obj.get("error").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                                     });

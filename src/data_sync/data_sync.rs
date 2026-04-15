@@ -205,6 +205,7 @@ pub struct SyncData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncValidationError {
     pub index: i32,
+    pub id: String,
     pub idrow: String,
     pub error: String,
 }
@@ -1148,7 +1149,15 @@ impl DataSync {
                     }
                     
                     for err in &errors {
-                        let _ = synclog.mark_failed_by_idrow(&err.idrow, &err.error);
+                        if !err.id.is_empty() {
+                            let _ = synclog.mark_failed_by_id(&err.id, &err.error);
+                            // UPDATE 失败且错误是"没有找到匹配的记录"，尝试转为 INSERT
+                            if err.error.contains("没有找到匹配的记录") {
+                                let _ = synclog.convert_update_to_insert(&err.id);
+                            }
+                        } else if !err.idrow.is_empty() {
+                            let _ = synclog.mark_failed_by_idrow(&err.idrow, &err.error);
+                        }
                     }
                 } else {
                     let success_id_set: std::collections::HashSet<&str> = success_ids.iter().map(|s| s.as_str()).collect();
@@ -1164,15 +1173,35 @@ impl DataSync {
                     
                     for err in &errors {
                         let escaped_err = truncate_errinfo(&err.error);
-                        let _ = self.db.execute(&format!(
-                            "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
-                            escaped_err,
-                            err.idrow
-                        ));
+                        if !err.id.is_empty() {
+                            let _ = self.db.execute(&format!(
+                                "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE id = '{}'",
+                                escaped_err,
+                                err.id
+                            ));
+                            // UPDATE 失败且错误是"没有找到匹配的记录"，尝试转为 INSERT
+                            if err.error.contains("没有找到匹配的记录") {
+                                if let Ok(synclog) = get_synclog() {
+                                    let _ = synclog.convert_update_to_insert(&err.id);
+                                }
+                            }
+                        } else if !err.idrow.is_empty() {
+                            let _ = self.db.execute(&format!(
+                                "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
+                                escaped_err,
+                                err.idrow
+                            ));
+                        }
                     }
                 }
                 
-                let error_messages: Vec<String> = errors.iter().map(|e| format!("{}: {}", e.idrow, e.error)).collect();
+                let error_messages: Vec<String> = errors.iter().map(|e| {
+                    if !e.id.is_empty() {
+                        format!("{}: {}", e.id, e.error)
+                    } else {
+                        format!("{}: {}", e.idrow, e.error)
+                    }
+                }).collect();
 
                 SyncResult {
                     res: 0,
@@ -1216,9 +1245,17 @@ impl DataSync {
                         let _ = synclog.mark_synced_by_ids(&success_ids);
                     }
                     
-                    // 标记失败的记录
+                    // 标记失败的记录（优先使用 id，其次使用 idrow）
                     for err in &errors {
-                        let _ = synclog.mark_failed_by_idrow(&err.idrow, &err.error);
+                        if !err.id.is_empty() {
+                            let _ = synclog.mark_failed_by_id(&err.id, &err.error);
+                            // UPDATE 失败且错误是"没有找到匹配的记录"，尝试转为 INSERT
+                            if err.error.contains("没有找到匹配的记录") {
+                                let _ = synclog.convert_update_to_insert(&err.id);
+                            }
+                        } else if !err.idrow.is_empty() {
+                            let _ = synclog.mark_failed_by_idrow(&err.idrow, &err.error);
+                        }
                     }
                 } else {
                     // 回退到旧方式
@@ -1234,19 +1271,39 @@ impl DataSync {
                         }
                     }
                     
-                    // 标记失败的记录
+                    // 标记失败的记录（优先使用 id，其次使用 idrow）
                     for err in &errors {
                         let escaped_err = truncate_errinfo(&err.error);
-                        let _ = self.db.execute(&format!(
-                            "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
-                            escaped_err,
-                            err.idrow
-                        ));
+                        if !err.id.is_empty() {
+                            let _ = self.db.execute(&format!(
+                                "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE id = '{}'",
+                                escaped_err,
+                                err.id
+                            ));
+                            // UPDATE 失败且错误是"没有找到匹配的记录"，尝试转为 INSERT
+                            if err.error.contains("没有找到匹配的记录") {
+                                if let Ok(synclog) = get_synclog() {
+                                    let _ = synclog.convert_update_to_insert(&err.id);
+                                }
+                            }
+                        } else if !err.idrow.is_empty() {
+                            let _ = self.db.execute(&format!(
+                                "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
+                                escaped_err,
+                                err.idrow
+                            ));
+                        }
                     }
                 }
                 
                 // 构建错误信息列表
-                let error_messages: Vec<String> = errors.iter().map(|e| format!("{}: {}", e.idrow, e.error)).collect();
+                let error_messages: Vec<String> = errors.iter().map(|e| {
+                    if !e.id.is_empty() {
+                        format!("{}: {}", e.id, e.error)
+                    } else {
+                        format!("{}: {}", e.idrow, e.error)
+                    }
+                }).collect();
 
                 SyncResult {
                     res: 0,

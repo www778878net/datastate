@@ -127,7 +127,7 @@ impl Synclog {
     }
 
     /// 获取需要查询的分表列表（用于读操作：查询过去N天的表）
-    /// 返回实际存在的分表 + 主表
+    /// 返回实际存在的分表
     pub fn get_query_shard_tables(&self, days_back: i32) -> Vec<String> {
         let mut tables = Vec::new();
         
@@ -144,9 +144,6 @@ impl Synclog {
                 }
             }
         }
-        
-        // 始终包含主表
-        tables.push("synclog".to_string());
         
         tables
     }
@@ -715,6 +712,82 @@ impl Synclog {
         }
 
         Ok(())
+    }
+
+    /// 将 UPDATE 失败的记录转换为 INSERT（用于重试）
+    /// 当服务器返回"没有找到匹配的记录"时，尝试改为 INSERT
+    pub fn convert_update_to_insert(&self, id: &str) -> Result<(), String> {
+        let tables = self.get_default_query_tables();
+        let up = UpInfo::new();
+
+        for table_name in &tables {
+            // 查找 synclog 记录
+            let select_sql = format!(
+                "SELECT idpk, tbname, idrow FROM {} WHERE id = ? AND action = 'update' AND synced = -1 LIMIT 1",
+                table_name
+            );
+            
+            if let Ok(rows) = self.db.do_get(&select_sql, &[&id as &dyn rusqlite::ToSql], &up) {
+                if let Some(row) = rows.first() {
+                    let idpk: i64 = row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let tbname: String = row.get("tbname").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let idrow: String = row.get("idrow").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    
+                    if idpk > 0 && !tbname.is_empty() && !idrow.is_empty() {
+                        // 从本地数据库查询原始数据
+                        let data_sql = format!("SELECT * FROM `{}` WHERE id = ? LIMIT 1", tbname);
+                        if let Ok(data_rows) = self.db.do_get(&data_sql, &[&idrow as &dyn rusqlite::ToSql], &up) {
+                            if let Some(data_row) = data_rows.first() {
+                                // 构建 INSERT SQL
+                                let (cmdtext, params) = Self::build_insert_sql_from_row(&tbname, data_row);
+                                let params_json = serde_json::to_string(&params).unwrap_or_default();
+                                let cmdtextmd5 = format!("{:x}", md5::compute(&cmdtext));
+                                
+                                // 更新 synclog 记录
+                                let update_sql = format!(
+                                    "UPDATE {} SET action = 'insert', cmdtext = ?, params = ?, cmdtextmd5 = ?, synced = 0, lasterrinfo = '' WHERE idpk = ?",
+                                    table_name
+                                );
+                                let _ = self.db.do_m(
+                                    &update_sql,
+                                    &[
+                                        &cmdtext as &dyn rusqlite::ToSql,
+                                        &params_json as &dyn rusqlite::ToSql,
+                                        &cmdtextmd5 as &dyn rusqlite::ToSql,
+                                        &idpk as &dyn rusqlite::ToSql,
+                                    ],
+                                    &up,
+                                );
+                                
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 从数据库行构建 INSERT SQL
+    fn build_insert_sql_from_row(tbname: &str, row: &std::collections::HashMap<String, serde_json::Value>) -> (String, Vec<serde_json::Value>) {
+        let mut columns: Vec<&str> = row.keys().map(|s| s.as_str()).collect();
+        columns.sort();
+        
+        let placeholders: Vec<&str> = columns.iter().map(|_| "?").collect();
+        let cmdtext = format!(
+            "INSERT INTO `{}` ({}) VALUES ({})",
+            tbname,
+            columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<_>>().join(", "),
+            placeholders.join(", ")
+        );
+        
+        let params: Vec<serde_json::Value> = columns.iter()
+            .filter_map(|c| row.get(*c).cloned())
+            .collect();
+        
+        (cmdtext, params)
     }
 
     /// 截取错误信息，防止递归膨胀
