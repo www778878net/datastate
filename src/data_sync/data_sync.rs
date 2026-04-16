@@ -1367,8 +1367,8 @@ impl DataSync {
                     for err in &errors {
                         if !err.id.is_empty() {
                             let _ = synclog.mark_failed_by_id(&err.id, &err.error);
-                            // UPDATE 失败且错误是"affectedRows=0"或"未影响任何行"，尝试转为 INSERT
-                            if err.error.contains("affectedRows=0") || err.error.contains("未影响任何行") {
+                            // UPDATE 失败且错误包含"没有找到匹配的记录"或"affectedRows=0"，尝试转为 INSERT
+                            if err.error.contains("没有找到匹配的记录") || err.error.contains("affectedRows=0") {
                                 let _ = synclog.convert_update_to_insert(&err.id);
                             }
                         } else if !err.idrow.is_empty() {
@@ -1395,8 +1395,8 @@ impl DataSync {
                                 escaped_err,
                                 err.id
                             ));
-                            // UPDATE 失败且错误是"没有找到匹配的记录"，尝试转为 INSERT
-                            if err.error.contains("没有找到匹配的记录") {
+                            // UPDATE 失败且错误包含"没有找到匹配的记录"或"affectedRows=0"，尝试转为 INSERT
+                            if err.error.contains("没有找到匹配的记录") || err.error.contains("affectedRows=0") {
                                 if let Ok(synclog) = get_synclog() {
                                     let _ = synclog.convert_update_to_insert(&err.id);
                                 }
@@ -1444,6 +1444,7 @@ impl DataSync {
 
     /// 上传到 logsvc（JSON 格式，旧版兼容）
     fn upload_to_logsvc(&self, synclog_url: &str, items: &[SynclogItem]) -> SyncResult {
+        eprintln!("[upload_to_logsvc] 开始上传 {} 条记录", items.len());
         let result = self.db.upload_batch_to_server(synclog_url, items);
 
         match result {
@@ -1456,6 +1457,7 @@ impl DataSync {
                 let synclog_result = get_synclog();
                 
                 if let Ok(synclog) = synclog_result {
+                    eprintln!("[upload_to_logsvc] get_synclog() 成功，处理 {} 个错误", errors.len());
                     // 使用服务器返回的 successIds 标记同步状态
                     if !success_ids.is_empty() {
                         let _ = synclog.mark_synced_by_ids(&success_ids);
@@ -1463,10 +1465,12 @@ impl DataSync {
                     
                     // 标记失败的记录（优先使用 id，其次使用 idrow）
                     for err in &errors {
+                        eprintln!("[upload_to_logsvc] 处理错误: id={}, error={}", err.id, &err.error[..err.error.len().min(100)]);
                         if !err.id.is_empty() {
                             let _ = synclog.mark_failed_by_id(&err.id, &err.error);
-                            // UPDATE 失败且错误是"没有找到匹配的记录"，尝试转为 INSERT
-                            if err.error.contains("没有找到匹配的记录") {
+                            // UPDATE 失败且错误包含"没有找到匹配的记录"或"affectedRows=0"，尝试转为 INSERT
+                            if err.error.contains("没有找到匹配的记录") || err.error.contains("affectedRows=0") {
+                                eprintln!("[upload_to_logsvc] 匹配到转换条件，调用 convert_update_to_insert");
                                 let _ = synclog.convert_update_to_insert(&err.id);
                             }
                         } else if !err.idrow.is_empty() {
@@ -1474,6 +1478,7 @@ impl DataSync {
                         }
                     }
                 } else {
+                    eprintln!("[upload_to_logsvc] get_synclog() 失败: {:?}", synclog_result.err());
                     // 回退到旧方式
                     let success_id_set: std::collections::HashSet<&str> = success_ids.iter().map(|s| s.as_str()).collect();
                     
@@ -1496,8 +1501,8 @@ impl DataSync {
                                 escaped_err,
                                 err.id
                             ));
-                            // UPDATE 失败且错误是"没有找到匹配的记录"，尝试转为 INSERT
-                            if err.error.contains("没有找到匹配的记录") {
+                            // UPDATE 失败且错误是"affectedRows=0"或"未影响任何行"，尝试转为 INSERT
+                            if err.error.contains("affectedRows=0") || err.error.contains("未影响任何行") {
                                 if let Ok(synclog) = get_synclog() {
                                     let _ = synclog.convert_update_to_insert(&err.id);
                                 }

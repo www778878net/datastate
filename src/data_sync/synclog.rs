@@ -731,7 +731,11 @@ impl Synclog {
                 if let Some(row) = rows.first() {
                     let idpk: i64 = row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0);
                     let tbname: String = row.get("tbname").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let idrow: String = row.get("idrow").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    // idrow 可能是 String 或 Number 类型（JSON 解析时数字字符串会被转为 Number）
+                    let idrow: String = row.get("idrow")
+                        .and_then(|v| v.as_str().map(|s| s.to_string()))
+                        .or_else(|| row.get("idrow").and_then(|v| v.as_i64().map(|n| n.to_string())))
+                        .unwrap_or_default();
                     
                     if idpk > 0 && !tbname.is_empty() && !idrow.is_empty() {
                         // 从本地数据库查询原始数据
