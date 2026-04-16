@@ -1602,7 +1602,7 @@ impl DataSync {
 
     // ========== 基础 CRUD 方法（自动写 sync_queue） ==========
 
-    /// 从配置文件读取 cid
+    /// 从配置文件读取 cid（通过 ProjectPath 统一接口，支持环境变量优先）
     fn get_cid() -> String {
         ProjectPath::find()
             .ok()
@@ -1610,7 +1610,7 @@ impl DataSync {
             .unwrap_or_else(|| "GUEST000-8888-8888-8888-GUEST00GUEST".to_string())
     }
 
-    /// 从配置文件读取 uid
+    /// 从配置文件读取 uid（通过 ProjectPath 统一接口，支持环境变量优先）
     fn get_uid() -> String {
         ProjectPath::find()
             .ok()

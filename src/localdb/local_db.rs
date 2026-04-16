@@ -755,11 +755,15 @@ impl LocalDB {
         Ok(())
     }
 
-    /// 从配置文件读取 SID
+    /// 从配置文件读取 SID（优先环境变量 SID，其次 INI 文件）
     pub fn get_sid(&self) -> String {
+        if let Ok(sid) = std::env::var("SID") {
+            if !sid.is_empty() {
+                return sid;
+            }
+        }
         if let Ok(path) = ProjectPath::find() {
             if let Some(sid) = path.read_ini_value("user7788", "sid") {
-                // 跳过占位符
                 if !sid.starts_with("{{") && !sid.is_empty() {
                     return sid;
                 }

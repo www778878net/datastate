@@ -326,6 +326,7 @@ impl WorkflowInstance {
 
     /// 根据 ID 查询工作流实例
     pub fn get(&self, id: &str, up: &UpInfo) -> Result<Option<HashMap<String, Value>>, String> {
+        self.create_today_table()?;
         let table_name = self.get_table_name();
         let sql = format!("SELECT * FROM {} WHERE id = ?", table_name);
         let rows = self.db.do_get(&sql, &[&id as &dyn rusqlite::ToSql], up)?;

@@ -356,6 +356,7 @@ impl WorkflowTask {
 
     /// 根据 ID 查询任务
     pub fn get(&self, id: &str, up: &UpInfo) -> Result<Option<HashMap<String, Value>>, String> {
+        self.create_today_table()?;
         let table_name = self.get_table_name();
         let sql = format!("SELECT * FROM {} WHERE id = ?", table_name);
         let rows = self.db.do_get(&sql, &[&id as &dyn rusqlite::ToSql], up)?;
@@ -364,6 +365,7 @@ impl WorkflowTask {
 
     /// 更新任务状态
     pub fn update_state(&self, id: &str, state: i32, up: &UpInfo) -> Result<(), String> {
+        self.create_today_table()?;
         let table_name = self.get_table_name();
         let sql = format!("UPDATE {} SET state = ? WHERE id = ?", table_name);
         self.db.do_m(
@@ -376,6 +378,7 @@ impl WorkflowTask {
 
     /// 标记任务完成（state=2，记录成功信息）
     pub fn mark_completed(&self, id: &str, info: &str, up: &UpInfo) -> Result<(), String> {
+        self.create_today_table()?;
         let table_name = self.get_table_name();
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let sql = format!(
@@ -396,6 +399,7 @@ impl WorkflowTask {
 
     /// 标记任务失败（state=3，记录错误信息）
     pub fn mark_failed(&self, id: &str, errinfo: &str, up: &UpInfo) -> Result<(), String> {
+        self.create_today_table()?;
         let table_name = self.get_table_name();
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let sql = format!(
@@ -420,6 +424,7 @@ impl WorkflowTask {
         idworkflowinstance: &str,
         up: &UpInfo,
     ) -> Result<Vec<HashMap<String, Value>>, String> {
+        self.create_today_table()?;
         let table_name = self.get_table_name();
         let sql = format!(
             "SELECT * FROM {} WHERE idworkflowinstance = ? ORDER BY starttime DESC",
@@ -435,6 +440,7 @@ impl WorkflowTask {
         state: i32,
         up: &UpInfo,
     ) -> Result<Vec<HashMap<String, Value>>, String> {
+        self.create_today_table()?;
         let table_name = self.get_table_name();
         let sql = format!(
             "SELECT * FROM {} WHERE state = ? ORDER BY priority DESC, starttime ASC",
