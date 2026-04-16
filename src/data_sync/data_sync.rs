@@ -1367,8 +1367,8 @@ impl DataSync {
                     for err in &errors {
                         if !err.id.is_empty() {
                             let _ = synclog.mark_failed_by_id(&err.id, &err.error);
-                            // UPDATE 失败且错误是"没有找到匹配的记录"，尝试转为 INSERT
-                            if err.error.contains("没有找到匹配的记录") {
+                            // UPDATE 失败且错误是"affectedRows=0"或"未影响任何行"，尝试转为 INSERT
+                            if err.error.contains("affectedRows=0") || err.error.contains("未影响任何行") {
                                 let _ = synclog.convert_update_to_insert(&err.id);
                             }
                         } else if !err.idrow.is_empty() {
