@@ -775,14 +775,8 @@ impl Synclog {
     }
 
     /// 从数据库行构建 INSERT SQL
-    /// 排除系统列（created_at, updated_at, deleted），这些列服务器端不存在
     fn build_insert_sql_from_row(tbname: &str, row: &std::collections::HashMap<String, serde_json::Value>) -> (String, Vec<serde_json::Value>) {
-        let exclude_cols = ["created_at", "updated_at", "deleted"];
-        
-        let mut columns: Vec<&str> = row.keys()
-            .map(|s| s.as_str())
-            .filter(|c| !exclude_cols.contains(c))
-            .collect();
+        let mut columns: Vec<&str> = row.keys().map(|s| s.as_str()).collect();
         columns.sort();
         
         let placeholders: Vec<&str> = columns.iter().map(|_| "?").collect();
