@@ -204,14 +204,13 @@ pub trait BaseInstance: Send + Sync {
     /// 保存执行记录到数据库 - 保存到 workflow_instance 表（按天分表）
     /// 使用 DataSync.m_save_to_table 实现按天分表的 msave
     fn save_execution(&mut self) -> Result<(), String> {
-        let workflow_instance = WorkflowInstance::with_default_path()?;
-
-        // 创建今天的分表
-        workflow_instance.create_today_table()?;
-
         // 获取今天的分表名
-        let table_name = workflow_instance.get_table_name();
-
+        let table_name = crate::workflow::WorkflowInstance::get_current_table_name_static();
+        
+        // 使用 LocalDB 单例创建表（确保 DataSync 能看到）
+        let db = crate::LocalDB::default_instance()?;
+        db.ensure_table_exists(&table_name, crate::workflow::SQL_CREATE_WORKFLOW_INSTANCE)?;
+        
         // 转换为 JSON 记录
         let json = self.to_instance_json();
 
