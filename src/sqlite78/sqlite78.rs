@@ -65,7 +65,14 @@ impl Sqlite78 {
     }
 
     /// 查找默认数据库路径
+    /// 优先级：环境变量 SQLITE_PATH > ProjectPath::find().local_db()
     pub fn find_default_db_path() -> Result<String, String> {
+        // 优先使用环境变量
+        if let Ok(env_path) = std::env::var("SQLITE_PATH") {
+            if !env_path.is_empty() {
+                return Ok(env_path);
+            }
+        }
         let project = ProjectPath::find()?;
         Ok(project.local_db().to_string_lossy().to_string())
     }

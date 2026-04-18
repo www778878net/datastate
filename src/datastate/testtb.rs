@@ -108,9 +108,8 @@ impl TestTb {
             let _ = db.ensure_id_is_primary_key("testtb");
         }
 
-        // 使用 TableConfig 创建 DataState 实例
-        let config = Self::get_config();
-        let state = DataState::from_config(&config);
+        // 使用 with_db 方法创建 DataState 实例，传入正确的数据库实例
+        let state = DataState::with_db("testtb", db.clone());
 
         Self { db, audit, state }
     }
