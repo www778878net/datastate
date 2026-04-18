@@ -165,6 +165,12 @@ impl WorkflowTask {
         }
     }
 
+    /// 获取当前表名（静态方法）
+    pub fn get_current_table_name_static() -> String {
+        let config = ShardingConfig::new(ShardType::Daily, "workflow_task");
+        config.get_current_table_name()
+    }
+
     /// 执行分表维护
     pub fn perform_maintenance(&mut self) -> Result<super::MaintenanceResult, String> {
         if let Some(ref mut manager) = self.sharding_manager {

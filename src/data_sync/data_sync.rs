@@ -1893,10 +1893,16 @@ impl DataSync {
             if let Some(id) = id_value.as_str() {
                 if !id.is_empty() {
                     let sql = format!("SELECT id FROM {} WHERE id = ?", table_name);
-                    let exists = self.db.query(&sql, &[&id])?;
-                    if !exists.is_empty() {
-                        self.m_update_to_table(table_name, id, record)?;
-                        return Ok(id.to_string());
+                    match self.db.query(&sql, &[&id]) {
+                        Ok(exists) => {
+                            if !exists.is_empty() {
+                                self.m_update_to_table(table_name, id, record)?;
+                                return Ok(id.to_string());
+                            }
+                        }
+                        Err(_) => {
+                            // 表不存在，直接执行 INSERT
+                        }
                     }
                 }
             }

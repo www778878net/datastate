@@ -230,6 +230,15 @@ impl LocalDB {
         Ok(exists)
     }
 
+    /// 确保表存在（先检查再创建）
+    pub fn ensure_table_exists(&self, table_name: &str, create_sql: &str) -> Result<(), String> {
+        if !self.table_exists(table_name)? {
+            let final_sql = create_sql.replace("{TABLE_NAME}", table_name);
+            self.ensure_table(table_name, &final_sql)?;
+        }
+        Ok(())
+    }
+
     /// 初始化系统表（统计和状态机相关）
     pub fn init_system_tables(&self) -> Result<(), String> {
         let tables = [
