@@ -126,14 +126,6 @@ pub fn get_system_columns() -> HashMap<String, String> {
     cols.insert("cid".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
     cols.insert("upby".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
     cols.insert("uptime".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
-    cols.insert("username".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
-    cols.insert("emulator".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
-    cols.insert("worker".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
-    cols.insert("devicename".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
-    cols.insert("userinfo".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
-    cols.insert("created_at".to_string(), "REAL NOT NULL DEFAULT 0".to_string());
-    cols.insert("updated_at".to_string(), "REAL NOT NULL DEFAULT 0".to_string());
-    cols.insert("deleted".to_string(), "INTEGER NOT NULL DEFAULT 0".to_string());
     cols
 }
 
@@ -182,9 +174,6 @@ impl TableConfig {
         cols.insert("idpk".to_string(), "INTEGER NOT NULL DEFAULT 0".to_string());
         cols.insert("id".to_string(), "TEXT NOT NULL PRIMARY KEY".to_string());
         cols.insert("upby".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
-        cols.insert("created_at".to_string(), "REAL NOT NULL DEFAULT 0".to_string());
-        cols.insert("updated_at".to_string(), "REAL NOT NULL DEFAULT 0".to_string());
-        cols.insert("deleted".to_string(), "INTEGER NOT NULL DEFAULT 0".to_string());
         cols
     }
 
