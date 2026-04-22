@@ -965,30 +965,16 @@ impl DataSync {
         let local_count = self.get_local_count();
         let is_first_download = local_count == 0;
 
-        // 本地有数据但 last_download == 0.0，说明数据不是通过下载得到的
-        // 不做初始化下载，直接返回成功
-        if local_count > 0 && self.last_download == 0.0 {
-            return SyncResult {
-                res: 0,
-                errmsg: String::new(),
-                datawf: SyncData {
-                    inserted: 0,
-                    updated: 0,
-                    skipped: local_count,
-                    failed: None,
-                    total: Some(local_count),
-                    errors: None,
-                },
-            };
-        }
-
-        if is_first_download && self.init_getnumber > 0 {
-            // 限制下载数量
-            self.download_paginated(self.init_getnumber, self.getnumber)
-        } else if is_first_download {
-            // init_getnumber == 0 表示无限制下载
-            self.download_paginated(i32::MAX, self.getnumber)
+        if is_first_download {
+            // 首次下载：本地无数据
+            if self.init_getnumber > 0 {
+                self.download_paginated(self.init_getnumber, self.getnumber)
+            } else {
+                self.download_paginated(i32::MAX, self.getnumber)
+            }
         } else {
+            // 定时下载：本地已有数据，下载最新数据
+            // 注意：即使 last_download == 0.0 也要执行定时下载
             let getnumber = if self.getnumber > 0 { self.getnumber } else { 50 };
             self.download_single_page(getnumber, 0)
         }
