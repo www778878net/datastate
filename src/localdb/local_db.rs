@@ -23,8 +23,9 @@
 use rusqlite::{Connection, Row, Rows, params};
 use serde_json::Value;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use std::collections::HashMap;
+use tokio::sync::Mutex;
 use chrono::Local;
 use base::mylogger;
 use prost::Message;
@@ -201,8 +202,8 @@ impl LocalDB {
     }
 
     /// 确保表存在
-    pub fn ensure_table(&self, table_name: &str, create_sql: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn ensure_table(&self, table_name: &str, create_sql: &str) -> Result<(), String> {
+        let conn = self.conn.lock().await;
         conn.execute(create_sql, [])
             .map_err(|e| format!("创建表失败: {}", e))?;
         
@@ -219,8 +220,8 @@ impl LocalDB {
     }
 
     /// 检查表是否存在
-    pub fn table_exists(&self, table_name: &str) -> Result<bool, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn table_exists(&self, table_name: &str) -> Result<bool, String> {
+        let conn = self.conn.lock().await;
         let exists: bool = conn.query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
             [table_name],
@@ -231,16 +232,16 @@ impl LocalDB {
     }
 
     /// 确保表存在（先检查再创建）
-    pub fn ensure_table_exists(&self, table_name: &str, create_sql: &str) -> Result<(), String> {
-        if !self.table_exists(table_name)? {
+    pub async fn ensure_table_exists(&self, table_name: &str, create_sql: &str) -> Result<(), String> {
+        if !self.table_exists(table_name).await? {
             let final_sql = create_sql.replace("{TABLE_NAME}", table_name);
-            self.ensure_table(table_name, &final_sql)?;
+            self.ensure_table(table_name, &final_sql).await?;
         }
         Ok(())
     }
 
     /// 初始化系统表（统计和状态机相关）
-    pub fn init_system_tables(&self) -> Result<(), String> {
+    pub async fn init_system_tables(&self) -> Result<(), String> {
         let tables = [
             ("synclog", SYNCLOG_CREATE_SQL),
             ("data_state_log", DATA_STATE_LOG_CREATE_SQL),
@@ -251,11 +252,11 @@ impl LocalDB {
         ];
 
         for (table_name, create_sql) in tables {
-            if !self.table_exists(table_name)? {
-                self.ensure_table(table_name, create_sql)?;
+            if !self.table_exists(table_name).await? {
+                self.ensure_table(table_name, create_sql).await?;
             } else {
                 // 已存在的表，尝试添加 id 唯一索引
-                self.ensure_id_unique_index(table_name)?;
+                self.ensure_id_unique_index(table_name).await?;
 
                 // sys_warn 表升级：添加缺失的列
                 if table_name == "sys_warn" {
@@ -267,7 +268,7 @@ impl LocalDB {
                         ("upid", "TEXT NOT NULL DEFAULT ''"),
                     ];
                     for (col, def) in &columns {
-                        self.ensure_column("sys_warn", col, def)?;
+                        self.ensure_column("sys_warn", col, def).await?;
                     }
                 }
             }
@@ -276,8 +277,8 @@ impl LocalDB {
     }
 
     /// 确保表有指定列（没有则添加）
-    pub fn ensure_column(&self, table_name: &str, column: &str, column_def: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn ensure_column(&self, table_name: &str, column: &str, column_def: &str) -> Result<(), String> {
+        let conn = self.conn.lock().await;
 
         // 检查列是否存在（遍历所有列）
         let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table_name))
@@ -296,8 +297,8 @@ impl LocalDB {
     }
 
     /// 确保 id 字段有唯一索引
-    pub fn ensure_id_unique_index(&self, table_name: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn ensure_id_unique_index(&self, table_name: &str) -> Result<(), String> {
+        let conn = self.conn.lock().await;
         
         // 检查是否已有 id 唯一约束（通过索引或 UNIQUE）
         let has_unique: bool = conn.query_row(
@@ -340,8 +341,8 @@ impl LocalDB {
     }
 
     /// 插入数据
-    pub fn insert(&self, table: &str, data: &HashMap<String, Value>) -> Result<String, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn insert(&self, table: &str, data: &HashMap<String, Value>) -> Result<String, String> {
+        let conn = self.conn.lock().await;
 
         // 获取表的实际字段列表
         let table_columns: Vec<String> = conn.prepare(&format!("PRAGMA table_info({})", table))
@@ -415,8 +416,8 @@ impl LocalDB {
     }
 
     /// 更新数据
-    pub fn update(&self, table: &str, row_id: &str, data: &HashMap<String, Value>) -> Result<bool, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn update(&self, table: &str, row_id: &str, data: &HashMap<String, Value>) -> Result<bool, String> {
+        let conn = self.conn.lock().await;
 
         let set_clause: Vec<String> = data.keys()
             .map(|k| format!("{} = ?", k))
@@ -449,11 +450,11 @@ impl LocalDB {
     }
 
     /// 查询数据
-    pub fn query(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<HashMap<String, Value>>, String> {
+    pub async fn query(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<HashMap<String, Value>>, String> {
         use std::time::Instant;
         let start = Instant::now();
 
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
 
         let mut stmt = conn.prepare(sql)
             .map_err(|e| format!("准备语句失败: {}", e))?;
@@ -570,11 +571,11 @@ impl LocalDB {
     }
 
     /// 执行 SQL
-    pub fn execute(&self, sql: &str) -> Result<(), String> {
+    pub async fn execute(&self, sql: &str) -> Result<(), String> {
         use std::time::Instant;
         let start = Instant::now();
 
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
         let result = conn.execute(sql, [])
             .map_err(|e| format!("执行失败: {}", e))?;
 
@@ -603,12 +604,12 @@ impl LocalDB {
     }
 
     /// 清理过期表
-    pub fn cleanup_old_tables(&self, base_name: &str, retention_days: i32) -> Result<Vec<String>, String> {
+    pub async fn cleanup_old_tables(&self, base_name: &str, retention_days: i32) -> Result<Vec<String>, String> {
         if retention_days <= 0 {
             return Ok(Vec::new());
         }
 
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
 
         // 获取所有匹配的表
         let pattern = format!("{}_%", base_name);
@@ -652,42 +653,42 @@ impl LocalDB {
     }
 
     /// 执行带参数的 SQL
-    pub fn execute_with_params(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn execute_with_params(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<(), String> {
+        let conn = self.conn.lock().await;
         conn.execute(sql, params)
             .map_err(|e| format!("执行失败: {}", e))?;
         Ok(())
     }
 
     /// 执行带参数的 SQL，返回影响行数
-    pub fn execute_with_params_affected(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<usize, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn execute_with_params_affected(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<usize, String> {
+        let conn = self.conn.lock().await;
         let rows_affected = conn.execute(sql, params)
             .map_err(|e| format!("执行失败: {}", e))?;
         Ok(rows_affected)
     }
 
     /// 获取表记录数
-    pub fn count(&self, table: &str) -> Result<i32, String> {
+    pub async fn count(&self, table: &str) -> Result<i32, String> {
         let sql = format!("SELECT COUNT(*) FROM {}", table);
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
         let count: i32 = conn.query_row(&sql, [], |row| row.get(0))
             .map_err(|e| format!("查询失败: {}", e))?;
         Ok(count)
     }
 
     /// 删除记录
-    pub fn delete(&self, table: &str, row_id: &str) -> Result<bool, String> {
+    pub async fn delete(&self, table: &str, row_id: &str) -> Result<bool, String> {
         let sql = format!("DELETE FROM {} WHERE id = ?", table);
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
         let rows_affected = conn.execute(&sql, [row_id])
             .map_err(|e| format!("删除失败: {}", e))?;
         Ok(rows_affected > 0)
     }
 
     /// 检查表的id字段是否是主键
-    pub fn is_id_primary_key(&self, table: &str) -> Result<bool, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn is_id_primary_key(&self, table: &str) -> Result<bool, String> {
+        let conn = self.conn.lock().await;
         let sql = format!("PRAGMA table_info({})", table);
         let mut stmt = conn.prepare(&sql).map_err(|e| format!("查询表信息失败: {}", e))?;
         
@@ -711,13 +712,13 @@ impl LocalDB {
     /// 重建表结构：
     /// - id 为主键（使用雪花算法生成）
     /// - idpk 保留用于兼容（自增，但不是主键）
-    pub fn ensure_id_is_primary_key(&self, table: &str) -> Result<bool, String> {
-        let is_pk = self.is_id_primary_key(table)?;
+    pub async fn ensure_id_is_primary_key(&self, table: &str) -> Result<bool, String> {
+        let is_pk = self.is_id_primary_key(table).await?;
         if is_pk {
             return Ok(false);
         }
         
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
         
         let temp_table = format!("{}_temp_{}", table, chrono::Utc::now().format("%Y%m%d%H%M%S"));
         
@@ -746,26 +747,26 @@ impl LocalDB {
     }
 
     /// 应用远程更新（插入或更新，不考虑 sync_queue）
-    pub fn apply_remote_update(&self, table: &str, record_id: &str, data: &HashMap<String, Value>) -> Result<(), String> {
+    pub async fn apply_remote_update(&self, table: &str, record_id: &str, data: &HashMap<String, Value>) -> Result<(), String> {
         // 检查本地是否存在
         let sql = format!("SELECT id FROM {} WHERE id = ?", table);
-        let exists = self.query(&sql, &[&record_id as &dyn rusqlite::ToSql])?
+        let exists = self.query(&sql, &[&record_id as &dyn rusqlite::ToSql]).await?
             .first()
             .is_some();
 
         if exists {
             // 更新
-            self.update(table, record_id, data)?;
+            self.update(table, record_id, data).await?;
         } else {
             // 插入
-            self.insert(table, data)?;
+            self.insert(table, data).await?;
         }
 
         Ok(())
     }
 
     /// 从配置文件读取 SID（优先环境变量 SID，其次 INI 文件）
-    pub fn get_sid(&self) -> String {
+    pub async fn get_sid(&self) -> String {
         if let Ok(sid) = std::env::var("SID") {
             if !sid.is_empty() {
                 return sid;
@@ -1297,7 +1298,7 @@ impl LocalDB {
             return;
         }
 
-        let conn = match self.conn.lock() {
+        let conn = match self.conn.try_lock() {
             Ok(c) => c,
             Err(_) => return,
         };
@@ -1367,7 +1368,7 @@ mod tests {
     #[test]
     fn test_table_exists() {
         let db = LocalDB::with_path(&get_test_db_path()).expect("数据库连接失败");
-        let exists = db.table_exists("non_existent_table_12345");
+        let exists = db.table_exists("non_existent_table_12345").await;
         assert!(exists.is_ok(), "查询表存在应该成功");
         assert!(!exists.unwrap(), "不存在的表应该返回 false");
     }
@@ -1411,7 +1412,7 @@ mod tests {
             "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT, value INTEGER)",
             table_name
         );
-        db.execute(&create_sql).expect("创建表失败");
+        db.execute(&create_sql).await.expect("创建表失败");
 
         // 插入数据
         let mut data = HashMap::new();
@@ -1419,12 +1420,12 @@ mod tests {
         data.insert("name".to_string(), Value::String("测试名称".to_string()));
         data.insert("value".to_string(), Value::Number(42.into()));
 
-        let result = db.insert(&table_name, &data);
+        let result = db.insert(&table_name, &data).await;
         assert!(result.is_ok(), "插入数据应该成功: {:?}", result);
 
         // 验证数据已插入
         let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = db.query(&query, &[&"test_001" as &dyn rusqlite::ToSql]).expect("查询失败");
+        let rows = db.query(&query, &[&"test_001" as &dyn rusqlite::ToSql]).await.expect("查询失败").await;
         assert_eq!(rows.len(), 1, "应该有一条记录");
         assert_eq!(rows[0].get("name").and_then(|v: &serde_json::Value| v.as_str()), Some("测试名称"));
     }
@@ -1440,16 +1441,16 @@ mod tests {
             "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
             table_name
         );
-        db.execute(&create_sql).expect("创建表失败");
+        db.execute(&create_sql).await.expect("创建表失败");
 
         let mut data = HashMap::new();
         data.insert("id".to_string(), Value::String("query_001".to_string()));
         data.insert("name".to_string(), Value::String("查询测试".to_string()));
-        db.insert(&table_name, &data).expect("插入失败");
+        db.insert(&table_name, &data).await.expect("插入失败");
 
         // 查询数据
         let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = db.query(&query, &[&"query_001" as &dyn rusqlite::ToSql]).expect("查询失败");
+        let rows = db.query(&query, &[&"query_001" as &dyn rusqlite::ToSql]).await.expect("查询失败").await;
 
         assert_eq!(rows.len(), 1, "应该找到一条记录");
         assert_eq!(rows[0].get("id").and_then(|v: &serde_json::Value| v.as_str()), Some("query_001"));
@@ -1466,24 +1467,24 @@ mod tests {
             "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
             table_name
         );
-        db.execute(&create_sql).expect("创建表失败");
+        db.execute(&create_sql).await.expect("创建表失败");
 
         let mut data = HashMap::new();
         data.insert("id".to_string(), Value::String("update_001".to_string()));
         data.insert("name".to_string(), Value::String("原始名称".to_string()));
-        db.insert(&table_name, &data).expect("插入失败");
+        db.insert(&table_name, &data).await.expect("插入失败");
 
         // 更新数据
         let mut update_data = HashMap::new();
         update_data.insert("name".to_string(), Value::String("更新后名称".to_string()));
 
-        let result = db.update(&table_name, "update_001", &update_data);
+        let result = db.update(&table_name, "update_001", &update_data).await;
         assert!(result.is_ok(), "更新应该成功");
         assert!(result.unwrap(), "更新应该返回 true");
 
         // 验证更新结果
         let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = db.query(&query, &[&"update_001" as &dyn rusqlite::ToSql]).expect("查询失败");
+        let rows = db.query(&query, &[&"update_001" as &dyn rusqlite::ToSql]).await.expect("查询失败").await;
         assert_eq!(rows[0].get("name").and_then(|v: &serde_json::Value| v.as_str()), Some("更新后名称"));
     }
 
@@ -1498,21 +1499,21 @@ mod tests {
             "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
             table_name
         );
-        db.execute(&create_sql).expect("创建表失败");
+        db.execute(&create_sql).await.expect("创建表失败");
 
         let mut data = HashMap::new();
         data.insert("id".to_string(), Value::String("delete_001".to_string()));
         data.insert("name".to_string(), Value::String("待删除".to_string()));
-        db.insert(&table_name, &data).expect("插入失败");
+        db.insert(&table_name, &data).await.expect("插入失败");
 
         // 删除数据
-        let result = db.delete(&table_name, "delete_001");
+        let result = db.delete(&table_name, "delete_001").await;
         assert!(result.is_ok(), "删除应该成功");
         assert!(result.unwrap(), "删除应该返回 true");
 
         // 验证删除结果
         let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = db.query(&query, &[&"delete_001" as &dyn rusqlite::ToSql]).expect("查询失败");
+        let rows = db.query(&query, &[&"delete_001" as &dyn rusqlite::ToSql]).await.expect("查询失败").await;
         assert_eq!(rows.len(), 0, "记录应该已删除");
     }
 
@@ -1527,11 +1528,11 @@ mod tests {
             "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
             table_name
         );
-        db.execute(&create_sql).expect("创建表失败");
+        db.execute(&create_sql).await.expect("创建表失败");
 
         // 查询空表
         let query = format!("SELECT * FROM {}", table_name);
-        let rows = db.query(&query, &[]).expect("查询失败");
+        let rows = db.query(&query, &[]).await.expect("查询失败").await;
         assert_eq!(rows.len(), 0, "空表应该返回空数组");
     }
 
@@ -1546,13 +1547,13 @@ mod tests {
             "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
             table_name
         );
-        db.execute(&create_sql).expect("创建表失败");
+        db.execute(&create_sql).await.expect("创建表失败");
 
         // 尝试更新不存在的记录
         let mut update_data = HashMap::new();
         update_data.insert("name".to_string(), Value::String("测试".to_string()));
 
-        let result = db.update(&table_name, "non_existent_id", &update_data);
+        let result = db.update(&table_name, "non_existent_id", &update_data).await;
         assert!(result.is_ok(), "更新操作应该成功");
         assert!(!result.unwrap(), "更新不存在的记录应该返回 false");
     }
@@ -1568,10 +1569,10 @@ mod tests {
             "CREATE TABLE IF NOT EXISTS {} (id TEXT PRIMARY KEY, name TEXT)",
             table_name
         );
-        db.execute(&create_sql).expect("创建表失败");
+        db.execute(&create_sql).await.expect("创建表失败");
 
         // 尝试删除不存在的记录
-        let result = db.delete(&table_name, "non_existent_id");
+        let result = db.delete(&table_name, "non_existent_id").await;
         assert!(result.is_ok(), "删除操作应该成功");
         assert!(!result.unwrap(), "删除不存在的记录应该返回 false");
     }

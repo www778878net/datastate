@@ -101,9 +101,9 @@ impl AuditLogDataState {
     }
 
     /// 初始化表
-    pub fn init_table(&self) -> Result<(), String> {
+    pub async fn init_table(&self) -> Result<(), String> {
         let conn = self.datasync.db.get_conn();
-        let conn_guard = conn.lock().map_err(|e| e.to_string())?;
+        let conn_guard = conn.lock().await;
 
         conn_guard
             .execute(AUDIT_LOG_CREATE_SQL, [])
@@ -117,7 +117,7 @@ impl AuditLogDataState {
     /// 唯一键：apisys + apimicro + apiobj + ability + caller
     /// 统计：某个方法被某个调用方调用了多少次
     /// cid 和 upby 从配置读取
-    pub fn log_audit(
+    pub async fn log_audit(
         &self,
         apisys: &str,
         apimicro: &str,
@@ -130,7 +130,7 @@ impl AuditLogDataState {
         let id = crate::snowflake::next_id_string();
 
         let conn = self.datasync.db.get_conn();
-        let conn_guard = conn.lock().map_err(|e| e.to_string())?;
+        let conn_guard = conn.lock().await;
 
         // 确保表存在
         conn_guard
@@ -172,7 +172,7 @@ impl AuditLogDataState {
     }
 
     /// 获取审计日志
-    pub fn get_audit_logs(
+    pub async fn get_audit_logs(
         &self,
         apiobj: Option<&str>,
         days: i32,
@@ -200,7 +200,7 @@ impl AuditLogDataState {
                 "SELECT {} FROM data_audit_log WHERE apiobj = ? ORDER BY uptime DESC LIMIT {}",
                 fields, days
             );
-            match self.datasync.db.query(&sql, &[&obj]) {
+            match self.datasync.db.query(&sql, &[&obj]).await {
                 Ok(results) => results.iter().map(map_row).collect(),
                 _ => Vec::new(),
             }
@@ -209,7 +209,7 @@ impl AuditLogDataState {
                 "SELECT {} FROM data_audit_log ORDER BY uptime DESC LIMIT {}",
                 fields, days
             );
-            match self.datasync.db.query(&sql, &[]) {
+            match self.datasync.db.query(&sql, &[]).await {
                 Ok(results) => results.iter().map(map_row).collect(),
                 _ => Vec::new(),
             }
@@ -217,7 +217,7 @@ impl AuditLogDataState {
     }
 
     /// 获取指定日期范围的统计
-    pub fn get_stats_by_date_range(
+    pub async fn get_stats_by_date_range(
         &self,
         start_date: &str,
         end_date: &str,
@@ -228,7 +228,7 @@ impl AuditLogDataState {
             fields
         );
 
-        match self.datasync.db.query(&sql, &[&start_date, &end_date]) {
+        match self.datasync.db.query(&sql, &[&start_date, &end_date]).await {
             Ok(results) => results
                 .iter()
                 .map(|row| AuditLogRecord {

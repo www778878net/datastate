@@ -4,7 +4,8 @@
 //! 支持 daily（按天）和 monthly（按月）分表
 
 use chrono::{Local, NaiveDate, Duration};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use rusqlite::Connection;
 
 /// 分表类型
@@ -130,13 +131,13 @@ impl ShardingManager {
     }
 
     /// 创建分表
-    pub fn create_sharding_table(&self, table_name: &str) -> Result<(), String> {
+    pub async fn create_sharding_table(&self, table_name: &str) -> Result<(), String> {
         let sql = self.config.table_sql.as_ref()
             .ok_or_else(|| "分表建表SQL未定义".to_string())?;
 
         let final_sql = sql.replace("{TABLE_NAME}", table_name);
 
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
         conn.execute(&final_sql, [])
             .map_err(|e| format!("创建分表 {} 失败: {}", table_name, e))?;
 
@@ -144,14 +145,14 @@ impl ShardingManager {
     }
 
     /// 删除旧表
-    pub fn drop_old_table(&self, table_name: &str) -> Result<bool, String> {
+    pub async fn drop_old_table(&self, table_name: &str) -> Result<bool, String> {
         // 先检查表是否存在
         let check_sql = format!(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='{}'",
             table_name
         );
 
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
         let exists: bool = conn.query_row(&check_sql, [], |_| Ok(true)).unwrap_or(false);
 
         if !exists {
@@ -166,13 +167,13 @@ impl ShardingManager {
     }
 
     /// 检查表是否存在
-    pub fn table_exists(&self, table_name: &str) -> Result<bool, String> {
+    pub async fn table_exists(&self, table_name: &str) -> Result<bool, String> {
         let check_sql = format!(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='{}'",
             table_name
         );
 
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
         let exists = conn.query_row(&check_sql, [], |_| Ok(true)).unwrap_or(false);
 
         Ok(exists)
@@ -246,14 +247,14 @@ impl ShardingManager {
     }
 
     /// 获取所有分表名称
-    pub fn get_all_shard_tables(&self) -> Result<Vec<String>, String> {
+    pub async fn get_all_shard_tables(&self) -> Result<Vec<String>, String> {
         let pattern = format!("{}_%", self.config.base_table);
         let sql = format!(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '{}' ORDER BY name",
             pattern
         );
 
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 
         let tables: Vec<String> = stmt.query_map([], |row| row.get(0))

@@ -58,9 +58,9 @@ impl DataAudit {
     }
 
     /// 初始化审计日志表
-    pub fn init_tables(db: &LocalDB) -> Result<(), String> {
+    pub async fn init_tables(db: &LocalDB) -> Result<(), String> {
         let conn = db.get_conn();
-        let conn_guard = conn.lock().map_err(|e| e.to_string())?;
+        let conn_guard = conn.lock().await;
 
         conn_guard
             .execute(DATA_ABILITY_LOG_CREATE_SQL, [])
@@ -75,7 +75,7 @@ impl DataAudit {
     /// * `ability` - 方法名
     /// * `caller` - 调用方
     /// * `summary` - 操作摘要
-    pub fn check_permission(
+    pub async fn check_permission(
         &self,
         ability: &str,
         caller: &str,
@@ -87,7 +87,7 @@ impl DataAudit {
 
         let ability_full = format!("{}/{}", self.tablename, ability);
         let conn = self.db.get_conn();
-        let conn_guard = conn.lock().map_err(|e| e.to_string())?;
+        let conn_guard = conn.lock().await;
 
         let log_sql = "INSERT INTO data_ability_log (ability_name, caller, action, input_params) VALUES (?, ?, ?, ?)";
         conn_guard
@@ -98,13 +98,13 @@ impl DataAudit {
     }
 
     /// 获取能力调用日志
-    pub fn get_ability_logs(db: &LocalDB, ability_name: &str, limit: i32) -> Vec<AbilityLog> {
+    pub async fn get_ability_logs(db: &LocalDB, ability_name: &str, limit: i32) -> Vec<AbilityLog> {
         let sql = format!(
             "SELECT idpk, ability_name, caller, action, input_params, created_at FROM data_ability_log WHERE ability_name = ? ORDER BY created_at DESC LIMIT {}",
             limit
         );
 
-        match db.query(&sql, &[&ability_name as &dyn rusqlite::ToSql]) {
+        match db.query(&sql, &[&ability_name as &dyn rusqlite::ToSql]).await {
             Ok(results) => results
                 .iter()
                 .map(|row| AbilityLog {

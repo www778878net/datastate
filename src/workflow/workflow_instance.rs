@@ -165,7 +165,7 @@ impl WorkflowInstance {
     }
 
     /// 创建今天的分表
-    pub fn create_today_table(&self) -> Result<(), String> {
+    pub async fn create_today_table(&self) -> Result<(), String> {
         if let Some(ref manager) = self.sharding_manager {
             let table_name = self.get_table_name();
             if !manager.table_exists(&table_name)? {
@@ -173,7 +173,7 @@ impl WorkflowInstance {
 
                 // 创建索引
                 let conn = self.db.get_conn()?;
-                let conn = conn.lock().map_err(|e| e.to_string())?;
+                let conn = conn.lock().await;
                 let index_sql = SQL_CREATE_WORKFLOW_INSTANCE_INDEX.replace("{TABLE_NAME}", &table_name);
                 conn.execute(&index_sql, [])
                     .map_err(|e| format!("创建索引失败: {}", e))?;

@@ -73,9 +73,9 @@ impl AuditPermDataState {
     }
 
     /// 初始化表
-    pub fn init_table(&self) -> Result<(), String> {
+    pub async fn init_table(&self) -> Result<(), String> {
         let conn = self.datasync.db.get_conn();
-        let conn_guard = conn.lock().map_err(|e| e.to_string())?;
+        let conn_guard = conn.lock().await;
 
         conn_guard
             .execute(AUDIT_PERM_CREATE_SQL, [])
@@ -85,7 +85,7 @@ impl AuditPermDataState {
     }
 
     /// 注册能力权限
-    pub fn register_ability(
+    pub async fn register_ability(
         &self,
         tablename: &str,
         ability: &str,
@@ -98,7 +98,7 @@ impl AuditPermDataState {
         let sql = "REPLACE INTO datastate_audit (id, tablename, ability, caller, description, upby, cid, uid, uptime) VALUES (?, ?, ?, ?, ?, '', '', '', '')";
 
         let conn = self.datasync.db.get_conn();
-        let conn_guard = conn.lock().map_err(|e| e.to_string())?;
+        let conn_guard = conn.lock().await;
 
         conn_guard
             .execute(
@@ -116,7 +116,7 @@ impl AuditPermDataState {
     /// 1. 本表内部调用 → 自动放行
     /// 2. 能力层权限检查（支持 ability=* 通配符） → 有权限则放行
     /// 3. 拒绝
-    pub fn check_permission(
+    pub async fn check_permission(
         &self,
         tablename: &str,
         ability: &str,
@@ -134,7 +134,7 @@ impl AuditPermDataState {
         }
 
         let conn = self.datasync.db.get_conn();
-        let conn_guard = conn.lock().map_err(|e| e.to_string())?;
+        let conn_guard = conn.lock().await;
 
         // 2. 能力层权限检查（支持 ability=* 通配符）
         let sql = "SELECT 1 FROM datastate_audit
@@ -160,7 +160,7 @@ impl AuditPermDataState {
     }
 
     /// 获取权限记录
-    pub fn get_permission(
+    pub async fn get_permission(
         &self,
         tablename: &str,
         ability: &str,
@@ -170,7 +170,7 @@ impl AuditPermDataState {
         match self.datasync.db.query(
             sql,
             &[&tablename as &dyn rusqlite::ToSql, &ability as &dyn rusqlite::ToSql],
-        ) {
+        ).await {
             Ok(results) => {
                 let rows: Vec<AuditPermRecord> = results
                     .iter()
@@ -194,10 +194,10 @@ impl AuditPermDataState {
     }
 
     /// 列出所有权限
-    pub fn list_permissions(&self) -> Vec<AuditPermRecord> {
+    pub async fn list_permissions(&self) -> Vec<AuditPermRecord> {
         let sql = "SELECT idpk, id, tablename, ability, caller, description, upby, cid, uid, uptime FROM datastate_audit ORDER BY idpk DESC";
 
-        match self.datasync.db.query(sql, &[]) {
+        match self.datasync.db.query(sql, &[]).await {
             Ok(results) => results
                 .iter()
                 .map(|row| AuditPermRecord {

@@ -41,18 +41,20 @@ impl DataManage {
         let db = LocalDB::default_instance()?;
         let logger = mylogger!();
 
-        // 初始化系统表
-        db.init_system_tables()?;
-
         let manager = Self {
             states: Arc::new(RwLock::new(HashMap::new())),
             db: Arc::new(db),
             registered_tables: Arc::new(RwLock::new(HashMap::new())),
             logger,
         };
-        // 确保 sync_queue 表存在
-        manager.ensure_synclog()?;
         Ok(manager)
+    }
+
+    /// 初始化系统表（需在 tokio runtime 中调用）
+    pub async fn init(&self) -> Result<(), String> {
+        self.db.init_system_tables().await?;
+        self.ensure_synclog().await?;
+        Ok(())
     }
 
     /// 获取单例实例
@@ -61,9 +63,9 @@ impl DataManage {
     }
 
     /// 确保 synclog 表存在
-    fn ensure_synclog(&self) -> Result<(), String> {
-        if !self.db.table_exists("synclog")? {
-            self.db.execute(SYNCLOG_CREATE_SQL)?;
+    async fn ensure_synclog(&self) -> Result<(), String> {
+        if !self.db.table_exists("synclog").await? {
+            self.db.execute(SYNCLOG_CREATE_SQL).await?;
         }
         Ok(())
     }
@@ -90,9 +92,9 @@ impl DataManage {
     }
 
     /// 注册表状态
-    pub fn register(&self, config: TableConfig) -> Result<DataState, String> {
+    pub async fn register(&self, config: TableConfig) -> Result<DataState, String> {
         let name = config.name.clone();
-        if name.is_empty() {
+        if name.is_empty().await {
             return Err("表名不能为空".to_string());
         }
 
@@ -102,12 +104,12 @@ impl DataManage {
         {
             let mut states = self.states.write();
             // 双重检查：再次检查是否已存在
-            if let Some(existing) = states.get(&sync_key) {
+            if let Some(existing) = states.get(&sync_key).await {
                 return Ok(existing.clone());
             }
 
             let state = DataState::from_config(&config);
-            self.ensure_table(&config)?;
+            self.ensure_table(&config).await?;
 
             {
                 let mut tables = self.registered_tables.write();
@@ -123,7 +125,7 @@ impl DataManage {
             if !config.apiurl.is_empty() {
                 let pending_count = self.get_pending_count(&sync_key);
                 if pending_count > 0 {
-                    let result = state.datasync.upload_once();
+                    let result = state.datasync.upload_once().await;
                     if result.res == 0 {
                         self.logger.detail(&format!("首次上传成功: {}, uploaded={}", sync_key,
                             result.datawf.inserted + result.datawf.updated));
@@ -135,7 +137,7 @@ impl DataManage {
 
             // 自动首次下载（跳过本地表，apiurl为空的不下载，download_enabled=false的不下载）
             if !config.apiurl.is_empty() && config.download_enabled {
-                let result = state.datasync.download_once();
+                let result = state.datasync.download_once().await;
                 if result.res == 0 {
                     let error_info = if let Some(ref errors) = result.datawf.errors {
                         format!(", errors={:?}", errors)
@@ -156,18 +158,18 @@ impl DataManage {
     }
 
     /// 确保表存在
-    fn ensure_table(&self, config: &TableConfig) -> Result<bool, String> {
+    async fn ensure_table(&self, config: &TableConfig) -> Result<bool, String> {
         let table_name = &config.name;
 
-        if self.db.table_exists(table_name)? {
+        if self.db.table_exists(table_name).await? {
             return Ok(false);
         }
 
         let create_sql = config.get_create_sql();
-        self.db.ensure_table(table_name, &create_sql)?;
+        self.db.ensure_table(table_name, &create_sql).await?;
 
-        for index_sql in config.get_index_sql() {
-            if let Err(e) = self.db.execute(&index_sql) {
+        for index_sql in config.get_index_sql().await {
+            if let Err(e) = self.db.execute(&index_sql).await {
                 self.logger.error(&format!("索引创建失败: {}", e));
             }
         }
@@ -176,9 +178,9 @@ impl DataManage {
     }
 
     /// 注销表状态
-    pub fn unregister(&self, name: &str) -> SyncResult {
+    pub async fn unregister(&self, name: &str) -> SyncResult {
         let mut states = self.states.write();
-        if states.remove(name).is_none() {
+        if states.remove(name).is_none().await {
             return SyncResult {
                 res: -1,
                 errmsg: format!("状态不存在: {}", name),
@@ -205,7 +207,7 @@ impl DataManage {
     }
 
     /// 获取所有状态摘要
-    pub fn list_summary(&self) -> Vec<serde_json::Value> {
+    pub async fn list_summary(&self) -> Vec<serde_json::Value> {
         let states = self.states.read();
         states
             .iter()
@@ -216,7 +218,7 @@ impl DataManage {
                     "status_name": state.base.get_status_name(),
                     "last_download": state.datasync.last_download,
                     "last_upload": state.datasync.last_upload,
-                    "error_message": if state.base.is_error() { &state.datasync.error_message } else { "" },
+                    "error_message": if state.base.is_error().await { &state.datasync.error_message } else { "" },
                 })
             })
             .collect()
@@ -280,7 +282,7 @@ impl DataManage {
     /// 单步同步检查（按 sync_key）
     /// 检查时间是否到了，到了就执行下载/上传
     /// 返回：(是否执行了同步, 同步结果)
-    pub fn check_and_sync(&self, sync_key: &str) -> (bool, SyncResult) {
+    pub async fn check_and_sync(&self, sync_key: &str) -> (bool, SyncResult) {
         let mut state = match self.get_state(sync_key) {
             Some(s) => s,
             None => {
@@ -297,7 +299,7 @@ impl DataManage {
         }
 
         let table_name = self.extract_table_name(sync_key);
-        let local_count = self.db.count(&table_name).unwrap_or(0);
+        let local_count = self.db.count(&table_name).await.unwrap_or(0);
 
         let need_download = state.datasync.need_download(
             state.datasync.download_interval,
@@ -328,7 +330,7 @@ impl DataManage {
         let mut result = SyncResult::default();
 
         if need_download {
-            let download_result = state.datasync.download_once();
+            let download_result = state.datasync.download_once().await;
             state.datasync.last_download = DataSync::current_time();
             result.datawf.inserted += download_result.datawf.inserted;
             result.datawf.updated += download_result.datawf.updated;
@@ -339,7 +341,7 @@ impl DataManage {
         }
 
         if need_upload {
-            let upload_result = state.datasync.upload_once();
+            let upload_result = state.datasync.upload_once().await;
             state.datasync.last_upload = DataSync::current_time();
             result.datawf.inserted += upload_result.datawf.inserted;
             result.datawf.updated += upload_result.datawf.updated;
@@ -359,7 +361,7 @@ impl DataManage {
     }
 
     /// 执行一次同步检查
-    pub fn sync_once(&self) -> SyncResult {
+    pub async fn sync_once(&self) -> SyncResult {
         let mut total_inserted = 0i64;
         let mut total_updated = 0i64;
         let mut total_errors = 0i64;
@@ -370,7 +372,7 @@ impl DataManage {
             keys
         };
 
-        if state_keys.is_empty() {
+        if state_keys.is_empty().await {
             let logger = mylogger!();
             logger.info("[DataManage] sync_once: states 为空，没有注册的表");
         }
@@ -382,7 +384,7 @@ impl DataManage {
                 }
 
                 let table_name = self.extract_table_name(&sync_key);
-                let local_count = self.db.count(&table_name).unwrap_or(0);
+                let local_count = self.db.count(&table_name).await.unwrap_or(0);
 
                 // 检查是否启用下载
                 let need_download = state.datasync.download_enabled && state.datasync.need_download(
@@ -415,7 +417,7 @@ impl DataManage {
 
                     if need_download {
                         // 调用 DataSync 组件的下载方法
-                        let result = state.datasync.download_once();
+                        let result = state.datasync.download_once().await;
                         if result.res == 0 {
                             state.datasync.last_download = DataSync::current_time();
                             state.base.set_idle();
@@ -432,7 +434,7 @@ impl DataManage {
                     }
                     if need_upload {
                         // 调用 DataSync 组件的上传方法
-                        let result = state.datasync.upload_once();
+                        let result = state.datasync.upload_once().await;
                         if result.res == 0 {
                             state.datasync.last_upload = DataSync::current_time();
                             state.base.set_idle();
@@ -475,17 +477,17 @@ impl DataManage {
         }
     }
 
-    /// 启动后台同步线程
+    /// 启动后台同步任务
     /// 每10秒检测上传下载
-    pub fn run(&self) -> std::thread::JoinHandle<()> {
+    pub async fn run(&self) -> tokio::task::JoinHandle<()> {
         let manager = self.clone();
         
-        std::thread::spawn(move || {
+        tokio::spawn(async move {
             let logger = mylogger!();
             logger.info("[DataManage] 后台同步线程启动");
             
             // 启动时立即执行一次同步
-            let result = manager.sync_once();
+            let result = manager.sync_once().await;
             if result.datawf.inserted > 0 || result.datawf.updated > 0 {
                 logger.info(&format!(
                     "[DataManage] 初始同步完成: inserted={}, updated={}",
@@ -495,10 +497,10 @@ impl DataManage {
             
             loop {
                 // 每10秒循环一次
-                std::thread::sleep(std::time::Duration::from_secs(10));
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 
                 // 执行一次同步检测
-                let result = manager.sync_once();
+                let result = manager.sync_once().await;
                 if result.datawf.inserted > 0 || result.datawf.updated > 0 {
                     logger.info(&format!(
                         "[DataManage] 同步完成: inserted={}, updated={}",
@@ -523,7 +525,7 @@ mod tests {
     use base::mylogger::MyLogger;
 
     #[test]
-    fn test_new() {
+    async fn test_new().await {
         let dm = DataManage::new();
         assert!(dm.is_ok());
     }

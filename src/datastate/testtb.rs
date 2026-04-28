@@ -76,40 +76,40 @@ impl TestTb {
         }
     }
 
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         let db = LocalDB::default_instance().expect("获取数据库失败");
         let audit = DataAudit::new("testtb");
 
-        db.execute(TESTTB_CREATE_SQL).expect("建表失败");
+        db.execute(TESTTB_CREATE_SQL).await.expect("建表失败");
         
         // 检查id是否是主键，如果不是则替换
-        if let Ok(false) = db.is_id_primary_key("testtb") {
-            let _ = db.ensure_id_is_primary_key("testtb");
+        if let Ok(false) = db.is_id_primary_key("testtb").await {
+            let _ = db.ensure_id_is_primary_key("testtb").await.await;
         }
 
         // 使用 TableConfig 创建 DataState 实例
-        let config = Self::get_config();
+        let config = Self::get_config().await;
         let state = DataState::from_config(&config);
 
         Self { db, audit, state }
     }
 
-    pub fn with_db_path(db_path: &str) -> Self {
+    pub async fn with_db_path(db_path: &str) -> Self {
         // 设置环境变量来指定数据库路径
         std::env::set_var("SQLITE_PATH", db_path);
         
         let db = LocalDB::new(None).expect("创建数据库失败");
         let audit = DataAudit::new("testtb");
 
-        db.execute(TESTTB_CREATE_SQL).expect("建表失败");
+        db.execute(TESTTB_CREATE_SQL).await.expect("建表失败");
         
         // 检查id是否是主键，如果不是则替换
-        if let Ok(false) = db.is_id_primary_key("testtb") {
-            let _ = db.ensure_id_is_primary_key("testtb");
+        if let Ok(false) = db.is_id_primary_key("testtb").await {
+            let _ = db.ensure_id_is_primary_key("testtb").await.await;
         }
 
         // 使用 with_db 方法创建 DataState 实例，传入正确的数据库实例
-        let state = DataState::with_db("testtb", db.clone());
+        let state = DataState::with_db("testtb", db.clone()).await;
 
         Self { db, audit, state }
     }
@@ -123,7 +123,7 @@ impl TestTb {
         }
     }
 
-    pub fn getone(
+    pub async fn getone(
         &self,
         id: &str,
         caller: &str,
@@ -133,7 +133,7 @@ impl TestTb {
         self.audit.check_permission("getone", caller, summary)?;
         
         let sql = "SELECT * FROM testtb WHERE id = ?";
-        match self.db.query(sql, &[&id as &dyn rusqlite::ToSql]) {
+        match self.db.query(sql, &[&id as &dyn rusqlite::ToSql]).await {
             Ok(rows) if !rows.is_empty() => {
                 let row = &rows[0];
                 Ok(Some(TestTbRecord {
@@ -151,7 +151,7 @@ impl TestTb {
         }
     }
 
-    pub fn mlist(
+    pub async fn mlist(
         &self,
         caller: &str,
         limit: i32,
@@ -161,7 +161,7 @@ impl TestTb {
         self.audit.check_permission("mlist", caller, summary)?;
         
         let sql = format!("SELECT * FROM testtb ORDER BY idpk DESC LIMIT {}", limit);
-        match self.db.query(&sql, &[]) {
+        match self.db.query(&sql, &[]).await {
             Ok(rows) => {
                 let result: Vec<TestTbRecord> = rows
                     .iter()
@@ -230,7 +230,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_audit_permission() {
+    async fn test_audit_permission().await {
         let testtb = TestTb::new();
 
         let mut record = std::collections::HashMap::new();

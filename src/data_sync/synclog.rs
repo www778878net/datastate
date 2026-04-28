@@ -212,7 +212,7 @@ impl Synclog {
     }
 
     /// 创建今天的分表
-    pub fn create_today_table(&self) -> Result<(), String> {
+    pub async fn create_today_table(&self) -> Result<(), String> {
         if let Some(ref manager) = self.sharding_manager {
             let table_name = self.get_table_name();
             if !manager.table_exists(&table_name)? {
@@ -220,7 +220,7 @@ impl Synclog {
 
                 // 创建索引
                 let conn = self.db.get_conn()?;
-                let conn = conn.lock().map_err(|e| e.to_string())?;
+                let conn = conn.lock().await;
                 let index_sql = SQL_CREATE_SYNCLOG_INDEX.replace("{TABLE_NAME}", &table_name);
                 conn.execute(&index_sql, [])
                     .map_err(|e| format!("创建索引失败: {}", e))?;
@@ -835,7 +835,7 @@ impl Synclog {
     }
 
     /// 添加到同步队列（配合 DataSync 使用）
-    pub fn add_to_synclog(
+    pub async fn add_to_synclog(
         &self,
         tbname: &str,
         record_id: &str,
@@ -941,7 +941,7 @@ impl Synclog {
 
             // 获取插入的 idpk
             let conn = self.db.get_conn()?;
-            let conn_guard = conn.lock().map_err(|e| e.to_string())?;
+            let conn_guard = conn.lock().await;
             Ok(conn_guard.last_insert_rowid())
         }
     }

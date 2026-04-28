@@ -8,7 +8,8 @@ use rusqlite::Connection;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use chrono::Local;
 
 /// 查询结果
@@ -133,9 +134,9 @@ impl Sqlite78 {
     }
 
     /// 创建系统常用表
-    pub fn creat_tb(&self, _up: &UpInfo) -> Result<String, String> {
+    pub async fn creat_tb(&self, _up: &UpInfo) -> Result<String, String> {
         let conn = self.get_conn()?;
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn.lock().await;
 
         // 使用 sys_sql_state.rs 和 sys_warn_state.rs 中的常量
         conn.execute(crate::sqlite78::SYS_SQL_CREATE_SQL, [])
@@ -147,11 +148,11 @@ impl Sqlite78 {
     }
 
     /// 查询数据
-    pub fn do_get(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
+    pub async fn do_get(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
         let conn = self.get_conn()?;
         let dstart = std::time::Instant::now();
 
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn.lock().await;
 
         let mut stmt = conn.prepare(cmdtext)
             .map_err(|e| format!("准备语句失败: {}", e))?;
@@ -216,11 +217,11 @@ impl Sqlite78 {
     }
 
     /// 更新数据
-    pub fn do_m(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<UpdateResult, String> {
+    pub async fn do_m(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<UpdateResult, String> {
         let conn = self.get_conn()?;
         let dstart = std::time::Instant::now();
 
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn.lock().await;
 
         match conn.execute(cmdtext, values) {
             Ok(rows_affected) => {
@@ -259,11 +260,11 @@ impl Sqlite78 {
     }
 
     /// 插入数据
-    pub fn do_m_add(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<InsertResult, String> {
+    pub async fn do_m_add(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<InsertResult, String> {
         let conn = self.get_conn()?;
         let dstart = std::time::Instant::now();
 
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn.lock().await;
 
         match conn.execute(cmdtext, values) {
             Ok(rows_affected) => {
@@ -312,7 +313,7 @@ impl Sqlite78 {
     }
 
     /// 执行事务
-    pub fn do_t(
+    pub async fn do_t(
         &self,
         cmds: &[String],
         values: Vec<Vec<&dyn rusqlite::ToSql>>,
@@ -327,7 +328,7 @@ impl Sqlite78 {
 
         let conn = self.get_conn()?;
         let dstart = std::time::Instant::now();
-        let mut conn = conn.lock().map_err(|e| e.to_string())?;
+        let mut conn = conn.lock().await;
 
         let tx = conn.transaction()
             .map_err(|e| format!("开始事务失败: {}", e))?;
@@ -376,7 +377,7 @@ impl Sqlite78 {
     // ============ 私有方法 ============
 
     /// 添加警告记录
-    fn add_warn(&self, info: &str, kind: &str, up: &UpInfo) -> Result<(), String> {
+    async fn add_warn(&self, info: &str, kind: &str, up: &UpInfo) -> Result<(), String> {
         // 优先使用自定义处理器
         if let Some(ref handler) = self.warn_handler {
             return handler(info, kind, up);
@@ -388,7 +389,7 @@ impl Sqlite78 {
         }
 
         let conn = self.get_conn()?;
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn.lock().await;
 
         let cmdtext = "INSERT INTO sys_warn (kind,apimicro,apiobj,content,upby,uptime,id,upid) VALUES (?,?,?,?,?,?,?,?)";
         let id = UpInfo::new_id();
@@ -410,13 +411,13 @@ impl Sqlite78 {
     }
 
     /// 保存 SQL 统计日志
-    fn save_log(&self, cmdtext: &str, dlong: i64, lendown: i64, up: &UpInfo) -> Result<(), String> {
+    async fn save_log(&self, cmdtext: &str, dlong: i64, lendown: i64, up: &UpInfo) -> Result<(), String> {
         if !self.is_count || self.conn.is_none() {
             return Ok(());
         }
 
         let conn = self.get_conn()?;
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn.lock().await;
 
         // 生成雪花ID
         let cmdtextmd5 = crate::snowflake::next_id_string();

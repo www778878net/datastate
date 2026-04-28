@@ -23,11 +23,11 @@ use crate::{Sqlite78, UpInfo};
 ///
 /// 创建 workflow_capability 表（固定表）
 /// workflow_instance 和 workflow_task 是分表，会在首次使用时自动创建
-pub fn init_workflow_tables(db: &mut Sqlite78, _up: &UpInfo) -> Result<String, String> {
+pub async fn init_workflow_tables(db: &mut Sqlite78, _up: &UpInfo) -> Result<String, String> {
     db.initialize()?;
 
     let conn = db.get_conn()?;
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = conn.lock().await;
 
     // 创建 workflow_capability 表（固定表，不分表）
     conn.execute(SQL_CREATE_WORKFLOW_CAPABILITY, [])

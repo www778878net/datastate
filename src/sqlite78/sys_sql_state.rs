@@ -43,9 +43,9 @@ impl SysSqlSqliteState {
     }
 
     /// 创建表
-    pub fn create_table(&self, _up: &UpInfo) -> Result<String, String> {
+    pub async fn create_table(&self, _up: &UpInfo) -> Result<String, String> {
         let conn = self.db.get_conn()?;
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn.lock().await;
         conn.execute(CREATE_SQL, [])
             .map_err(|e| format!("创建 sys_sql 表失败: {}", e))?;
         Ok("ok".to_string())

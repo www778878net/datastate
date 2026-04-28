@@ -234,7 +234,7 @@ mod tests {
 
     /// 测试3：CRUD 操作 - 插入记录
     #[test]
-    fn test_m_add() {
+    async fn test_m_add() {
         let unique_table = format!(
             "test_crud_{}",
             std::time::SystemTime::now()
@@ -247,7 +247,7 @@ mod tests {
 
         // 创建测试表
         let conn = state.datasync.db.get_conn();
-        let conn_guard = conn.lock().expect("获取数据库连接失败");
+        let conn_guard = conn.lock().await;
         conn_guard
             .execute(
                 &format!(
@@ -269,7 +269,7 @@ mod tests {
 
     /// 测试4：CRUD 操作 - 查询记录
     #[test]
-    fn test_get_one() {
+    async fn test_get_one() {
         let unique_table = format!(
             "test_get_{}",
             std::time::SystemTime::now()
@@ -282,7 +282,7 @@ mod tests {
 
         // 创建测试表并插入数据
         let conn = state.datasync.db.get_conn();
-        let conn_guard = conn.lock().expect("获取数据库连接失败");
+        let conn_guard = conn.lock().await;
         conn_guard
             .execute(
                 &format!(
@@ -310,7 +310,7 @@ mod tests {
 
     /// 测试5：CRUD 操作 - 更新记录
     #[test]
-    fn test_m_update() {
+    async fn test_m_update() {
         let unique_table = format!(
             "test_update_{}",
             std::time::SystemTime::now()
@@ -323,7 +323,7 @@ mod tests {
 
         // 创建测试表并插入数据（包含必要的元数据列）
         let conn = state.datasync.db.get_conn();
-        let conn_guard = conn.lock().expect("获取数据库连接失败");
+        let conn_guard = conn.lock().await;
         conn_guard
             .execute(
                 &format!(
@@ -351,7 +351,7 @@ mod tests {
 
     /// 测试6：同步操作 - 同步保存
     #[test]
-    fn test_m_sync_save() {
+    async fn test_m_sync_save() {
         let unique_table = format!(
             "test_sync_{}",
             std::time::SystemTime::now()
@@ -364,7 +364,7 @@ mod tests {
 
         // 创建测试表
         let conn = state.datasync.db.get_conn();
-        let conn_guard = conn.lock().expect("获取数据库连接失败");
+        let conn_guard = conn.lock().await;
         conn_guard
             .execute(
                 &format!(
@@ -417,7 +417,7 @@ mod tests {
 
     /// 测试10：删除记录
     #[test]
-    fn test_m_del() {
+    async fn test_m_del() {
         let unique_table = format!(
             "test_del_{}",
             std::time::SystemTime::now()
@@ -430,7 +430,7 @@ mod tests {
 
         // 创建测试表并插入数据
         let conn = state.datasync.db.get_conn();
-        let conn_guard = conn.lock().expect("获取数据库连接失败");
+        let conn_guard = conn.lock().await;
         conn_guard
             .execute(
                 &format!(
@@ -455,7 +455,7 @@ mod tests {
 
     /// 测试11：统计记录数
     #[test]
-    fn test_count() {
+    async fn test_count() {
         let unique_table = format!(
             "test_count_{}",
             std::time::SystemTime::now()
@@ -468,7 +468,7 @@ mod tests {
 
         // 创建测试表
         let conn = state.datasync.db.get_conn();
-        let conn_guard = conn.lock().expect("获取数据库连接失败");
+        let conn_guard = conn.lock().await;
         conn_guard
             .execute(
                 &format!(
@@ -520,7 +520,7 @@ mod tests {
     /// 3. 方法可以直接使用 self.db 访问数据库
     /// 4. DataSync 组件正确初始化
     #[test]
-    fn demo_20260303200000() {
+    async fn demo_20260303200000() {
         use base::mylogger;
         use std::sync::Arc;
 
@@ -568,7 +568,7 @@ mod tests {
         // 验证 db 成员变量存在且可用（通过 datasync.db 访问）
         {
             let conn = state.datasync.db.get_conn();
-            let conn_guard = conn.lock().expect("获取数据库连接失败");
+            let conn_guard = conn.lock().await;
             tester.logger.detail("成功获取数据库连接");
 
             // 创建测试表

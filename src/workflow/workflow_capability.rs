@@ -98,9 +98,9 @@ impl WorkflowCapability {
     }
 
     /// 初始化表
-    pub fn init_table(&self) -> Result<(), String> {
+    pub async fn init_table(&self) -> Result<(), String> {
         let conn = self.db.get_conn()?;
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = conn.lock().await;
         conn.execute(SQL_CREATE_WORKFLOW_CAPABILITY, [])
             .map_err(|e| format!("创建 workflow_capability 表失败: {}", e))?;
         Ok(())
