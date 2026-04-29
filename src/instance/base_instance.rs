@@ -193,7 +193,7 @@ pub trait BaseInstance: Send + Sync {
         }
 
         // 保存执行记录到数据库
-        if let Err(e) = self.save_execution() {
+        if let Err(e) = self.save_execution().await {
             let logger = mylogger!();
             logger.error(&format!("保存工作流实例记录失败: {}", e));
         }
@@ -203,20 +203,20 @@ pub trait BaseInstance: Send + Sync {
 
     /// 保存执行记录到数据库 - 保存到 workflow_instance 表（按天分表）
     /// 使用 DataSync.m_save_to_table 实现按天分表的 msave
-    fn save_execution(&mut self) -> Result<(), String> {
+    async fn save_execution(&mut self) -> Result<(), String> {
         // 获取今天的分表名
         let table_name = crate::workflow::WorkflowInstance::get_current_table_name_static();
         
         // 使用 LocalDB 单例创建表（确保 DataSync 能看到）
         let db = crate::LocalDB::default_instance()?;
-        db.ensure_table_exists(&table_name, crate::workflow::SQL_CREATE_WORKFLOW_INSTANCE)?;
+        db.ensure_table_exists(&table_name, crate::workflow::SQL_CREATE_WORKFLOW_INSTANCE).await?;
         
         // 转换为 JSON 记录
         let json = self.to_instance_json();
 
         // 使用 DataSync.m_save_to_table 保存（雪花ID + 自动填充字段 + sync_queue）
         let datasync = crate::data_sync::DataSync::new("workflow_instance");
-        let _id = datasync.m_save_to_table(&table_name, &json)?;
+        let _id = datasync.m_save_to_table(&table_name, &json).await?;
 
         Ok(())
     }

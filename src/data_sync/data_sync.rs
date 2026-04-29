@@ -16,7 +16,7 @@ use chrono::Local;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
-use reqwest::blocking::Client;
+use reqwest::Client;
 
 // ========== 全局 Synclog 单例 ==========
 
@@ -574,7 +574,7 @@ impl DataSync {
 
     /// 添加记录到同步队列
     /// 如果该记录已有未同步的日志，则更新现有日志而不是添加新日志
-    pub fn add_to_queue(
+    pub async fn add_to_queue(
         &self,
         record_id: &str,
         action: &str,
@@ -601,7 +601,7 @@ impl DataSync {
             &params_json,
             worker,
             cid,
-        )
+        ).await
     }
 
     /// 构建 SQL 模板和参数
@@ -678,11 +678,11 @@ impl DataSync {
     }
 
     /// 获取待同步的记录数
-    pub fn get_pending_count(&self) -> i32 {
+    pub async fn get_pending_count(&self) -> i32 {
         // 使用 Synclog 分表管理类
         match get_synclog() {
             Ok(synclog) => {
-                match synclog.get_pending_count_by_tbname(&self.table_name) {
+                match synclog.get_pending_count_by_tbname(&self.table_name).await {
                     Ok(count) => count,
                     Err(_) => 0,
                 }
@@ -707,9 +707,9 @@ impl DataSync {
     /// 获取待同步的记录列表
     pub async fn get_pending_items(&self, limit: i32) -> Vec<SynclogItem> {
         // 使用 Synclog 分表管理类
-        match get_synclog().await {
+        match get_synclog() {
             Ok(synclog) => {
-                match synclog.get_pending_items_by_tbname(&self.table_name, limit) {
+                match synclog.get_pending_items_by_tbname(&self.table_name, limit).await {
                     Ok(results) => results
                         .iter()
                         .map(|row| SynclogItem {
@@ -754,14 +754,14 @@ impl DataSync {
     }
 
     /// 标记已同步
-    pub fn mark_synced(&self, idpk_list: &[i64]) -> Result<(), String> {
+    pub async fn mark_synced(&self, idpk_list: &[i64]) -> Result<(), String> {
         if idpk_list.is_empty() {
             return Ok(());
         }
 
         // 使用 Synclog 分表管理类
         let synclog = get_synclog()?;
-        synclog.mark_synced_by_idpks(idpk_list)
+        synclog.mark_synced_by_idpks(idpk_list).await
     }
 
     // ========== 状态变更日志 ==========
@@ -792,7 +792,7 @@ impl DataSync {
     }
 
     /// 获取状态变更日志
-    pub fn get_status_logs(&self, limit: i32) -> Vec<StateLog> {
+    pub async fn get_status_logs(&self, limit: i32) -> Vec<StateLog> {
         let sql = format!(
             "SELECT idpk, id, table_name, old_status, new_status, reason, upby, uptime FROM data_state_log WHERE table_name = ? ORDER BY idpk DESC LIMIT {}",
             limit
@@ -801,6 +801,7 @@ impl DataSync {
         match self
             .db
             .query(&sql, &[&self.table_name as &dyn rusqlite::ToSql])
+            .await
         {
             Ok(results) => results
                 .iter()
@@ -897,7 +898,7 @@ impl DataSync {
     }
 
     /// 获取同步统计
-    pub fn get_sync_stats(&self, days: i32) -> Vec<SyncStats> {
+    pub async fn get_sync_stats(&self, days: i32) -> Vec<SyncStats> {
         let sql = format!(
             "SELECT idpk, id, table_name, downloaded, updated, skipped, failed, stat_date, upby, uptime FROM data_sync_stats WHERE table_name = ? ORDER BY stat_date DESC LIMIT {}",
             days
@@ -906,6 +907,7 @@ impl DataSync {
         match self
             .db
             .query(&sql, &[&self.table_name as &dyn rusqlite::ToSql])
+            .await
         {
             Ok(results) => results
                 .iter()
@@ -962,26 +964,26 @@ impl DataSync {
             };
         }
 
-        let local_count = self.get_local_count();
+        let local_count = self.get_local_count().await;
         let is_first_download = local_count == 0;
 
         if is_first_download {
             // 首次下载：本地无数据
             if self.init_getnumber > 0 {
-                self.download_paginated(self.init_getnumber, self.getnumber)
+                self.download_paginated(self.init_getnumber, self.getnumber).await
             } else {
-                self.download_paginated(i32::MAX, self.getnumber)
+                self.download_paginated(i32::MAX, self.getnumber).await
             }
         } else {
             // 定时下载：本地已有数据，下载最新数据
             // 注意：即使 last_download == 0.0 也要执行定时下载
             let getnumber = if self.getnumber > 0 { self.getnumber } else { 50 };
-            self.download_single_page(getnumber, 0)
+            self.download_single_page(getnumber, 0).await
         }
     }
 
     /// 分页下载（首次下载使用）
-    fn download_paginated(&self, max_download: i32, page_size: i32) -> SyncResult {
+    async fn download_paginated(&self, max_download: i32, page_size: i32) -> SyncResult {
         let page_size = if page_size > 0 { page_size } else { 50 };
         let mut all_inserted = 0;
         let mut all_updated = 0;
@@ -991,14 +993,22 @@ impl DataSync {
         let mut total_downloaded = 0;
 
         loop {
-            let result = self.db.download_from_server(
-                &self.table_name,
-                &self.apiurl,
-                page_size,
-                getstart,
-                self.download_condition.as_ref(),
-                self.download_cols.as_deref(),
-            );
+            let table_name = self.table_name.clone();
+            let apiurl = self.apiurl.clone();
+            let download_condition = self.download_condition.clone();
+            let download_cols = self.download_cols.clone();
+            let db = self.db.clone();
+            
+            let result = tokio::task::spawn_blocking(move || {
+                db.download_from_server(
+                    &table_name,
+                    &apiurl,
+                    page_size,
+                    getstart,
+                    download_condition.as_ref(),
+                    download_cols.as_deref(),
+                )
+            }).await.map_err(|e| format!("spawn_blocking error: {}", e))?;
 
             match result {
                 Ok(records) => {
@@ -1007,7 +1017,7 @@ impl DataSync {
                         break;
                     }
 
-                    let (inserted, updated, skipped, errors) = self.save_records(&records);
+                    let (inserted, updated, skipped, errors) = self.save_records(&records).await;
                     all_inserted += inserted;
                     all_updated += updated;
                     all_skipped += skipped;
@@ -1066,7 +1076,7 @@ impl DataSync {
     /// 2. 调用 getbyworker API 获取 idpk > last_server_id 的记录
     /// 3. 保存到 sync_progress 表
     /// 4. 应用到业务表
-    fn download_single_page(&self, _getnumber: i32, _getstart: i32) -> SyncResult {
+    async fn download_single_page(&self, _getnumber: i32, _getstart: i32) -> SyncResult {
         if !self.download_enabled {
             return SyncResult::default();
         }
@@ -1081,7 +1091,7 @@ impl DataSync {
         }
 
         let local_worker = Self::get_worker();
-        let last_server_id = match self.get_last_server_id() {
+        let last_server_id = match self.get_last_server_id().await {
             Ok(id) => id,
             Err(e) => {
                 return SyncResult {
@@ -1107,6 +1117,7 @@ impl DataSync {
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
+            .await
         {
             Ok(r) => r,
             Err(e) => {
@@ -1118,7 +1129,7 @@ impl DataSync {
             }
         };
         
-        let json: serde_json::Value = match response.json() {
+        let json: serde_json::Value = match response.json().await {
             Ok(j) => j,
             Err(e) => {
                 return SyncResult {
@@ -1181,7 +1192,7 @@ impl DataSync {
         }
 
         let count = items.len();
-        if let Err(e) = self.save_sync_progress(&items) {
+        if let Err(e) = self.save_sync_progress(&items).await {
             return SyncResult {
                 res: -1,
                 errmsg: format!("保存sync_progress失败: {}", e),
@@ -1189,7 +1200,7 @@ impl DataSync {
             };
         }
         
-        let (inserted, updated, skipped, errors) = match self.apply_sync_progress(&items) {
+        let (inserted, updated, skipped, errors) = match self.apply_sync_progress(&items).await {
             Ok(result) => result,
             Err(e) => {
                 return SyncResult {
@@ -1245,11 +1256,11 @@ impl DataSync {
                     processed_ids.insert(id_str.to_string());
 
                     let check_sql = format!("SELECT * FROM {} WHERE id = ?", self.table_name);
-                    let existing = self.db.query(&check_sql, &[&id_str]).await).await;
+                    let existing = self.db.query(&check_sql, &[&id_str]).await;
 
                     match existing {
                         Ok(rows) => {
-                            if rows.is_empty().await {
+                            if rows.is_empty() {
                                 match self.db.insert(&self.table_name, record).await {
                                     Ok(_) => inserted += 1,
                                     Err(e) => {
@@ -1303,7 +1314,7 @@ impl DataSync {
     /// 将本地 synclog 批量上传到服务器
     /// 根据服务器返回的 successIds 和 failedRecords 更新本地 synclog 表
     pub async fn upload_once(&self) -> SyncResult {
-        if self.table_name.is_empty().await {
+        if self.table_name.is_empty() {
             return SyncResult {
                 res: -1,
                 errmsg: "表名为空".to_string(),
@@ -1311,9 +1322,9 @@ impl DataSync {
             };
         }
 
-        let pending_items = self.get_pending_items(100);
+        let pending_items = self.get_pending_items(100).await;
 
-        if pending_items.is_empty().await {
+        if pending_items.is_empty() {
             return SyncResult {
                 res: 0,
                 errmsg: String::new(),
@@ -1324,11 +1335,11 @@ impl DataSync {
         // 根据配置选择同步 URL 和上传方式
         let result = if self.use_rust_synclog && !self.rust_api_url.is_empty() {
             // 使用 Rust API，protobuf 格式
-            self.upload_to_rust_api(&self.rust_api_url, &pending_items)
+            self.upload_to_rust_api(&self.rust_api_url, &pending_items).await
         } else {
             // 使用旧的 logsvc，JSON 格式
             let synclog_url = "http://log.778878.net/apisvc/backsvc/synclog";
-            self.upload_to_logsvc(synclog_url, &pending_items)
+            self.upload_to_logsvc(synclog_url, &pending_items).await
         };
 
         result
@@ -1336,7 +1347,13 @@ impl DataSync {
 
     /// 上传到 Rust API（JSON 格式，与 logsvc 兼容）
     async fn upload_to_rust_api(&self, api_url: &str, items: &[SynclogItem]) -> SyncResult {
-        let result = self.db.upload_batch_to_server(api_url, items);
+        let api_url = api_url.to_string();
+        let items = items.to_vec();
+        let db = self.db.clone();
+        
+        let result = tokio::task::spawn_blocking(move || {
+            db.upload_batch_to_server(&api_url, &items)
+        }).await.map_err(|e| format!("spawn_blocking error: {}", e))?;
 
         match result {
             Ok((inserted, success_ids, errors)) => {
@@ -1375,14 +1392,14 @@ impl DataSync {
                     
                     for err in &errors {
                         let escaped_err = truncate_errinfo(&err.error);
-                        if !err.id.is_empty().await {
+                        if !err.id.is_empty() {
                             let _ = self.db.execute(&format!(
                                 "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE id = '{}'",
                                 escaped_err,
                                 err.id
                             )).await;
                             // UPDATE 失败且错误包含"没有找到匹配的记录"或"affectedRows=0"，尝试转为 INSERT
-                            if err.error.contains("没有找到匹配的记录") || err.error.contains("affectedRows=0").await {
+                            if err.error.contains("没有找到匹配的记录") || err.error.contains("affectedRows=0") {
                                 if let Ok(synclog) = get_synclog() {
                                     let _ = synclog.convert_update_to_insert(&err.id);
                                 }
@@ -1398,7 +1415,7 @@ impl DataSync {
                 }
                 
                 let error_messages: Vec<String> = errors.iter().map(|e| {
-                    if !e.id.is_empty().await {
+                    if !e.id.is_empty() {
                         format!("{}: {}", e.id, e.error)
                     } else {
                         format!("{}: {}", e.idrow, e.error)
@@ -1431,7 +1448,13 @@ impl DataSync {
     /// 上传到 logsvc（JSON 格式，旧版兼容）
     async fn upload_to_logsvc(&self, synclog_url: &str, items: &[SynclogItem]) -> SyncResult {
         eprintln!("[upload_to_logsvc] 开始上传 {} 条记录", items.len());
-        let result = self.db.upload_batch_to_server(synclog_url, items);
+        let synclog_url = synclog_url.to_string();
+        let items = items.to_vec();
+        let db = self.db.clone();
+        
+        let result = tokio::task::spawn_blocking(move || {
+            db.upload_batch_to_server(&synclog_url, &items)
+        }).await.map_err(|e| format!("spawn_blocking error: {}", e))?;
 
         match result {
             Ok((inserted, success_ids, errors)) => {
@@ -1481,14 +1504,14 @@ impl DataSync {
                     // 标记失败的记录（优先使用 id，其次使用 idrow）
                     for err in &errors {
                         let escaped_err = truncate_errinfo(&err.error);
-                        if !err.id.is_empty().await {
+                        if !err.id.is_empty() {
                             let _ = self.db.execute(&format!(
                                 "UPDATE synclog SET synced = -1, lasterrinfo = '{}' WHERE id = '{}'",
                                 escaped_err,
                                 err.id
                             )).await;
                             // UPDATE 失败且错误是"affectedRows=0"或"未影响任何行"，尝试转为 INSERT
-                            if err.error.contains("affectedRows=0") || err.error.contains("未影响任何行").await {
+                            if err.error.contains("affectedRows=0") || err.error.contains("未影响任何行") {
                                 if let Ok(synclog) = get_synclog() {
                                     let _ = synclog.convert_update_to_insert(&err.id);
                                 }
@@ -1505,7 +1528,7 @@ impl DataSync {
                 
                 // 构建错误信息列表
                 let error_messages: Vec<String> = errors.iter().map(|e| {
-                    if !e.id.is_empty().await {
+                    if !e.id.is_empty() {
                         format!("{}: {}", e.id, e.error)
                     } else {
                         format!("{}: {}", e.idrow, e.error)
@@ -1646,10 +1669,10 @@ impl DataSync {
         
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         // 如果记录中已有 cid，使用传入的 cid；否则根据 uidcid 配置生成
-        let cid_value = if record.get("cid").and_then(|v: &serde_json::Value| v.as_str()).filter(|s| !s.is_empty()).is_some().await {
+        let cid_value = if record.get("cid").and_then(|v: &serde_json::Value| v.as_str()).filter(|s| !s.is_empty()).is_some() {
             String::new() // 已经有 cid，不需要再设置
         } else {
-            match self.uidcid.as_str().await {
+            match self.uidcid.as_str() {
                 "uid" => Self::get_uid(),
                 _ => Self::get_cid(),
             }
@@ -1659,14 +1682,14 @@ impl DataSync {
 
         let mut record_with_meta = record.clone();
         record_with_meta.insert("id".to_string(), serde_json::json!(id));
-        if !cid_value.is_empty().await {
+        if !cid_value.is_empty() {
             record_with_meta.insert("cid".to_string(), serde_json::json!(cid_value));
         }
         record_with_meta.insert("upby".to_string(), serde_json::json!(upby.clone()));
         record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
 
         self.db.insert(&self.table_name, &record_with_meta).await?;
-        self.add_to_queue(&id, "insert", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &worker)?;
+        self.add_to_queue(&id, "insert", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &worker).await?;
 
         Ok(id)
     }
@@ -1684,11 +1707,11 @@ impl DataSync {
         if user_cid != admin_cid {
             // 只查询 uidcid 指定的字段进行验证
             let sql = format!("SELECT {} FROM {} WHERE id = ? LIMIT 1", self.uidcid, self.table_name);
-            let rows = self.db.query(&sql, &[&id]).await?).await;
-            if let Some(row) = rows.first().await {
+            let rows = self.db.query(&sql, &[&id]).await?;
+            if let Some(row) = rows.first() {
                 // 根据 uidcid 配置验证
                 if self.uidcid == "uid" {
-                    if let Some(record_uid) = row.get("uid").and_then(|v| v.as_str()).await {
+                    if let Some(record_uid) = row.get("uid").and_then(|v| v.as_str()) {
                         if !record_uid.is_empty() && record_uid != user_uid {
                             return Err(format!("uid不匹配，期望{}，实际{}", user_uid, record_uid));
                         }
@@ -1715,26 +1738,26 @@ impl DataSync {
 
         let updated = self.db.update(&self.table_name, id, &record_with_meta).await?;
         if updated {
-            self.add_to_queue(id, "update", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &worker)?;
+            self.add_to_queue(id, "update", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &worker).await?;
         }
         Ok(updated)
     }
 
     /// 保存记录（存在更新，不存在插入）
     pub async fn m_save(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
-        if let Some(id_value) = record.get("id").await {
+        if let Some(id_value) = record.get("id") {
             if let Some(id) = id_value.as_str() {
                 if !id.is_empty() {
                     let sql = format!("SELECT id FROM {} WHERE id = ?", self.table_name);
-                    let exists = self.db.query(&sql, &[&id]).await?).await;
-                    if !exists.is_empty().await {
-                        self.m_update(id, record)?;
+                    let exists = self.db.query(&sql, &[&id]).await?;
+                    if !exists.is_empty() {
+                        self.m_update(id, record).await?;
                         return Ok(id.to_string());
                     }
                 }
             }
         }
-        self.m_add(record)
+        self.m_add(record).await
     }
 
     /// 删除记录（自动写 sync_queue）
@@ -1748,8 +1771,8 @@ impl DataSync {
         if user_cid != admin_cid {
             // 查询记录的 cid/uid 字段进行验证
             let sql = format!("SELECT cid, uid FROM {} WHERE id = ? LIMIT 1", self.table_name);
-            let rows = self.db.query(&sql, &[&id]).await?).await;
-            if let Some(row) = rows.first().await {
+            let rows = self.db.query(&sql, &[&id]).await?;
+            if let Some(row) = rows.first() {
                 // 根据 uidcid 配置验证
                 if self.uidcid == "uid" {
                     if let Some(record_uid) = row.get("uid").and_then(|v| v.as_str()) {
@@ -1771,7 +1794,7 @@ impl DataSync {
         let worker = Self::get_worker();
         let sql = format!("DELETE FROM {} WHERE id = ?", self.table_name);
         self.db.execute_with_params(&sql, &[&id]).await?;
-        self.add_to_queue(id, "delete", &serde_json::json!({"id": id}), &worker)?;
+        self.add_to_queue(id, "delete", &serde_json::json!({"id": id}), &worker).await?;
         Ok(true)
     }
 
@@ -1802,19 +1825,19 @@ impl DataSync {
     /// 同步保存记录（存在更新，不存在插入，不自动填充字段，不写 sync_queue）
     /// 用于从服务器同步数据到本地，或从客户端同步数据到服务器
     pub async fn m_sync_save(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
-        if let Some(id_value) = record.get("id").await {
-            if let Some(id) = id_value.as_str().await {
-                if !id.is_empty().await {
+        if let Some(id_value) = record.get("id") {
+            if let Some(id) = id_value.as_str() {
+                if !id.is_empty() {
                     let sql = format!("SELECT id FROM {} WHERE id = ?", self.table_name);
-                    let exists = self.db.query(&sql, &[&id]).await?).await;
-                    if !exists.is_empty().await {
-                        self.m_sync_update(id, record)?;
+                    let exists = self.db.query(&sql, &[&id]).await?;
+                    if !exists.is_empty() {
+                        self.m_sync_update(id, record).await?;
                         return Ok(id.to_string());
                     }
                 }
             }
         }
-        self.m_sync_add(record)
+        self.m_sync_add(record).await
     }
 
     /// 同步删除记录（不写 sync_queue）
@@ -1843,7 +1866,7 @@ impl DataSync {
 
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         // 如果记录中已有 cid，使用传入的 cid；否则根据 uidcid 配置生成
-        let cid_value = if record.get("cid").and_then(|v: &serde_json::Value| v.as_str()).filter(|s| !s.is_empty()).is_some().await {
+        let cid_value = if record.get("cid").and_then(|v: &serde_json::Value| v.as_str()).filter(|s| !s.is_empty()).is_some() {
             String::new() // 已经有 cid，不需要再设置
         } else {
             match self.uidcid.as_str() {
@@ -1862,7 +1885,7 @@ impl DataSync {
         record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
 
         self.db.insert(table_name, &record_with_meta).await?;
-        self.add_to_queue_with_table(table_name, &id, "insert", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &upby)?;
+        self.add_to_queue_with_table(table_name, &id, "insert", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &upby).await?;
 
         Ok(id)
     }
@@ -1875,13 +1898,21 @@ impl DataSync {
         table_name: &str,
         record: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<String, String> {
-        if let Some(id_value) = record.get("id").await {
+        if let Some(id_value) = record.get("id") {
             if let Some(id) = id_value.as_str() {
                 if !id.is_empty() {
-                    let sql = format!("SELECT id FROM {} WHERE id = ?", table_name);
-                    match self.db.query(&sql, &[&id]).await {
+                    let table_name = table_name.to_string();
+                    let id_string = id.to_string();
+                    let db = self.db.clone();
+                    
+                    let exists = tokio::task::spawn_blocking(move || {
+                        let sql = format!("SELECT id FROM {} WHERE id = ?", table_name);
+                        db.query_sync(&sql, &[&id_string as &dyn rusqlite::ToSql])
+                    }).await.map_err(|e| format!("spawn_blocking error: {}", e))?;
+                    
+                    match exists {
                         Ok(exists) => {
-                            if !exists.is_empty().await {
+                            if !exists.is_empty() {
                                 self.m_update_to_table(table_name, id, record).await?;
                                 return Ok(id.to_string());
                             }
@@ -1893,7 +1924,7 @@ impl DataSync {
                 }
             }
         }
-        self.m_add_to_table(table_name, record)
+        self.m_add_to_table(table_name, record).await
     }
 
     /// 更新指定表中的记录（支持按天分表，自动填充字段，写 sync_queue）
@@ -1920,7 +1951,7 @@ impl DataSync {
 
         let updated = self.db.update(table_name, id, &record_with_meta).await?;
         if updated {
-            self.add_to_queue_with_table(table_name, id, "update", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &upby)?;
+            self.add_to_queue_with_table(table_name, id, "update", &serde_json::to_value(&record_with_meta).unwrap_or_default(), &upby).await?;
         }
         Ok(updated)
     }
@@ -1994,7 +2025,7 @@ impl DataSync {
     /// 查询记录
     /// where_clause 可以是条件（如 "id = ?"）或完整子句（如 "ORDER BY idpk DESC LIMIT 10"）
     pub async fn get(&self, where_clause: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<std::collections::HashMap<String, serde_json::Value>>, String> {
-        let sql = if where_clause.trim_start().to_uppercase().starts_with("ORDER").await {
+        let sql = if where_clause.trim_start().to_uppercase().starts_with("ORDER") {
             format!("SELECT * FROM {} {}", self.table_name, where_clause)
         } else {
             format!("SELECT * FROM {} WHERE {}", self.table_name, where_clause)
@@ -2005,7 +2036,7 @@ impl DataSync {
     /// 查询单条记录
     pub async fn get_one(&self, id: &str) -> Result<Option<std::collections::HashMap<String, serde_json::Value>>, String> {
         let sql = format!("SELECT * FROM {} WHERE id = ?", self.table_name);
-        let result = self.db.query(&sql, &[&id]).await?).await;
+        let result = self.db.query(&sql, &[&id]).await?;
         Ok(result.into_iter().next())
     }
 
@@ -2038,7 +2069,7 @@ impl DataSync {
             "SELECT MAX(idpk) as max_idpk FROM {} WHERE tbname = ? AND worker != ?",
             table_name
         );
-        let rows = self.db.query(&sql, &[&self.table_name, &local_worker]).await?).await;
+        let rows = self.db.query(&sql, &[&self.table_name, &local_worker]).await?;
         let max_idpk = rows
             .first()
             .and_then(|row| row.get("max_idpk"))
@@ -2113,7 +2144,7 @@ impl DataSync {
                 continue;
             }
 
-            let result = match item.action.as_str().await {
+            let result = match item.action.as_str() {
                 "insert" | "update" => {
                     // cmdtext 是业务表的 JSON 数据
                     let record: std::collections::HashMap<String, serde_json::Value> = 
@@ -2121,18 +2152,18 @@ impl DataSync {
                             .map_err(|e| format!("解析cmdtext失败: {}", e))?;
                     
                     if item.action == "insert" {
-                        self.m_sync_save(&record).map(|_| ()).map_err(|e| e)
+                        self.m_sync_save(&record).await.map(|_| ()).map_err(|e| e)
                     } else {
                         // update 需要获取 id
                         let id = record.get("id")
                             .and_then(|v| v.as_str())
                             .unwrap_or(&item.idrow)
                             .to_string();
-                        self.m_sync_update(&id, &record).map(|_| ()).map_err(|e| e)
+                        self.m_sync_update(&id, &record).await.map(|_| ()).map_err(|e| e)
                     }
                 }
                 "delete" => {
-                    self.m_sync_del(&item.idrow).map(|_| ()).map_err(|e| e)
+                    self.m_sync_del(&item.idrow).await.map(|_| ()).map_err(|e| e)
                 }
                 _ => {
                     errors.push(format!("未知的action: {}", item.action));
@@ -2172,23 +2203,27 @@ pub fn add_to_synclog(
     worker: &str,
 ) -> Result<i64, String> {
     let synclog = DataSync::new(table_name);
-    synclog.add_to_queue(record_id, action, data, worker)
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async {
+            synclog.add_to_queue(record_id, action, data, worker).await
+        })
+    })
 }
 
 /// 获取待同步的记录数
-pub fn get_pending_count(table_name: &str) -> i32 {
+pub async fn get_pending_count(table_name: &str) -> i32 {
     let synclog = DataSync::new(table_name);
-    synclog.get_pending_count()
+    synclog.get_pending_count().await
 }
 
 /// 获取待同步的记录列表
-pub fn get_pending_items(table_name: &str, limit: i32) -> Vec<SynclogItem> {
+pub async fn get_pending_items(table_name: &str, limit: i32) -> Vec<SynclogItem> {
     let synclog = DataSync::new(table_name);
-    synclog.get_pending_items(limit)
+    synclog.get_pending_items(limit).await
 }
 
 /// 记录状态变更日志
-pub fn log_status_change(
+pub async fn log_status_change(
     table_name: &str,
     old_status: &str,
     new_status: &str,
@@ -2196,17 +2231,17 @@ pub fn log_status_change(
     worker: &str,
 ) -> Result<(), String> {
     let synclog = DataSync::new(table_name);
-    synclog.log_status_change(old_status, new_status, reason, worker)
+    synclog.log_status_change(old_status, new_status, reason, worker).await
 }
 
 /// 获取状态变更日志
-pub fn get_status_logs(table_name: &str, limit: i32) -> Vec<StateLog> {
+pub async fn get_status_logs(table_name: &str, limit: i32) -> Vec<StateLog> {
     let synclog = DataSync::new(table_name);
-    synclog.get_status_logs(limit)
+    synclog.get_status_logs(limit).await
 }
 
 /// 更新同步统计
-pub fn update_sync_stats(
+pub async fn update_sync_stats(
     table_name: &str,
     downloaded: i32,
     updated: i32,
@@ -2215,29 +2250,29 @@ pub fn update_sync_stats(
     worker: &str,
 ) -> Result<(), String> {
     let synclog = DataSync::new(table_name);
-    synclog.update_sync_stats(downloaded, updated, skipped, failed, worker)
+    synclog.update_sync_stats(downloaded, updated, skipped, failed, worker).await
 }
 
 /// 获取同步统计
-pub fn get_sync_stats(table_name: &str, days: i32) -> Vec<SyncStats> {
+pub async fn get_sync_stats(table_name: &str, days: i32) -> Vec<SyncStats> {
     let sync_queue = DataSync::new(table_name);
-    sync_queue.get_sync_stats(days)
+    sync_queue.get_sync_stats(days).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    async fn test_sync_data_default().await {
+    #[tokio::test]
+    async fn test_sync_data_default() {
         let data = SyncData::default();
         assert_eq!(data.inserted, 0);
         assert_eq!(data.updated, 0);
         assert_eq!(data.skipped, 0);
     }
 
-    #[test]
-    async fn test_sync_result_default().await {
+    #[tokio::test]
+    async fn test_sync_result_default() {
         let result = SyncResult::default();
         assert_eq!(result.res, 0);
         assert!(result.errmsg.is_empty());
@@ -2249,10 +2284,10 @@ mod tests {
         assert_eq!(sync_queue.table_name, "test_table");
     }
 
-    #[test]
+    #[tokio::test]
     async fn test_init_tables() {
         let db = LocalDB::default_instance().expect("创建数据库失败");
-        DataSync::init_tables(&db).expect("初始化表失败");
+        DataSync::init_tables(&db).await.expect("初始化表失败");
 
         // 验证表是否创建成功
         let conn = db.get_conn();
@@ -2295,7 +2330,7 @@ mod tests {
     /// 1. datasync组件独立可用 - 导入datasync组件并调用download_once/upload_once方法
     /// 2. DataState移除同步逻辑后仍能正常工作 - 运行现有测试用例
     /// 3. 现有使用DataState的代码无需修改 - 通过DataState调用同步功能仍能正常工作
-    #[test]
+    #[tokio::test]
     async fn demo_20260306203754() {
         use crate::datastate::DataState;
         use crate::sync_config::TableConfig;
@@ -2517,7 +2552,7 @@ mod tests {
         tester.logger.detail("   - 方法签名保持不变");
     }
 
-    #[test]
+    #[tokio::test]
     async fn test_incremental_sync_with_existing_data() {
         use crate::localdb::LocalDB;
         use base::mylogger;
@@ -2618,7 +2653,7 @@ mod tests {
         logger.detail("\n========== 增量同步测试完成 ==========");
     }
 
-    #[test]
+    #[tokio::test]
     async fn test_incremental_sync_duplicate_idpk() {
         use crate::localdb::LocalDB;
         use base::mylogger;
@@ -2704,7 +2739,7 @@ mod tests {
         logger.detail("\n========== 重复idpk测试完成 ==========");
     }
 
-    #[test]
+    #[tokio::test]
     async fn test_multi_worker_sync_progress() {
         use crate::localdb::LocalDB;
         use base::mylogger;

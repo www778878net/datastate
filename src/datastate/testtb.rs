@@ -84,11 +84,11 @@ impl TestTb {
         
         // 检查id是否是主键，如果不是则替换
         if let Ok(false) = db.is_id_primary_key("testtb").await {
-            let _ = db.ensure_id_is_primary_key("testtb").await.await;
+            let _ = db.ensure_id_is_primary_key("testtb").await;
         }
 
         // 使用 TableConfig 创建 DataState 实例
-        let config = Self::get_config().await;
+        let config = Self::get_config();
         let state = DataState::from_config(&config);
 
         Self { db, audit, state }
@@ -105,7 +105,7 @@ impl TestTb {
         
         // 检查id是否是主键，如果不是则替换
         if let Ok(false) = db.is_id_primary_key("testtb").await {
-            let _ = db.ensure_id_is_primary_key("testtb").await.await;
+            let _ = db.ensure_id_is_primary_key("testtb").await;
         }
 
         // 使用 with_db 方法创建 DataState 实例，传入正确的数据库实例
@@ -182,40 +182,40 @@ impl TestTb {
         }
     }
 
-    pub fn m_add(&self, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str, summary: &str) -> Result<String, String> {
+    pub async fn m_add(&self, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str, summary: &str) -> Result<String, String> {
         self.check_caller("m_add", caller)?;
-        self.state.m_add(record, caller, summary)
+        self.state.m_add(record, caller, summary).await
     }
 
-    pub fn m_save(&self, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str, summary: &str) -> Result<String, String> {
+    pub async fn m_save(&self, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str, summary: &str) -> Result<String, String> {
         self.check_caller("m_save", caller)?;
-        self.state.m_save(record, caller, summary)
+        self.state.m_save(record, caller, summary).await
     }
 
-    pub fn m_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str, summary: &str) -> Result<bool, String> {
+    pub async fn m_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>, caller: &str, summary: &str) -> Result<bool, String> {
         self.check_caller("m_update", caller)?;
-        self.state.m_update(id, record, caller, summary)
+        self.state.m_update(id, record, caller, summary).await
     }
 
-    pub fn m_del(&self, id: &str, caller: &str, summary: &str) -> Result<bool, String> {
+    pub async fn m_del(&self, id: &str, caller: &str, summary: &str) -> Result<bool, String> {
         self.check_caller("m_del", caller)?;
-        self.state.m_del(id, caller, summary)
+        self.state.m_del(id, caller, summary).await
     }
 
     /// 同步保存记录（不自动填充字段，不写 sync_queue）
     /// 用于从服务器同步数据到本地
-    pub fn m_sync_save(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
-        self.state.m_sync_save(record)
+    pub async fn m_sync_save(&self, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<String, String> {
+        self.state.m_sync_save(record).await
     }
 
     /// 同步更新记录（不自动填充字段，不写 sync_queue）
-    pub fn m_sync_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<bool, String> {
-        self.state.m_sync_update(id, record)
+    pub async fn m_sync_update(&self, id: &str, record: &std::collections::HashMap<String, serde_json::Value>) -> Result<bool, String> {
+        self.state.m_sync_update(id, record).await
     }
 
     /// 同步删除记录（不写 sync_queue）
-    pub fn m_sync_del(&self, id: &str) -> Result<bool, String> {
-        self.state.m_sync_del(id)
+    pub async fn m_sync_del(&self, id: &str) -> Result<bool, String> {
+        self.state.m_sync_del(id).await
     }
 }
 
@@ -229,9 +229,9 @@ impl Default for TestTb {
 mod tests {
     use super::*;
 
-    #[test]
-    async fn test_audit_permission().await {
-        let testtb = TestTb::new();
+    #[tokio::test]
+    async fn test_audit_permission() {
+        let testtb = TestTb::new().await;
 
         let mut record = std::collections::HashMap::new();
         record.insert("cid".to_string(), serde_json::json!("c1"));
@@ -240,28 +240,28 @@ mod tests {
         record.insert("data".to_string(), serde_json::json!("d1"));
 
         // testtb 调用（全部允许）
-        let id = testtb.m_save(&record, "testtb", "内部保存").expect("testtb 应该能保存");
-        let _list = testtb.mlist("testtb", 10, "内部列表").expect("testtb 应该能列表");
-        let _found = testtb.getone(&id, "testtb", "内部查询").expect("testtb 应该能查询");
-        testtb.m_del(&id, "testtb", "内部删除").expect("testtb 应该能删除");
+        let id = testtb.m_save(&record, "testtb", "内部保存").await.expect("testtb 应该能保存");
+        let _list = testtb.mlist("testtb", 10, "内部列表").await.expect("testtb 应该能列表");
+        let _found = testtb.getone(&id, "testtb", "内部查询").await.expect("testtb 应该能查询");
+        testtb.m_del(&id, "testtb", "内部删除").await.expect("testtb 应该能删除");
 
         // inventory 调用（允许 m_save/mlist/getone）
-        let id2 = testtb.m_save(&record, "inventory", "库存保存").expect("inventory 应该能保存");
-        let _list = testtb.mlist("inventory", 10, "库存列表").expect("inventory 应该能列表");
-        let _found = testtb.getone(&id2, "inventory", "库存查询").expect("inventory 应该能查询");
-        let result = testtb.m_del(&id2, "inventory", "尝试删除");
+        let id2 = testtb.m_save(&record, "inventory", "库存保存").await.expect("inventory 应该能保存");
+        let _list = testtb.mlist("inventory", 10, "库存列表").await.expect("inventory 应该能列表");
+        let _found = testtb.getone(&id2, "inventory", "库存查询").await.expect("inventory 应该能查询");
+        let result = testtb.m_del(&id2, "inventory", "尝试删除").await;
         assert!(result.is_err(), "inventory 不应该能删除");
 
         // trade 调用（只允许 mlist/getone）
-        let _list = testtb.mlist("trade", 10, "交易列表").expect("trade 应该能列表");
-        let _found = testtb.getone(&id2, "trade", "交易查询").expect("trade 应该能查询");
-        let result = testtb.m_save(&record, "trade", "尝试保存");
+        let _list = testtb.mlist("trade", 10, "交易列表").await.expect("trade 应该能列表");
+        let _found = testtb.getone(&id2, "trade", "交易查询").await.expect("trade 应该能查询");
+        let result = testtb.m_save(&record, "trade", "尝试保存").await;
         assert!(result.is_err(), "trade 不应该能保存");
-        let result = testtb.m_del(&id2, "trade", "尝试删除");
+        let result = testtb.m_del(&id2, "trade", "尝试删除").await;
         assert!(result.is_err(), "trade 不应该能删除");
 
         // unknown 调用（全部拒绝）
-        let result = testtb.mlist("unknown", 10, "未知调用");
+        let result = testtb.mlist("unknown", 10, "未知调用").await;
         assert!(result.is_err());
     }
 }

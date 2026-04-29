@@ -94,7 +94,7 @@ impl DataManage {
     /// 注册表状态
     pub async fn register(&self, config: TableConfig) -> Result<DataState, String> {
         let name = config.name.clone();
-        if name.is_empty().await {
+        if name.is_empty() {
             return Err("表名不能为空".to_string());
         }
 
@@ -104,7 +104,7 @@ impl DataManage {
         {
             let mut states = self.states.write();
             // 双重检查：再次检查是否已存在
-            if let Some(existing) = states.get(&sync_key).await {
+            if let Some(existing) = states.get(&sync_key) {
                 return Ok(existing.clone());
             }
 
@@ -180,7 +180,7 @@ impl DataManage {
     /// 注销表状态
     pub async fn unregister(&self, name: &str) -> SyncResult {
         let mut states = self.states.write();
-        if states.remove(name).is_none().await {
+        if states.remove(name).is_none() {
             return SyncResult {
                 res: -1,
                 errmsg: format!("状态不存在: {}", name),
@@ -218,7 +218,7 @@ impl DataManage {
                     "status_name": state.base.get_status_name(),
                     "last_download": state.datasync.last_download,
                     "last_upload": state.datasync.last_upload,
-                    "error_message": if state.base.is_error().await { &state.datasync.error_message } else { "" },
+                    "error_message": if state.base.is_error() { &state.datasync.error_message } else { "" },
                 })
             })
             .collect()
@@ -372,7 +372,7 @@ impl DataManage {
             keys
         };
 
-        if state_keys.is_empty().await {
+        if state_keys.is_empty() {
             let logger = mylogger!();
             logger.info("[DataManage] sync_once: states 为空，没有注册的表");
         }
@@ -524,8 +524,8 @@ mod tests {
     use crate::sync_config::get_system_columns;
     use base::mylogger::MyLogger;
 
-    #[test]
-    async fn test_new().await {
+    #[tokio::test]
+    async fn test_new() {
         let dm = DataManage::new();
         assert!(dm.is_ok());
     }
@@ -537,8 +537,8 @@ mod tests {
         let _ = dm;
     }
 
-    #[test]
-    fn test_register_table() {
+    #[tokio::test]
+    async fn test_register_table() {
         // 使用默认 DataManage（内部已有 LocalDB）- 按 plan2log.md 正确示例
         let dm = DataManage::default();
 
@@ -555,15 +555,15 @@ mod tests {
         };
 
         // 注册到 DataManage（DM 自动控制下载和上传）
-        let result = dm.register(config);
+        let result = dm.register(config).await;
         assert!(result.is_ok(), "注册失败");
     }
 
     /// DEMO 测试：注册本地表
     /// 任务：注册本地表 (steam_scan_queue, steam_item_history) 用于 Steam 市场扫描微服务
     /// 方式：DataManage::default() + 配置 columns + dm.register() + dm.sync_once()
-    #[test]
-    fn demo_20260301203728_Step0() {
+    #[tokio::test]
+    async fn demo_20260301203728_Step0() {
         use base::project_path::ProjectPath;
         use serde_json::json;
 
@@ -619,7 +619,7 @@ mod tests {
             download_condition: Some(download_condition),
             ..Default::default()
         };
-        let result = dm.register(config_scan_queue);
+        let result = dm.register(config_scan_queue).await;
         if result.is_ok() {
             logger.detail("steam_scan_queue 表注册成功（带 worker 过滤条件）");
         } else {
@@ -661,7 +661,7 @@ mod tests {
             upload_interval: 300,
             ..Default::default()
         };
-        let result = dm.register(config_item_history);
+        let result = dm.register(config_item_history).await;
         if result.is_ok() {
             logger.detail("steam_item_history 表注册成功");
         } else {
@@ -673,12 +673,12 @@ mod tests {
         logger.detail(&format!("已注册的表: {:?}", registered));
 
         // 8. 验证本地表结构
-        let tables = dm.db().query("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'steam_%'", &[]).unwrap_or_default();
+        let tables = dm.db().query_sync("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'steam_%'", &[]).unwrap_or_default();
         logger.detail(&format!("本地 steam 表: {:?}", tables.iter().map(|r| r.get("name").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("")).collect::<Vec<_>>()));
 
         // 9. 执行同步，下载数据
         logger.detail("开始执行 dm.sync_once() 自动同步...");
-        let sync_result = dm.sync_once();
+        let sync_result = dm.sync_once().await;
         logger.detail(&format!("sync_once() 结果: res={}, inserted={}, updated={}, errmsg={}",
             sync_result.res,
             sync_result.datawf.inserted,
@@ -687,8 +687,8 @@ mod tests {
         ));
 
         // 10. 验证下载数据
-        let scan_queue_count = dm.db().count("steam_scan_queue").unwrap_or(0);
-        let item_history_count = dm.db().count("steam_item_history").unwrap_or(0);
+        let scan_queue_count = dm.db().count("steam_scan_queue").await.unwrap_or(0);
+        let item_history_count = dm.db().count("steam_item_history").await.unwrap_or(0);
         logger.detail(&format!("steam_scan_queue 本地记录数: {}", scan_queue_count));
         logger.detail(&format!("steam_item_history 本地记录数: {}", item_history_count));
 

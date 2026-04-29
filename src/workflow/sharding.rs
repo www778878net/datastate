@@ -183,7 +183,7 @@ impl ShardingManager {
     /// 1. 创建当前表
     /// 2. 创建未来几天的表
     /// 3. 删除所有过期表（查找所有表名开头的表）
-    pub fn perform_maintenance(&mut self) -> Result<MaintenanceResult, String> {
+    pub async fn perform_maintenance(&mut self) -> Result<MaintenanceResult, String> {
         if self.config.shard_type == ShardType::None {
             return Ok(MaintenanceResult::default());
         }
@@ -204,14 +204,14 @@ impl ShardingManager {
             let date = Local::now().date_naive() + Duration::days(i as i64);
             let table_name = self.config.get_table_name(Some(date));
 
-            if !self.table_exists(&table_name)? {
-                self.create_sharding_table(&table_name)?;
+            if !self.table_exists(&table_name).await? {
+                self.create_sharding_table(&table_name).await?;
                 result.tables_created += 1;
             }
         }
 
         // 2. 查找所有匹配 {base_table}_ 开头的表，删除所有过期的
-        let all_tables = self.get_all_shard_tables()?;
+        let all_tables = self.get_all_shard_tables().await?;
         let cutoff_date = Local::now().date_naive() - Duration::days(retention as i64);
         let base_prefix = format!("{}_", self.config.base_table);
 
@@ -225,7 +225,7 @@ impl ShardingManager {
             if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y%m%d") {
                 // 如果日期早于 cutoff_date，删除
                 if date < cutoff_date {
-                    if self.drop_old_table(&table_name)? {
+                    if self.drop_old_table(&table_name).await? {
                         result.tables_dropped += 1;
                     }
                 }
@@ -233,7 +233,7 @@ impl ShardingManager {
                 // 按月分表的情况
                 let cutoff_month = cutoff_date.format("%Y%m").to_string();
                 if date_str < cutoff_month.as_str() {
-                    if self.drop_old_table(&table_name)? {
+                    if self.drop_old_table(&table_name).await? {
                         result.tables_dropped += 1;
                     }
                 }

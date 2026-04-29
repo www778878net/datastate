@@ -37,8 +37,8 @@ pub async fn init_workflow_tables(db: &mut Sqlite78, _up: &UpInfo) -> Result<Str
 }
 
 /// 使用默认数据库路径初始化工作流表
-pub fn init_workflow_tables_with_default_path() -> Result<String, String> {
+pub async fn init_workflow_tables_with_default_path() -> Result<String, String> {
     let mut db = Sqlite78::with_default_path();
     let up = UpInfo::new();
-    init_workflow_tables(&mut db, &up)
+    init_workflow_tables(&mut db, &up).await
 }

@@ -13,12 +13,12 @@ pub use audit_log_state::{AuditLogDataState, AuditLogRecord, AUDIT_LOG_CREATE_SQ
 
 pub use audit_perm_state::{AuditPermDataState, AuditPermRecord, AUDIT_PERM_CREATE_SQL};
 
-pub fn get_audit_logs(tablename: Option<&str>, days: i32) -> Vec<AuditLogRecord> {
+pub async fn get_audit_logs(tablename: Option<&str>, days: i32) -> Vec<AuditLogRecord> {
     let audit_log_state = AuditLogDataState::new();
-    audit_log_state.get_audit_logs(tablename, days)
+    audit_log_state.get_audit_logs(tablename, days).await
 }
 
-pub fn get_stats_by_date_range(start_date: &str, end_date: &str) -> Vec<AuditLogRecord> {
+pub async fn get_stats_by_date_range(start_date: &str, end_date: &str) -> Vec<AuditLogRecord> {
     let audit_log_state = AuditLogDataState::new();
-    audit_log_state.get_stats_by_date_range(start_date, end_date)
+    audit_log_state.get_stats_by_date_range(start_date, end_date).await
 }

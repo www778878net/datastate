@@ -128,7 +128,7 @@ impl Synclog {
 
     /// 获取需要查询的分表列表（用于读操作：查询过去N天的表）
     /// 返回实际存在的分表
-    pub fn get_query_shard_tables(&self, days_back: i32) -> Vec<String> {
+    pub async fn get_query_shard_tables(&self, days_back: i32) -> Vec<String> {
         let mut tables = Vec::new();
         
         if let Some(ref _manager) = self.sharding_manager {
@@ -139,7 +139,7 @@ impl Synclog {
                 let date = today - chrono::Duration::days(i as i64);
                 let table_name = config.get_table_name(Some(date));
                 // 只添加实际存在的表
-                if self.table_exists(&table_name) {
+                if self.table_exists(&table_name).await {
                     tables.push(table_name);
                 }
             }
@@ -149,21 +149,21 @@ impl Synclog {
     }
 
     /// 检查表是否存在
-    fn table_exists(&self, table_name: &str) -> bool {
+    async fn table_exists(&self, table_name: &str) -> bool {
         let sql = format!(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='{}'",
             table_name
         );
         let up = UpInfo::new();
-        match self.db.do_get(&sql, &[], &up) {
+        match self.db.do_get(&sql, &[], &up).await {
             Ok(rows) => !rows.is_empty(),
             Err(_) => false,
         }
     }
 
     /// 获取过去7天的分表列表（默认查询范围）
-    pub fn get_default_query_tables(&self) -> Vec<String> {
-        self.get_query_shard_tables(7)
+    pub async fn get_default_query_tables(&self) -> Vec<String> {
+        self.get_query_shard_tables(7).await
     }
 
     /// 获取上传查询的分表列表（用于读取待同步记录：延迟切换策略）
@@ -204,9 +204,9 @@ impl Synclog {
     }
 
     /// 执行分表维护
-    pub fn perform_maintenance(&mut self) -> Result<MaintenanceResult, String> {
+    pub async fn perform_maintenance(&mut self) -> Result<MaintenanceResult, String> {
         if let Some(ref mut manager) = self.sharding_manager {
-            return manager.perform_maintenance();
+            return manager.perform_maintenance().await;
         }
         Ok(MaintenanceResult::default())
     }
@@ -215,8 +215,8 @@ impl Synclog {
     pub async fn create_today_table(&self) -> Result<(), String> {
         if let Some(ref manager) = self.sharding_manager {
             let table_name = self.get_table_name();
-            if !manager.table_exists(&table_name)? {
-                manager.create_sharding_table(&table_name)?;
+            if !manager.table_exists(&table_name).await? {
+                manager.create_sharding_table(&table_name).await?;
 
                 // 创建索引
                 let conn = self.db.get_conn()?;
@@ -230,9 +230,9 @@ impl Synclog {
     }
 
     /// 添加记录到 synclog
-    pub fn insert(&self, data: &HashMap<String, Value>, up: &UpInfo) -> Result<String, String> {
+    pub async fn insert(&self, data: &HashMap<String, Value>, up: &UpInfo) -> Result<String, String> {
         let table_name = self.get_table_name();
-        self.create_today_table()?;
+        self.create_today_table().await?;
 
         let id = data
             .get("id")
@@ -297,20 +297,20 @@ impl Synclog {
                 &cid as &dyn rusqlite::ToSql,
             ],
             up,
-        )?;
+        ).await?;
 
         Ok(id)
     }
 
     /// 获取待同步记录（从默认查询范围的所有分表中获取）
-    pub fn get_pending_items(&self, limit: i32) -> Result<Vec<HashMap<String, Value>>, String> {
-        let tables = self.get_default_query_tables();
+    pub async fn get_pending_items(&self, limit: i32) -> Result<Vec<HashMap<String, Value>>, String> {
+        let tables = self.get_default_query_tables().await;
         let up = UpInfo::new();
         let mut all_items = Vec::new();
 
         for table_name in tables {
             let sql = format!("SELECT * FROM {} WHERE synced = 0 ORDER BY idpk ASC LIMIT ?", table_name);
-            match self.db.do_get(&sql, &[&limit as &dyn rusqlite::ToSql], &up) {
+            match self.db.do_get(&sql, &[&limit as &dyn rusqlite::ToSql], &up).await {
                 Ok(mut items) => {
                     all_items.append(&mut items);
                     if all_items.len() >= limit as usize {
@@ -330,14 +330,14 @@ impl Synclog {
     }
 
     /// 获取待上传记录（应用延迟切换策略：00:00-00:30 不查询今天的表）
-    pub fn get_pending_upload_items(&self, limit: i32) -> Result<Vec<HashMap<String, Value>>, String> {
+    pub async fn get_pending_upload_items(&self, limit: i32) -> Result<Vec<HashMap<String, Value>>, String> {
         let tables = self.get_default_upload_query_tables();
         let up = UpInfo::new();
         let mut all_items = Vec::new();
 
         for table_name in tables {
             let sql = format!("SELECT * FROM {} WHERE synced = 0 ORDER BY idpk ASC LIMIT ?", table_name);
-            match self.db.do_get(&sql, &[&limit as &dyn rusqlite::ToSql], &up) {
+            match self.db.do_get(&sql, &[&limit as &dyn rusqlite::ToSql], &up).await {
                 Ok(mut items) => {
                     all_items.append(&mut items);
                     if all_items.len() >= limit as usize {
@@ -357,16 +357,16 @@ impl Synclog {
     }
 
     /// 获取待同步记录数（统计默认查询范围的所有分表）
-    pub fn get_pending_count(&self) -> Result<i32, String> {
-        let tables = self.get_default_query_tables();
+    pub async fn get_pending_count(&self) -> Result<i32, String> {
+        let tables = self.get_default_query_tables().await;
         let up = UpInfo::new();
         let mut total = 0;
 
         for table_name in tables {
             let sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE synced = 0", table_name);
-            if let Ok(rows) = self.db.do_get(&sql, &[], &up) {
+            if let Ok(rows) = self.db.do_get(&sql, &[], &up).await {
                 if let Some(row) = rows.first() {
-                    if let Some(cnt) = row.get("cnt").and_then(|v| v.as_i64()) {
+                    if let Some(cnt) = row.get("cnt").and_then(|v: &serde_json::Value| v.as_i64()) {
                         total += cnt as i32;
                     }
                 }
@@ -377,16 +377,16 @@ impl Synclog {
     }
 
     /// 获取待上传记录数（应用延迟切换策略：00:00-00:30 不统计今天的表）
-    pub fn get_pending_upload_count(&self) -> Result<i32, String> {
+    pub async fn get_pending_upload_count(&self) -> Result<i32, String> {
         let tables = self.get_default_upload_query_tables();
         let up = UpInfo::new();
         let mut total = 0;
 
         for table_name in tables {
             let sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE synced = 0", table_name);
-            if let Ok(rows) = self.db.do_get(&sql, &[], &up) {
+            if let Ok(rows) = self.db.do_get(&sql, &[], &up).await {
                 if let Some(row) = rows.first() {
-                    if let Some(cnt) = row.get("cnt").and_then(|v| v.as_i64()) {
+                    if let Some(cnt) = row.get("cnt").and_then(|v: &serde_json::Value| v.as_i64()) {
                         total += cnt as i32;
                     }
                 }
@@ -397,7 +397,7 @@ impl Synclog {
     }
 
     /// 标记已同步（根据记录所在的分表分别更新）
-    pub fn mark_synced(&self, items: &[HashMap<String, Value>]) -> Result<(), String> {
+    pub async fn mark_synced(&self, items: &[HashMap<String, Value>]) -> Result<(), String> {
         if items.is_empty() {
             return Ok(());
         }
@@ -406,10 +406,10 @@ impl Synclog {
         let mut table_groups: HashMap<String, Vec<i64>> = HashMap::new();
         
         for item in items {
-            if let Some(idpk) = item.get("idpk").and_then(|v| v.as_i64()) {
+            if let Some(idpk) = item.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()) {
                 // 这里简化处理：实际应用中需要知道记录属于哪个分表
                 // 为了简单起见，我们尝试在所有分表中更新
-                let tables = self.get_default_query_tables();
+                let tables = self.get_default_query_tables().await;
                 for table in tables {
                     table_groups.entry(table).or_default().push(idpk);
                 }
@@ -435,7 +435,7 @@ impl Synclog {
                 params.push(id);
             }
 
-            let _ = self.db.do_m(&sql, &params, &up);
+            let _ = self.db.do_m(&sql, &params, &up).await;
         }
 
         Ok(())
@@ -447,9 +447,9 @@ impl Synclog {
     }
 
     /// 获取所有 synclog 分表
-    pub fn get_all_shard_tables(&self) -> Result<Vec<String>, String> {
+    pub async fn get_all_shard_tables(&self) -> Result<Vec<String>, String> {
         if let Some(ref manager) = self.sharding_manager {
-            return manager.get_all_shard_tables();
+            return manager.get_all_shard_tables().await;
         }
         Ok(vec!["synclog".to_string()])
     }
@@ -459,16 +459,16 @@ impl Synclog {
     /// 获取指定表名的待同步记录数
     /// 直接用基础表名查询 synclog（兼容分表和非分表）
     /// 如果昨天的数据已全部同步，更新进度文件
-    pub fn get_pending_count_by_tbname(&self, tbname: &str) -> Result<i32, String> {
+    pub async fn get_pending_count_by_tbname(&self, tbname: &str) -> Result<i32, String> {
         let synclog_tables = self.get_default_upload_query_tables();
         let up = UpInfo::new();
         let mut total = 0;
 
         for synclog_table in &synclog_tables {
             let sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE tbname = ? AND synced = 0", synclog_table);
-            if let Ok(rows) = self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql], &up) {
+            if let Ok(rows) = self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql], &up).await {
                 if let Some(row) = rows.first() {
-                    if let Some(cnt) = row.get("cnt").and_then(|v| v.as_i64()) {
+                    if let Some(cnt) = row.get("cnt").and_then(|v: &serde_json::Value| v.as_i64()) {
                         total += cnt as i32;
                     }
                 }
@@ -495,7 +495,7 @@ impl Synclog {
 
     /// 获取指定表名的待同步记录
     /// 直接用基础表名查询 synclog（兼容分表和非分表）
-    pub fn get_pending_items_by_tbname(&self, tbname: &str, limit: i32) -> Result<Vec<HashMap<String, Value>>, String> {
+    pub async fn get_pending_items_by_tbname(&self, tbname: &str, limit: i32) -> Result<Vec<HashMap<String, Value>>, String> {
         let synclog_tables = self.get_default_upload_query_tables();
         let up = UpInfo::new();
         let mut all_items = Vec::new();
@@ -509,7 +509,7 @@ impl Synclog {
             if remaining == 0 {
                 break;
             }
-            match self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql, &(remaining as i32) as &dyn rusqlite::ToSql], &up) {
+            match self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql, &(remaining as i32) as &dyn rusqlite::ToSql], &up).await {
                 Ok(mut items) => {
                     all_items.append(&mut items);
                     if all_items.len() >= limit as usize {
@@ -625,13 +625,13 @@ impl Synclog {
     }
 
     /// 标记已同步（接受 idpk 列表）
-    pub fn mark_synced_by_idpks(&self, idpk_list: &[i64]) -> Result<(), String> {
+    pub async fn mark_synced_by_idpks(&self, idpk_list: &[i64]) -> Result<(), String> {
         if idpk_list.is_empty() {
             return Ok(());
         }
 
         // 尝试在所有分表中更新
-        let tables = self.get_default_query_tables();
+        let tables = self.get_default_query_tables().await;
         let up = UpInfo::new();
 
         let placeholders: Vec<String> = idpk_list.iter().map(|_| "?".to_string()).collect();
@@ -646,19 +646,19 @@ impl Synclog {
             for id in idpk_list {
                 params.push(id);
             }
-            let _ = self.db.do_m(&sql, &params, &up);
+            let _ = self.db.do_m(&sql, &params, &up).await;
         }
 
         Ok(())
     }
 
     /// 标记已同步（接受 id 列表）
-    pub fn mark_synced_by_ids(&self, id_list: &[String]) -> Result<(), String> {
+    pub async fn mark_synced_by_ids(&self, id_list: &[String]) -> Result<(), String> {
         if id_list.is_empty() {
             return Ok(());
         }
 
-        let tables = self.get_default_query_tables();
+        let tables = self.get_default_query_tables().await;
         let up = UpInfo::new();
         let placeholders: Vec<String> = id_list.iter().map(|_| "?".to_string()).collect();
 
@@ -672,15 +672,15 @@ impl Synclog {
             for id in id_list {
                 params.push(id);
             }
-            let _ = self.db.do_m(&sql, &params, &up);
+            let _ = self.db.do_m(&sql, &params, &up).await;
         }
 
         Ok(())
     }
 
     /// 标记失败（接受 id 和错误信息）
-    pub fn mark_failed_by_id(&self, id: &str, errinfo: &str) -> Result<(), String> {
-        let tables = self.get_default_query_tables();
+    pub async fn mark_failed_by_id(&self, id: &str, errinfo: &str) -> Result<(), String> {
+        let tables = self.get_default_query_tables().await;
         let up = UpInfo::new();
         // 截取错误信息，避免递归膨胀（MySQL错误中可能包含完整SQL+原始lasterrinfo）
         let truncated = Self::truncate_errinfo(errinfo);
@@ -690,15 +690,15 @@ impl Synclog {
                 "UPDATE {} SET synced = -1, lasterrinfo = '{}' WHERE id = '{}'",
                 table_name, truncated, id
             );
-            let _ = self.db.do_m(&sql, &[], &up);
+            let _ = self.db.do_m(&sql, &[], &up).await;
         }
 
         Ok(())
     }
 
     /// 标记失败（接受 idrow 和错误信息）
-    pub fn mark_failed_by_idrow(&self, idrow: &str, errinfo: &str) -> Result<(), String> {
-        let tables = self.get_default_query_tables();
+    pub async fn mark_failed_by_idrow(&self, idrow: &str, errinfo: &str) -> Result<(), String> {
+        let tables = self.get_default_query_tables().await;
         let up = UpInfo::new();
         // 截取错误信息，避免递归膨胀（MySQL错误中可能包含完整SQL+原始lasterrinfo）
         let truncated = Self::truncate_errinfo(errinfo);
@@ -708,7 +708,7 @@ impl Synclog {
                 "UPDATE {} SET synced = -1, lasterrinfo = '{}' WHERE idrow = '{}'",
                 table_name, truncated, idrow
             );
-            let _ = self.db.do_m(&sql, &[], &up);
+            let _ = self.db.do_m(&sql, &[], &up).await;
         }
 
         Ok(())
@@ -716,8 +716,8 @@ impl Synclog {
 
     /// 将 UPDATE 失败的记录转换为 INSERT（用于重试）
     /// 当服务器返回"没有找到匹配的记录"时，尝试改为 INSERT
-    pub fn convert_update_to_insert(&self, id: &str) -> Result<(), String> {
-        let tables = self.get_default_query_tables();
+    pub async fn convert_update_to_insert(&self, id: &str) -> Result<(), String> {
+        let tables = self.get_default_query_tables().await;
         let up = UpInfo::new();
 
         for table_name in &tables {
@@ -727,7 +727,7 @@ impl Synclog {
                 table_name
             );
             
-            if let Ok(rows) = self.db.do_get(&select_sql, &[&id as &dyn rusqlite::ToSql], &up) {
+            if let Ok(rows) = self.db.do_get(&select_sql, &[&id as &dyn rusqlite::ToSql], &up).await {
                 if let Some(row) = rows.first() {
                     let idpk: i64 = row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0);
                     let tbname: String = row.get("tbname").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -740,7 +740,7 @@ impl Synclog {
                     if idpk > 0 && !tbname.is_empty() && !idrow.is_empty() {
                         // 从本地数据库查询原始数据
                         let data_sql = format!("SELECT * FROM `{}` WHERE id = ? LIMIT 1", tbname);
-                        if let Ok(data_rows) = self.db.do_get(&data_sql, &[&idrow as &dyn rusqlite::ToSql], &up) {
+                        if let Ok(data_rows) = self.db.do_get(&data_sql, &[&idrow as &dyn rusqlite::ToSql], &up).await {
                             if let Some(data_row) = data_rows.first() {
                                 // 构建 INSERT SQL
                                 let (cmdtext, params) = Self::build_insert_sql_from_row(&tbname, data_row);
@@ -761,7 +761,7 @@ impl Synclog {
                                         &idpk as &dyn rusqlite::ToSql,
                                     ],
                                     &up,
-                                );
+                                ).await;
                                 
                                 return Ok(());
                             }
@@ -814,7 +814,7 @@ impl Synclog {
             return Ok(());
         }
 
-        let tables = self.get_default_query_tables();
+        let tables = self.get_default_query_tables().await;
         let up = UpInfo::new();
         let placeholders: Vec<String> = idrow_list.iter().map(|_| "?".to_string()).collect();
 
@@ -828,7 +828,7 @@ impl Synclog {
             for idrow in idrow_list {
                 params.push(idrow);
             }
-            let _ = self.db.do_m(&sql, &params, &up);
+            let _ = self.db.do_m(&sql, &params, &up).await;
         }
 
         Ok(())
@@ -846,7 +846,7 @@ impl Synclog {
         cid: &str,
     ) -> Result<i64, String> {
         let table_name = self.get_table_name();
-        self.create_today_table()?;
+        self.create_today_table().await?;
 
         let uptime = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let cmdtextmd5 = format!("{:x}", md5::compute(cmdtext));
@@ -854,7 +854,7 @@ impl Synclog {
         let up = UpInfo::new();
 
         // 首先检查是否已有未同步的记录
-        let check_tables = self.get_default_query_tables();
+        let check_tables = self.get_default_query_tables().await;
         let mut existing_idpk: Option<i64> = None;
 
         for check_table in &check_tables {
@@ -866,7 +866,7 @@ impl Synclog {
                 &check_sql,
                 &[&tbname as &dyn rusqlite::ToSql, &record_id as &dyn rusqlite::ToSql],
                 &up,
-            );
+            ).await;
             if let Ok(rows) = result {
                 if let Some(row) = rows.first() {
                     if let Some(idpk) = row.get("idpk").and_then(|v| v.as_i64()) {
@@ -879,7 +879,7 @@ impl Synclog {
 
         if let Some(idpk) = existing_idpk {
             // 更新现有记录（找到它所在的表）
-            let update_tables = self.get_default_query_tables();
+            let update_tables = self.get_default_query_tables().await;
             let mut updated = false;
 
             for update_table in update_tables {
@@ -899,7 +899,7 @@ impl Synclog {
                         &idpk as &dyn rusqlite::ToSql,
                     ],
                     &up,
-                );
+                ).await;
                 if result.is_ok() {
                     updated = true;
                     break;
@@ -937,7 +937,7 @@ impl Synclog {
                     &uptime as &dyn rusqlite::ToSql,
                 ],
                 &up,
-            )?;
+            ).await?;
 
             // 获取插入的 idpk
             let conn = self.db.get_conn()?;

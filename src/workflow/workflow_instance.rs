@@ -157,9 +157,9 @@ impl WorkflowInstance {
     }
 
     /// 执行分表维护
-    pub fn perform_maintenance(&mut self) -> Result<super::MaintenanceResult, String> {
+    pub async fn perform_maintenance(&mut self) -> Result<super::MaintenanceResult, String> {
         if let Some(ref mut manager) = self.sharding_manager {
-            return manager.perform_maintenance();
+            return manager.perform_maintenance().await;
         }
         Ok(super::MaintenanceResult::default())
     }
@@ -183,9 +183,9 @@ impl WorkflowInstance {
     }
 
     /// 插入工作流实例
-    pub fn insert(&self, data: &HashMap<String, Value>, up: &UpInfo) -> Result<String, String> {
+    pub async fn insert(&self, data: &HashMap<String, Value>, up: &UpInfo) -> Result<String, String> {
         let table_name = self.get_table_name();
-        self.create_today_table()?;
+        self.create_today_table().await?;
 
         let id = data
             .get("id")
@@ -331,24 +331,24 @@ impl WorkflowInstance {
     }
 
     /// 根据 ID 查询工作流实例
-    pub fn get(&self, id: &str, up: &UpInfo) -> Result<Option<HashMap<String, Value>>, String> {
-        self.create_today_table()?;
+    pub async fn get(&self, id: &str, up: &UpInfo) -> Result<Option<HashMap<String, Value>>, String> {
+        self.create_today_table().await?;
         let table_name = self.get_table_name();
         let sql = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = self.db.do_get(&sql, &[&id as &dyn rusqlite::ToSql], up)?;
+        let rows = self.db.do_get(&sql, &[&id as &dyn rusqlite::ToSql], up).await?;
         Ok(rows.into_iter().next())
     }
 
     /// 更新工作流状态
-    pub fn update_state(&self, id: &str, state: i32, up: &UpInfo) -> Result<(), String> {
+    pub async fn update_state(&self, id: &str, state: i32, up: &UpInfo) -> Result<(), String> {
         let table_name = self.get_table_name();
         let sql = format!("UPDATE {} SET state = ? WHERE id = ?", table_name);
-        self.db.do_m(&sql, &[&state as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql], up)?;
+        self.db.do_m(&sql, &[&state as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql], up).await?;
         Ok(())
     }
 
     /// 标记工作流完成（state=2，记录成功信息）
-    pub fn mark_completed(&self, id: &str, info: &str, up: &UpInfo) -> Result<(), String> {
+    pub async fn mark_completed(&self, id: &str, info: &str, up: &UpInfo) -> Result<(), String> {
         let table_name = self.get_table_name();
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let sql = format!(
@@ -359,12 +359,12 @@ impl WorkflowInstance {
             &sql,
             &[&now as &dyn rusqlite::ToSql, &info as &dyn rusqlite::ToSql, &now as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql],
             up
-        )?;
+        ).await?;
         Ok(())
     }
 
     /// 标记工作流失败（state=3，记录错误信息）
-    pub fn mark_failed(&self, id: &str, errinfo: &str, up: &UpInfo) -> Result<(), String> {
+    pub async fn mark_failed(&self, id: &str, errinfo: &str, up: &UpInfo) -> Result<(), String> {
         let table_name = self.get_table_name();
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let sql = format!(
@@ -375,25 +375,25 @@ impl WorkflowInstance {
             &sql,
             &[&now as &dyn rusqlite::ToSql, &errinfo as &dyn rusqlite::ToSql, &now as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql],
             up
-        )?;
+        ).await?;
         Ok(())
     }
 
     /// 查询运行中的工作流（state = 1）
-    pub fn get_running(&self, up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
+    pub async fn get_running(&self, up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
         let table_name = self.get_table_name();
         let sql = format!("SELECT * FROM {} WHERE state = 1 ORDER BY priority DESC", table_name);
-        self.db.do_get(&sql, &[], up)
+        self.db.do_get(&sql, &[], up).await
     }
 
     /// 查询指定工作流定义的所有实例
-    pub fn get_by_workflow(&self, idworkflowdefinition: &str, up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
+    pub async fn get_by_workflow(&self, idworkflowdefinition: &str, up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
         let table_name = self.get_table_name();
         let sql = format!(
             "SELECT * FROM {} WHERE idworkflowdefinition = ? ORDER BY starttime DESC",
             table_name
         );
-        self.db.do_get(&sql, &[&idworkflowdefinition as &dyn rusqlite::ToSql], up)
+        self.db.do_get(&sql, &[&idworkflowdefinition as &dyn rusqlite::ToSql], up).await
     }
 
     /// 获取底层数据库引用
@@ -402,15 +402,15 @@ impl WorkflowInstance {
     }
 
     /// 根据 ID 查询记录
-    pub fn get_by_id(&self, id: &str, up: &UpInfo) -> Result<Option<HashMap<String, Value>>, String> {
+    pub async fn get_by_id(&self, id: &str, up: &UpInfo) -> Result<Option<HashMap<String, Value>>, String> {
         let table_name = self.get_table_name();
         let sql = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = self.db.do_get(&sql, &[&id as &dyn rusqlite::ToSql], up)?;
+        let rows = self.db.do_get(&sql, &[&id as &dyn rusqlite::ToSql], up).await?;
         Ok(rows.into_iter().next())
     }
 
     /// 更新记录（完整更新）
-    pub fn update(&self, data: &HashMap<String, Value>, up: &UpInfo) -> Result<(), String> {
+    pub async fn update(&self, data: &HashMap<String, Value>, up: &UpInfo) -> Result<(), String> {
         let id = data.get("id")
             .and_then(|v: &serde_json::Value| v.as_str())
             .ok_or_else(|| "缺少 id 字段".to_string())?;
@@ -464,23 +464,23 @@ impl WorkflowInstance {
         let sql = format!("UPDATE {} SET {} WHERE id = ?", table_name, set_clauses.join(", "));
         params.push(&id as &dyn rusqlite::ToSql);
 
-        self.db.do_m(&sql, &params, up)?;
+        self.db.do_m(&sql, &params, up).await?;
         Ok(())
     }
 
     /// 查询记录列表
-    pub fn query_list(&self, condition: &str, params: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
+    pub async fn query_list(&self, condition: &str, params: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
         let table_name = self.get_table_name();
         let sql = if condition.is_empty() {
             format!("SELECT * FROM {}", table_name)
         } else {
             format!("SELECT * FROM {} WHERE {}", table_name, condition)
         };
-        self.db.do_get(&sql, params, up)
+        self.db.do_get(&sql, params, up).await
     }
 
     /// 分页查询
-    pub fn query_page(&self, condition: &str, params: &[&dyn rusqlite::ToSql], offset: i32, limit: i32, up: &UpInfo) -> Result<(Vec<HashMap<String, Value>>, i32), String> {
+    pub async fn query_page(&self, condition: &str, params: &[&dyn rusqlite::ToSql], offset: i32, limit: i32, up: &UpInfo) -> Result<(Vec<HashMap<String, Value>>, i32), String> {
         let table_name = self.get_table_name();
         let sql = if condition.is_empty() {
             format!("SELECT * FROM {} LIMIT ? OFFSET ?", table_name)
@@ -493,7 +493,7 @@ impl WorkflowInstance {
         all_params.push(&limit as &dyn rusqlite::ToSql);
         all_params.push(&offset as &dyn rusqlite::ToSql);
 
-        let records = self.db.do_get(&sql, &all_params, up)?;
+        let records = self.db.do_get(&sql, &all_params, up).await?;
 
         // 查询总数
         let count_sql = if condition.is_empty() {
@@ -501,7 +501,7 @@ impl WorkflowInstance {
         } else {
             format!("SELECT COUNT(*) as cnt FROM {} WHERE {}", table_name, condition)
         };
-        let count_rows = self.db.do_get(&count_sql, params, up)?;
+        let count_rows = self.db.do_get(&count_sql, params, up).await?;
         let total = count_rows.first()
             .and_then(|row| row.get("cnt").and_then(|v: &serde_json::Value| v.as_i64()))
             .unwrap_or(0) as i32;
@@ -510,10 +510,10 @@ impl WorkflowInstance {
     }
 
     /// 删除记录
-    pub fn delete(&self, id: &str, up: &UpInfo) -> Result<(), String> {
+    pub async fn delete(&self, id: &str, up: &UpInfo) -> Result<(), String> {
         let table_name = self.get_table_name();
         let sql = format!("DELETE FROM {} WHERE id = ?", table_name);
-        self.db.do_m(&sql, &[&id as &dyn rusqlite::ToSql], up)?;
+        self.db.do_m(&sql, &[&id as &dyn rusqlite::ToSql], up).await?;
         Ok(())
     }
 }

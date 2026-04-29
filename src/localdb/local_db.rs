@@ -493,6 +493,50 @@ impl LocalDB {
         Ok(result)
     }
 
+    /// 查询数据（同步版本，用于 spawn_blocking）
+    pub fn query_sync(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<HashMap<String, Value>>, String> {
+        use std::time::Instant;
+        let start = Instant::now();
+
+        let conn = self.conn.blocking_lock();
+
+        let mut stmt = conn.prepare(sql)
+            .map_err(|e| format!("准备语句失败: {}", e))?;
+
+        let column_names: Vec<String> = stmt.column_names()
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        let rows = stmt.query(params)
+            .map_err(|e| format!("查询失败: {}", e))?;
+
+        let result = Self::process_rows(rows, &column_names)?;
+
+        let elapsed = start.elapsed().as_millis() as i64;
+        let downlen = result.len() as i64;
+
+        // 记录 SQL 统计
+        if self.config.is_count {
+            let apiobj = Self::parse_table_name(sql);
+            if let Err(e) = Self::do_save_sql_log(&conn, &self.config.cid, &self.config.apisys, &self.config.apimicro, &apiobj, sql, elapsed, downlen, &self.config.upby) {
+                let logger = mylogger!();
+                logger.error(&format!("[LocalDB] save_sql_log 失败: {}", e));
+            }
+        }
+
+        // 记录调试日志
+        if self.config.is_log {
+            let apiobj = Self::parse_table_name(sql);
+            let result_json = serde_json::to_string(&result).unwrap_or_default();
+            let params_str = Self::params_to_string(params);
+            let content = format!("{} c:{} v{}", result_json, sql, params_str);
+            let _ = Self::do_add_warn(&conn, &self.config.cid, "debug_local", &self.config.apisys, &self.config.apimicro, &apiobj, &content, &self.config.upby);
+        }
+
+        Ok(result)
+    }
+
     /// 将参数转换为字符串
     fn params_to_string(params: &[&dyn rusqlite::ToSql]) -> String {
         let parts: Vec<String> = params.iter().map(|p| {
@@ -767,6 +811,11 @@ impl LocalDB {
 
     /// 从配置文件读取 SID（优先环境变量 SID，其次 INI 文件）
     pub async fn get_sid(&self) -> String {
+        Self::get_sid_sync()
+    }
+
+    /// 从配置文件读取 SID（同步版本）
+    pub fn get_sid_sync() -> String {
         if let Ok(sid) = std::env::var("SID") {
             if !sid.is_empty() {
                 return sid;
@@ -798,7 +847,7 @@ impl LocalDB {
         use base::http::HttpHelper;
         use base64::{Engine as _, engine::general_purpose};
 
-        let sid = self.get_sid();
+        let sid = Self::get_sid_sync();
         if sid.is_empty() {
             return Err("配置文件未找到 SID".to_string());
         }
@@ -1041,7 +1090,7 @@ impl LocalDB {
     ) -> Result<(i32, Vec<String>, Vec<crate::data_sync::SyncValidationError>), String> {
         use base::http::HttpHelper;
 
-        let sid = self.get_sid();
+        let sid = Self::get_sid_sync();
         if sid.is_empty() {
             return Err("配置文件未找到 SID".to_string());
         }
@@ -1365,8 +1414,8 @@ mod tests {
         assert!(db.is_ok(), "默认实例创建应该成功");
     }
 
-    #[test]
-    fn test_table_exists() {
+    #[tokio::test]
+    async fn test_table_exists() {
         let db = LocalDB::with_path(&get_test_db_path()).expect("数据库连接失败");
         let exists = db.table_exists("non_existent_table_12345").await;
         assert!(exists.is_ok(), "查询表存在应该成功");
@@ -1402,8 +1451,8 @@ mod tests {
     }
 
     /// 测试2：插入数据
-    #[test]
-    fn test_insert_data() {
+    #[tokio::test]
+    async fn test_insert_data() {
         let db = LocalDB::new(None).expect("数据库连接失败");
 
         // 创建测试表
@@ -1425,14 +1474,14 @@ mod tests {
 
         // 验证数据已插入
         let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = db.query(&query, &[&"test_001" as &dyn rusqlite::ToSql]).await.expect("查询失败").await;
+        let rows = db.query(&query, &[&"test_001" as &dyn rusqlite::ToSql]).await.expect("查询失败");
         assert_eq!(rows.len(), 1, "应该有一条记录");
         assert_eq!(rows[0].get("name").and_then(|v: &serde_json::Value| v.as_str()), Some("测试名称"));
     }
 
     /// 测试3：查询数据
-    #[test]
-    fn test_query_data() {
+    #[tokio::test]
+    async fn test_query_data() {
         let db = LocalDB::new(None).expect("数据库连接失败");
 
         // 创建测试表并插入数据
@@ -1450,15 +1499,15 @@ mod tests {
 
         // 查询数据
         let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = db.query(&query, &[&"query_001" as &dyn rusqlite::ToSql]).await.expect("查询失败").await;
+        let rows = db.query(&query, &[&"query_001" as &dyn rusqlite::ToSql]).await.expect("查询失败");
 
         assert_eq!(rows.len(), 1, "应该找到一条记录");
         assert_eq!(rows[0].get("id").and_then(|v: &serde_json::Value| v.as_str()), Some("query_001"));
     }
 
     /// 测试4：更新数据
-    #[test]
-    fn test_update_data() {
+    #[tokio::test]
+    async fn test_update_data() {
         let db = LocalDB::new(None).expect("数据库连接失败");
 
         // 创建测试表并插入数据
@@ -1484,13 +1533,13 @@ mod tests {
 
         // 验证更新结果
         let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = db.query(&query, &[&"update_001" as &dyn rusqlite::ToSql]).await.expect("查询失败").await;
+        let rows = db.query(&query, &[&"update_001" as &dyn rusqlite::ToSql]).await.expect("查询失败");
         assert_eq!(rows[0].get("name").and_then(|v: &serde_json::Value| v.as_str()), Some("更新后名称"));
     }
 
     /// 测试5：删除数据
-    #[test]
-    fn test_delete_data() {
+    #[tokio::test]
+    async fn test_delete_data() {
         let db = LocalDB::new(None).expect("数据库连接失败");
 
         // 创建测试表并插入数据
@@ -1513,13 +1562,13 @@ mod tests {
 
         // 验证删除结果
         let query = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = db.query(&query, &[&"delete_001" as &dyn rusqlite::ToSql]).await.expect("查询失败").await;
+        let rows = db.query(&query, &[&"delete_001" as &dyn rusqlite::ToSql]).await.expect("查询失败");
         assert_eq!(rows.len(), 0, "记录应该已删除");
     }
 
     /// 测试8：空表查询
-    #[test]
-    fn test_query_empty_table() {
+    #[tokio::test]
+    async fn test_query_empty_table() {
         let db = LocalDB::new(None).expect("数据库连接失败");
 
         // 创建空测试表
@@ -1532,13 +1581,13 @@ mod tests {
 
         // 查询空表
         let query = format!("SELECT * FROM {}", table_name);
-        let rows = db.query(&query, &[]).await.expect("查询失败").await;
+        let rows = db.query(&query, &[]).await.expect("查询失败");
         assert_eq!(rows.len(), 0, "空表应该返回空数组");
     }
 
     /// 测试9：更新不存在的记录
-    #[test]
-    fn test_update_non_existent() {
+    #[tokio::test]
+    async fn test_update_non_existent() {
         let db = LocalDB::new(None).expect("数据库连接失败");
 
         // 创建测试表
@@ -1559,8 +1608,8 @@ mod tests {
     }
 
     /// 测试10：删除不存在的记录
-    #[test]
-    fn test_delete_non_existent() {
+    #[tokio::test]
+    async fn test_delete_non_existent() {
         let db = LocalDB::new(None).expect("数据库连接失败");
 
         // 创建测试表

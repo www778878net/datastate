@@ -107,7 +107,7 @@ impl WorkflowCapability {
     }
 
     /// 插入或更新能力定义
-    pub fn insert(&self, data: &HashMap<String, Value>, up: &UpInfo) -> Result<String, String> {
+    pub async fn insert(&self, data: &HashMap<String, Value>, up: &UpInfo) -> Result<String, String> {
         let id = data.get("id")
             .and_then(|v: &serde_json::Value| v.as_str())
             .unwrap_or(&UpInfo::new_id())
@@ -135,7 +135,7 @@ impl WorkflowCapability {
             .map(|v| v as &dyn rusqlite::ToSql)
             .collect();
 
-        let result = self.db.do_m_add(&sql, params_vec.as_slice(), up)?;
+        let result = self.db.do_m_add(&sql, params_vec.as_slice(), up).await?;
         if let Some(e) = result.error {
             return Err(format!("插入失败: {}", e));
         }
@@ -144,23 +144,23 @@ impl WorkflowCapability {
     }
 
     /// 根据 ID 查询能力定义
-    pub fn get(&self, id: &str, up: &UpInfo) -> Result<Option<HashMap<String, Value>>, String> {
+    pub async fn get(&self, id: &str, up: &UpInfo) -> Result<Option<HashMap<String, Value>>, String> {
         let sql = "SELECT * FROM workflow_capability WHERE id = ?";
-        let rows = self.db.do_get(sql, &[&id as &dyn rusqlite::ToSql], up)?;
+        let rows = self.db.do_get(sql, &[&id as &dyn rusqlite::ToSql], up).await?;
         Ok(rows.into_iter().next())
     }
 
     /// 更新能力状态
-    pub fn update_state(&self, id: &str, state: i32, up: &UpInfo) -> Result<(), String> {
+    pub async fn update_state(&self, id: &str, state: i32, up: &UpInfo) -> Result<(), String> {
         let sql = "UPDATE workflow_capability SET state = ? WHERE id = ?";
-        self.db.do_m(sql, &[&state as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql], up)?;
+        self.db.do_m(sql, &[&state as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql], up).await?;
         Ok(())
     }
 
     /// 查询所有启用的能力
-    pub fn get_enabled(&self, up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
+    pub async fn get_enabled(&self, up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
         let sql = "SELECT * FROM workflow_capability WHERE state = 1 ORDER BY priority DESC";
-        self.db.do_get(sql, &[], up)
+        self.db.do_get(sql, &[], up).await
     }
 
     /// 获取底层数据库引用

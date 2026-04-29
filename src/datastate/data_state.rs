@@ -69,9 +69,9 @@ impl DataState {
     /// - 审计日志：通过log_action_with_count记录操作摘要
     /// - 自动写 sync_queue：产生待同步记录
     /// - 自动设置 id、cid、upby、uptime
-    pub fn m_add(&self, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
+    pub async fn m_add(&self, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
         self.audit.check_permission("m_add", caller, summary)?;
-        self.datasync.m_add(record)
+        self.datasync.m_add(record).await
     }
 
     /// 更新记录
@@ -79,49 +79,49 @@ impl DataState {
     /// - 审计日志：通过log_action_with_count记录操作摘要
     /// - 自动写 sync_queue：产生待同步记录
     /// - 自动设置 upby、uptime
-    pub fn m_update(&self, id: &str, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<bool, String> {
+    pub async fn m_update(&self, id: &str, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<bool, String> {
         self.audit.check_permission("m_update", caller, summary)?;
-        self.datasync.m_update(id, record)
+        self.datasync.m_update(id, record).await
     }
 
     /// 保存记录（存在更新，不存在插入）
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
     /// - 自动写 sync_queue：产生待同步记录
-    pub fn m_save(&self, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
+    pub async fn m_save(&self, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
         self.audit.check_permission("m_save", caller, summary)?;
-        self.datasync.m_save(record)
+        self.datasync.m_save(record).await
     }
 
     /// 删除记录
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
     /// - 自动写 sync_queue：产生待同步记录
-    pub fn m_del(&self, id: &str, caller: &str, summary: &str) -> Result<bool, String> {
+    pub async fn m_del(&self, id: &str, caller: &str, summary: &str) -> Result<bool, String> {
         self.audit.check_permission("m_del", caller, summary)?;
-        self.datasync.m_del(id)
+        self.datasync.m_del(id).await
     }
 
     /// 同步保存记录（存在更新，不存在插入）
     /// - 用于从服务器同步数据到本地，或从客户端同步数据到服务器
     /// - 不自动填充 CID、upby、uptime
     /// - 不写 sync_queue（避免循环同步）
-    pub fn m_sync_save(&self, record: &HashMap<String, Value>) -> Result<String, String> {
-        self.datasync.m_sync_save(record)
+    pub async fn m_sync_save(&self, record: &HashMap<String, Value>) -> Result<String, String> {
+        self.datasync.m_sync_save(record).await
     }
 
     /// 同步更新记录
     /// - 用于从服务器同步更新操作到本地
     /// - 不自动填充字段，不写 sync_queue
-    pub fn m_sync_update(&self, id: &str, record: &HashMap<String, Value>) -> Result<bool, String> {
-        self.datasync.m_sync_update(id, record)
+    pub async fn m_sync_update(&self, id: &str, record: &HashMap<String, Value>) -> Result<bool, String> {
+        self.datasync.m_sync_update(id, record).await
     }
 
     /// 同步删除记录
     /// - 用于从服务器同步删除操作到本地
     /// - 不写 sync_queue（避免循环同步）
-    pub fn m_sync_del(&self, id: &str) -> Result<bool, String> {
-        self.datasync.m_sync_del(id)
+    pub async fn m_sync_del(&self, id: &str) -> Result<bool, String> {
+        self.datasync.m_sync_del(id).await
     }
 
     // ========== 按天分表支持（动态表名） ==========
@@ -131,9 +131,9 @@ impl DataState {
     /// - 审计日志：通过log_action_with_count记录操作摘要
     /// - 自动写 sync_queue：产生待同步记录（tbname=动态表名）
     /// - 自动设置 id、cid、upby、uptime
-    pub fn m_add_to_table(&self, table_name: &str, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
+    pub async fn m_add_to_table(&self, table_name: &str, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
         self.audit.check_permission("m_add", caller, summary)?;
-        self.datasync.m_add_to_table(table_name, record)
+        self.datasync.m_add_to_table(table_name, record).await
     }
 
     /// 保存记录到指定表（支持按天分表，存在更新，不存在插入）
@@ -141,50 +141,50 @@ impl DataState {
     /// - 审计日志：通过log_action_with_count记录操作摘要
     /// - 自动写 sync_queue：产生待同步记录（tbname=动态表名）
     /// - 自动设置 id、cid、upby、uptime
-    pub fn m_save_to_table(&self, table_name: &str, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
+    pub async fn m_save_to_table(&self, table_name: &str, record: &HashMap<String, Value>, caller: &str, summary: &str) -> Result<String, String> {
         self.audit.check_permission("m_save", caller, summary)?;
-        self.datasync.m_save_to_table(table_name, record)
+        self.datasync.m_save_to_table(table_name, record).await
     }
 
     /// 查询记录
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
-    pub fn get(&self, where_clause: &str, params: &[&dyn rusqlite::ToSql], caller: &str, summary: &str) -> Result<Vec<HashMap<String, Value>>, String> {
+    pub async fn get(&self, where_clause: &str, params: &[&dyn rusqlite::ToSql], caller: &str, summary: &str) -> Result<Vec<HashMap<String, Value>>, String> {
         self.audit.check_permission("get", caller, summary)?;
-        self.datasync.get(where_clause, params)
+        self.datasync.get(where_clause, params).await
     }
 
     /// 查询单条记录
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
-    pub fn get_one(&self, id: &str, caller: &str, summary: &str) -> Result<Option<HashMap<String, Value>>, String> {
+    pub async fn get_one(&self, id: &str, caller: &str, summary: &str) -> Result<Option<HashMap<String, Value>>, String> {
         self.audit.check_permission("get_one", caller, summary)?;
-        self.datasync.get_one(id)
+        self.datasync.get_one(id).await
     }
 
     /// 统计记录数
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
-    pub fn count(&self, caller: &str, summary: &str) -> Result<i32, String> {
+    pub async fn count(&self, caller: &str, summary: &str) -> Result<i32, String> {
         self.audit.check_permission("count", caller, summary)?;
-        self.datasync.count()
+        self.datasync.count().await
     }
 
     /// 执行任意 SQL 查询（支持完整 SQL 拼接）
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
-    pub fn do_get(&self, sql: &str, params: &[&dyn rusqlite::ToSql], caller: &str, summary: &str) -> Result<Vec<HashMap<String, Value>>, String> {
+    pub async fn do_get(&self, sql: &str, params: &[&dyn rusqlite::ToSql], caller: &str, summary: &str) -> Result<Vec<HashMap<String, Value>>, String> {
         self.audit.check_permission("do_get", caller, summary)?;
-        self.datasync.do_get(sql, params)
+        self.datasync.do_get(sql, params).await
     }
 
     /// 执行任意 SQL 更新（支持完整 SQL 拼接）
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
     /// - 返回影响的行数
-    pub fn do_m(&self, sql: &str, params: &[&dyn rusqlite::ToSql], caller: &str, summary: &str) -> Result<usize, String> {
+    pub async fn do_m(&self, sql: &str, params: &[&dyn rusqlite::ToSql], caller: &str, summary: &str) -> Result<usize, String> {
         self.audit.check_permission("do_m", caller, summary)?;
-        self.datasync.do_m(sql, params)
+        self.datasync.do_m(sql, params).await
     }
 }
 
@@ -233,7 +233,7 @@ mod tests {
     }
 
     /// 测试3：CRUD 操作 - 插入记录
-    #[test]
+    #[tokio::test]
     async fn test_m_add() {
         let unique_table = format!(
             "test_crud_{}",
@@ -268,7 +268,7 @@ mod tests {
     }
 
     /// 测试4：CRUD 操作 - 查询记录
-    #[test]
+    #[tokio::test]
     async fn test_get_one() {
         let unique_table = format!(
             "test_get_{}",
@@ -309,7 +309,7 @@ mod tests {
     }
 
     /// 测试5：CRUD 操作 - 更新记录
-    #[test]
+    #[tokio::test]
     async fn test_m_update() {
         let unique_table = format!(
             "test_update_{}",
@@ -350,7 +350,7 @@ mod tests {
     }
 
     /// 测试6：同步操作 - 同步保存
-    #[test]
+    #[tokio::test]
     async fn test_m_sync_save() {
         let unique_table = format!(
             "test_sync_{}",
@@ -416,7 +416,7 @@ mod tests {
     }
 
     /// 测试10：删除记录
-    #[test]
+    #[tokio::test]
     async fn test_m_del() {
         let unique_table = format!(
             "test_del_{}",
@@ -454,7 +454,7 @@ mod tests {
     }
 
     /// 测试11：统计记录数
-    #[test]
+    #[tokio::test]
     async fn test_count() {
         let unique_table = format!(
             "test_count_{}",
@@ -519,7 +519,7 @@ mod tests {
     /// 2. 方法签名不再接收 db 参数
     /// 3. 方法可以直接使用 self.db 访问数据库
     /// 4. DataSync 组件正确初始化
-    #[test]
+    #[tokio::test]
     async fn demo_20260303200000() {
         use base::mylogger;
         use std::sync::Arc;

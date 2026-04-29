@@ -168,7 +168,7 @@ pub trait BaseCapability: Send + Sync {
             if let Some(logger) = self.logger() {
                 logger.detail(&format!("准备保存能力执行记录: {}", cap_name));
             }
-            if let Err(e) = self.save_execution() {
+            if let Err(e) = self.save_execution().await {
                 if let Some(logger) = self.logger() {
                     logger.error(&format!("保存能力执行记录失败: {}", e));
                 }
@@ -180,20 +180,20 @@ pub trait BaseCapability: Send + Sync {
 
     /// 保存执行记录到数据库 - 保存到 workflow_task 表（任务实例表，按天分表）
     /// 使用 DataSync.m_save_to_table 实现按天分表的 msave
-    fn save_execution(&mut self) -> Result<(), String> {
+    async fn save_execution(&mut self) -> Result<(), String> {
         // 获取今天的分表名
         let table_name = crate::workflow::WorkflowTask::get_current_table_name_static();
         
         // 使用 LocalDB 单例创建表（确保 DataSync 能看到）
         let db = crate::LocalDB::default_instance()?;
-        db.ensure_table_exists(&table_name, crate::workflow::SQL_CREATE_WORKFLOW_TASK)?;
+        db.ensure_table_exists(&table_name, crate::workflow::SQL_CREATE_WORKFLOW_TASK).await?;
         
         // 转换为 JSON 记录
         let json = self.to_task_json();
 
         // 使用 DataSync.m_save_to_table 保存（雪花ID + 自动填充字段 + sync_queue）
         let datasync = crate::data_sync::DataSync::new("workflow_task");
-        let id = datasync.m_save_to_table(&table_name, &json)?;
+        let id = datasync.m_save_to_table(&table_name, &json).await?;
 
         if let Some(logger) = self.logger() {
             logger.detail(&format!("任务记录保存成功, id: {}", id));
@@ -478,17 +478,17 @@ impl CapabilityBase {
     /// 保存能力定义到数据库
     ///
     /// 保存到 workflow_capability 表
-    pub fn save(&self, workflow_cap: &WorkflowCapability, up: &UpInfo) -> Result<String, String> {
+    pub async fn save(&self, workflow_cap: &WorkflowCapability, up: &UpInfo) -> Result<String, String> {
         let json = self.to_json();
-        workflow_cap.insert(&json, up)
+        workflow_cap.insert(&json, up).await
     }
 
     /// 从数据库加载能力定义
     ///
     /// 从 workflow_capability 表加载
-    pub fn load(workflow_cap: &WorkflowCapability, id: &str, up: &UpInfo) -> Result<Self, String> {
+    pub async fn load(workflow_cap: &WorkflowCapability, id: &str, up: &UpInfo) -> Result<Self, String> {
         let data = workflow_cap
-            .get(id, up)?
+            .get(id, up).await?
             .ok_or_else(|| format!("能力定义不存在: {}", id))?;
         Ok(Self::from_json(&data))
     }
