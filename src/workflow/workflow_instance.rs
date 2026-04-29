@@ -325,7 +325,7 @@ impl WorkflowInstance {
                 &idparentinstance as &dyn rusqlite::ToSql,
             ],
             up,
-        )?;
+        ).await?;
 
         Ok(id)
     }

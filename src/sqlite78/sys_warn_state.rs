@@ -49,7 +49,7 @@ impl SysWarnSqliteState {
     }
 
     /// 插入警告记录
-    pub fn insert(&self, data: &SysWarnData, up: &UpInfo) -> Result<i64, String> {
+    pub async fn insert(&self, data: &SysWarnData, up: &UpInfo) -> Result<i64, String> {
         let sql = "INSERT INTO sys_warn (id,uid,kind,apimicro,apiobj,content,upid,upby,uptime,remark,remark2,remark3,remark4,remark5,remark6) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
         let params: [&dyn rusqlite::ToSql; 15] = [
@@ -70,7 +70,7 @@ impl SysWarnSqliteState {
             &data.remark6,
         ];
 
-        let result = self.db.do_m_add(sql, &params, up)?;
+        let result = self.db.do_m_add(sql, &params, up).await?;
         if let Some(err) = result.error {
             return Err(err);
         }
@@ -78,10 +78,10 @@ impl SysWarnSqliteState {
     }
 
     /// 查询指定类型的警告
-    pub fn get_by_kind(&self, kind: &str, up: &UpInfo) -> Result<Vec<SysWarnData>, String> {
+    pub async fn get_by_kind(&self, kind: &str, up: &UpInfo) -> Result<Vec<SysWarnData>, String> {
         let sql = "SELECT id,uid,kind,apimicro,apiobj,content,upid,upby,uptime,remark,remark2,remark3,remark4,remark5,remark6 FROM sys_warn WHERE kind = ?";
 
-        let rows = self.db.do_get(sql, &[&kind as &dyn rusqlite::ToSql], up)?;
+        let rows = self.db.do_get(sql, &[&kind as &dyn rusqlite::ToSql], up).await?;
 
         Ok(rows.iter().map(|row| SysWarnData {
             id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
@@ -103,10 +103,10 @@ impl SysWarnSqliteState {
     }
 
     /// 删除旧记录（保留最近N条）
-    pub fn clean_old(&self, keep_count: i32, up: &UpInfo) -> Result<i64, String> {
+    pub async fn clean_old(&self, keep_count: i32, up: &UpInfo) -> Result<i64, String> {
         let sql = "DELETE FROM sys_warn WHERE idpk NOT IN (SELECT idpk FROM sys_warn ORDER BY idpk DESC LIMIT ?)";
 
-        let result = self.db.do_m(sql, &[&keep_count as &dyn rusqlite::ToSql], up)?;
+        let result = self.db.do_m(sql, &[&keep_count as &dyn rusqlite::ToSql], up).await?;
         Ok(result.affected_rows)
     }
 }

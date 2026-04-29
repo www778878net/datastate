@@ -1008,7 +1008,18 @@ impl DataSync {
                     download_condition.as_ref(),
                     download_cols.as_deref(),
                 )
-            }).await.map_err(|e| format!("spawn_blocking error: {}", e))?;
+            }).await;
+
+            let result = match result {
+                Ok(r) => r,
+                Err(e) => {
+                    return SyncResult {
+                        res: -1,
+                        errmsg: format!("spawn_blocking error: {}", e),
+                        datawf: SyncData::default(),
+                    };
+                }
+            };
 
             match result {
                 Ok(records) => {
@@ -1349,11 +1360,23 @@ impl DataSync {
     async fn upload_to_rust_api(&self, api_url: &str, items: &[SynclogItem]) -> SyncResult {
         let api_url = api_url.to_string();
         let items = items.to_vec();
+        let items_clone = items.clone();
         let db = self.db.clone();
         
         let result = tokio::task::spawn_blocking(move || {
             db.upload_batch_to_server(&api_url, &items)
-        }).await.map_err(|e| format!("spawn_blocking error: {}", e))?;
+        }).await;
+
+        let result = match result {
+            Ok(r) => r,
+            Err(e) => {
+                return SyncResult {
+                    res: -1,
+                    errmsg: format!("spawn_blocking error: {}", e),
+                    datawf: SyncData::default(),
+                };
+            }
+        };
 
         match result {
             Ok((inserted, success_ids, errors)) => {
@@ -1369,19 +1392,19 @@ impl DataSync {
                     
                     for err in &errors {
                         if !err.id.is_empty() {
-                            let _ = synclog.mark_failed_by_id(&err.id, &err.error);
+                            let _ = synclog.mark_failed_by_id(&err.id, &err.error).await;
                             // UPDATE 失败且错误包含"没有找到匹配的记录"或"affectedRows=0"，尝试转为 INSERT
                             if err.error.contains("没有找到匹配的记录") || err.error.contains("affectedRows=0") {
-                                let _ = synclog.convert_update_to_insert(&err.id);
+                                let _ = synclog.convert_update_to_insert(&err.id).await;
                             }
                         } else if !err.idrow.is_empty() {
-                            let _ = synclog.mark_failed_by_idrow(&err.idrow, &err.error);
+                            let _ = synclog.mark_failed_by_idrow(&err.idrow, &err.error).await;
                         }
                     }
                 } else {
                     let success_id_set: std::collections::HashSet<&str> = success_ids.iter().map(|s| s.as_str()).collect();
                     
-                    for item in items {
+                    for item in items_clone {
                         if success_id_set.contains(item.id.as_str()) {
                             let _ = self.db.execute(&format!(
                                 "UPDATE synclog SET synced = 1 WHERE id = '{}'",
@@ -1450,11 +1473,23 @@ impl DataSync {
         eprintln!("[upload_to_logsvc] 开始上传 {} 条记录", items.len());
         let synclog_url = synclog_url.to_string();
         let items = items.to_vec();
+        let items_clone = items.clone();
         let db = self.db.clone();
         
         let result = tokio::task::spawn_blocking(move || {
             db.upload_batch_to_server(&synclog_url, &items)
-        }).await.map_err(|e| format!("spawn_blocking error: {}", e))?;
+        }).await;
+
+        let result = match result {
+            Ok(r) => r,
+            Err(e) => {
+                return SyncResult {
+                    res: -1,
+                    errmsg: format!("spawn_blocking error: {}", e),
+                    datawf: SyncData::default(),
+                };
+            }
+        };
 
         match result {
             Ok((inserted, success_ids, errors)) => {
