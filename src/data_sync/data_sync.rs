@@ -1364,7 +1364,7 @@ impl DataSync {
                 
                 if let Ok(synclog) = synclog_result {
                     if !success_ids.is_empty() {
-                        let _ = synclog.mark_synced_by_ids(&success_ids);
+                        let _ = synclog.mark_synced_by_ids(&success_ids).await;
                     }
                     
                     for err in &errors {
@@ -1469,21 +1469,21 @@ impl DataSync {
                     eprintln!("[upload_to_logsvc] get_synclog() 成功，处理 {} 个错误", errors.len());
                     // 使用服务器返回的 successIds 标记同步状态
                     if !success_ids.is_empty() {
-                        let _ = synclog.mark_synced_by_ids(&success_ids);
+                        let _ = synclog.mark_synced_by_ids(&success_ids).await;
                     }
                     
                     // 标记失败的记录（优先使用 id，其次使用 idrow）
                     for err in &errors {
                         eprintln!("[upload_to_logsvc] 处理错误: id={}, error={}", err.id, &err.error[..err.error.len().min(100)]);
                         if !err.id.is_empty() {
-                            let _ = synclog.mark_failed_by_id(&err.id, &err.error);
+                            let _ = synclog.mark_failed_by_id(&err.id, &err.error).await;
                             // UPDATE 失败且错误包含"没有找到匹配的记录"或"affectedRows=0"，尝试转为 INSERT
                             if err.error.contains("没有找到匹配的记录") || err.error.contains("affectedRows=0") {
                                 eprintln!("[upload_to_logsvc] 匹配到转换条件，调用 convert_update_to_insert");
-                                let _ = synclog.convert_update_to_insert(&err.id);
+                                let _ = synclog.convert_update_to_insert(&err.id).await;
                             }
                         } else if !err.idrow.is_empty() {
-                            let _ = synclog.mark_failed_by_idrow(&err.idrow, &err.error);
+                            let _ = synclog.mark_failed_by_idrow(&err.idrow, &err.error).await;
                         }
                     }
                 } else {

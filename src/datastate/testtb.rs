@@ -109,7 +109,7 @@ impl TestTb {
         }
 
         // 使用 with_db 方法创建 DataState 实例，传入正确的数据库实例
-        let state = DataState::with_db("testtb", db.clone()).await;
+        let state = DataState::with_db("testtb", db.clone());
 
         Self { db, audit, state }
     }
@@ -130,7 +130,7 @@ impl TestTb {
         summary: &str,
     ) -> Result<Option<TestTbRecord>, String> {
         self.check_caller("getone", caller)?;
-        self.audit.check_permission("getone", caller, summary)?;
+        self.audit.check_permission("getone", caller, summary).await?;
         
         let sql = "SELECT * FROM testtb WHERE id = ?";
         match self.db.query(sql, &[&id as &dyn rusqlite::ToSql]).await {
@@ -158,7 +158,7 @@ impl TestTb {
         summary: &str,
     ) -> Result<Vec<TestTbRecord>, String> {
         self.check_caller("mlist", caller)?;
-        self.audit.check_permission("mlist", caller, summary)?;
+        self.audit.check_permission("mlist", caller, summary).await?;
         
         let sql = format!("SELECT * FROM testtb ORDER BY idpk DESC LIMIT {}", limit);
         match self.db.query(&sql, &[]).await {
@@ -216,12 +216,6 @@ impl TestTb {
     /// 同步删除记录（不写 sync_queue）
     pub async fn m_sync_del(&self, id: &str) -> Result<bool, String> {
         self.state.m_sync_del(id).await
-    }
-}
-
-impl Default for TestTb {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

@@ -809,7 +809,7 @@ impl Synclog {
     }
 
     /// 标记成功（接受 idrow 列表）
-    pub fn mark_synced_by_idrows(&self, idrow_list: &[String]) -> Result<(), String> {
+    pub async fn mark_synced_by_idrows(&self, idrow_list: &[String]) -> Result<(), String> {
         if idrow_list.is_empty() {
             return Ok(());
         }

@@ -170,12 +170,12 @@ impl Sqlite78 {
         // 调试模式记录日志
         if up.debug {
             let info = format!("{} c:{} rows={}", serde_json::to_string(&result).unwrap_or_default(), cmdtext, result.len());
-            self.add_warn(&info, &format!("debug_{}", up.apimicro), up)?;
+            self.add_warn(&info, &format!("debug_{}", up.apimicro), up).await?;
         }
 
         // 保存统计日志
         let lendown = serde_json::to_string(&result).unwrap_or_default().len();
-        self.save_log(cmdtext, dstart.elapsed().as_millis() as i64, lendown as i64, up)?;
+        self.save_log(cmdtext, dstart.elapsed().as_millis() as i64, lendown as i64, up).await?;
 
         Ok(result)
     }
@@ -228,11 +228,11 @@ impl Sqlite78 {
                 // 调试模式记录日志
                 if up.debug {
                     let info = format!("affected:{} c:{}", rows_affected, cmdtext);
-                    self.add_warn(&info, &format!("debug_{}", up.apimicro), up)?;
+                    self.add_warn(&info, &format!("debug_{}", up.apimicro), up).await?;
                 }
 
                 // 保存统计日志
-                self.save_log(cmdtext, dstart.elapsed().as_millis() as i64, rows_affected as i64, up)?;
+                self.save_log(cmdtext, dstart.elapsed().as_millis() as i64, rows_affected as i64, up).await?;
 
                 Ok(UpdateResult {
                     affected_rows: rows_affected as i64,
@@ -245,7 +245,7 @@ impl Sqlite78 {
             }
             Err(e) => {
                 let error_msg = e.to_string();
-                self.add_warn(&format!("{} c:{}", error_msg, cmdtext), &format!("err_{}", up.apimicro), up)?;
+                self.add_warn(&format!("{} c:{}", error_msg, cmdtext), &format!("err_{}", up.apimicro), up).await?;
                 if error_msg.contains("no such table") {
                     self.logger.detail(&format!("sqlite_doM: {}", error_msg));
                 } else {
@@ -273,11 +273,11 @@ impl Sqlite78 {
                 // 调试模式记录日志
                 if up.debug {
                     let info = format!("insertId:{} c:{}", insert_id, cmdtext);
-                    self.add_warn(&info, &format!("debug_{}", up.apimicro), up)?;
+                    self.add_warn(&info, &format!("debug_{}", up.apimicro), up).await?;
                 }
 
                 // 保存统计日志
-                self.save_log(cmdtext, dstart.elapsed().as_millis() as i64, rows_affected as i64, up)?;
+                self.save_log(cmdtext, dstart.elapsed().as_millis() as i64, rows_affected as i64, up).await?;
 
                 Ok(InsertResult {
                     insert_id,
@@ -302,7 +302,7 @@ impl Sqlite78 {
                     // INSERT INTO table ...
                     words.get(2).unwrap_or(&"unknown")
                 };
-                self.add_warn(&format!("{} c:{}", error_msg, cmdtext), &format!("err_{}", up.apimicro), up)?;
+                self.add_warn(&format!("{} c:{}", error_msg, cmdtext), &format!("err_{}", up.apimicro), up).await?;
                 self.logger.error(&format!("sqlite_doMAdd error: {} (table: {})", error_msg, table_name));
                 Ok(InsertResult {
                     insert_id: 0,
@@ -344,7 +344,7 @@ impl Sqlite78 {
         tx.commit()
             .map_err(|e| format!("提交事务失败: {}", e))?;
 
-        self.save_log(logtext, dstart.elapsed().as_millis() as i64, 1, up)?;
+        self.save_log(logtext, dstart.elapsed().as_millis() as i64, 1, up).await?;
 
         Ok("ok".to_string())
     }

@@ -168,7 +168,7 @@ impl DataManage {
         let create_sql = config.get_create_sql();
         self.db.ensure_table(table_name, &create_sql).await?;
 
-        for index_sql in config.get_index_sql().await {
+        for index_sql in config.get_index_sql() {
             if let Err(e) = self.db.execute(&index_sql).await {
                 self.logger.error(&format!("索引创建失败: {}", e));
             }

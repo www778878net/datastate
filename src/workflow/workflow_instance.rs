@@ -168,8 +168,8 @@ impl WorkflowInstance {
     pub async fn create_today_table(&self) -> Result<(), String> {
         if let Some(ref manager) = self.sharding_manager {
             let table_name = self.get_table_name();
-            if !manager.table_exists(&table_name)? {
-                manager.create_sharding_table(&table_name)?;
+            if !manager.table_exists(&table_name).await? {
+                manager.create_sharding_table(&table_name).await?;
 
                 // 创建索引
                 let conn = self.db.get_conn()?;
