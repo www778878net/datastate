@@ -152,30 +152,34 @@ impl Sqlite78 {
         let conn = self.get_conn()?;
         let dstart = std::time::Instant::now();
 
-        let conn = conn.lock().await;
+        let conn_guard = conn.lock().await;
 
-        let mut stmt = conn.prepare(cmdtext)
-            .map_err(|e| format!("准备语句失败: {}", e))?;
+        let result = {
+            let mut stmt = conn_guard.prepare(cmdtext)
+                .map_err(|e| format!("准备语句失败: {}", e))?;
 
-        let column_names: Vec<String> = stmt.column_names()
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect();
+            let column_names: Vec<String> = stmt.column_names()
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect();
 
-        let rows = stmt.query(values)
-            .map_err(|e| format!("查询失败: {}", e))?;
+            let rows = stmt.query(values)
+                .map_err(|e| format!("查询失败: {}", e))?;
 
-        let result = Self::process_rows(rows, &column_names)?;
+            Self::process_rows(rows, &column_names)?
+        };
 
-        // 调试模式记录日志
+        drop(conn_guard);
+
+        let lendown = serde_json::to_string(&result).unwrap_or_default().len();
+        let elapsed = dstart.elapsed().as_millis() as i64;
+
         if up.debug {
             let info = format!("{} c:{} rows={}", serde_json::to_string(&result).unwrap_or_default(), cmdtext, result.len());
             self.add_warn(&info, &format!("debug_{}", up.apimicro), up).await?;
         }
 
-        // 保存统计日志
-        let lendown = serde_json::to_string(&result).unwrap_or_default().len();
-        self.save_log(cmdtext, dstart.elapsed().as_millis() as i64, lendown as i64, up).await?;
+        self.save_log(cmdtext, elapsed, lendown as i64, up).await?;
 
         Ok(result)
     }
@@ -221,19 +225,10 @@ impl Sqlite78 {
         let conn = self.get_conn()?;
         let dstart = std::time::Instant::now();
 
-        let conn = conn.lock().await;
+        let conn_guard = conn.lock().await;
 
-        match conn.execute(cmdtext, values) {
+        let result = match conn_guard.execute(cmdtext, values) {
             Ok(rows_affected) => {
-                // 调试模式记录日志
-                if up.debug {
-                    let info = format!("affected:{} c:{}", rows_affected, cmdtext);
-                    self.add_warn(&info, &format!("debug_{}", up.apimicro), up).await?;
-                }
-
-                // 保存统计日志
-                self.save_log(cmdtext, dstart.elapsed().as_millis() as i64, rows_affected as i64, up).await?;
-
                 Ok(UpdateResult {
                     affected_rows: rows_affected as i64,
                     error: if rows_affected == 0 {
@@ -245,7 +240,6 @@ impl Sqlite78 {
             }
             Err(e) => {
                 let error_msg = e.to_string();
-                self.add_warn(&format!("{} c:{}", error_msg, cmdtext), &format!("err_{}", up.apimicro), up).await?;
                 if error_msg.contains("no such table") {
                     self.logger.detail(&format!("sqlite_doM: {}", error_msg));
                 } else {
@@ -253,10 +247,34 @@ impl Sqlite78 {
                 }
                 Ok(UpdateResult {
                     affected_rows: 0,
-                    error: Some(error_msg),
+                    error: Some(error_msg.clone()),
                 })
             }
+        };
+
+        let elapsed = dstart.elapsed().as_millis() as i64;
+        let affected = result.as_ref().map(|r| r.affected_rows).unwrap_or(0);
+
+        drop(conn_guard);
+
+        if up.debug {
+            let info = format!("affected:{} c:{}", affected, cmdtext);
+            self.add_warn(&info, &format!("debug_{}", up.apimicro), up).await?;
         }
+
+        if let Ok(ref r) = result {
+            if r.error.is_none() {
+                self.save_log(cmdtext, elapsed, affected, up).await?;
+            }
+        }
+
+        if let Ok(ref r) = result {
+            if let Some(ref err) = r.error {
+                self.add_warn(&format!("{} c:{}", err, cmdtext), &format!("err_{}", up.apimicro), up).await?;
+            }
+        }
+
+        result
     }
 
     /// 插入数据
@@ -264,21 +282,11 @@ impl Sqlite78 {
         let conn = self.get_conn()?;
         let dstart = std::time::Instant::now();
 
-        let conn = conn.lock().await;
+        let conn_guard = conn.lock().await;
 
-        match conn.execute(cmdtext, values) {
+        let result = match conn_guard.execute(cmdtext, values) {
             Ok(rows_affected) => {
-                let insert_id = conn.last_insert_rowid();
-
-                // 调试模式记录日志
-                if up.debug {
-                    let info = format!("insertId:{} c:{}", insert_id, cmdtext);
-                    self.add_warn(&info, &format!("debug_{}", up.apimicro), up).await?;
-                }
-
-                // 保存统计日志
-                self.save_log(cmdtext, dstart.elapsed().as_millis() as i64, rows_affected as i64, up).await?;
-
+                let insert_id = conn_guard.last_insert_rowid();
                 Ok(InsertResult {
                     insert_id,
                     error: if rows_affected == 0 {
@@ -290,26 +298,46 @@ impl Sqlite78 {
             }
             Err(e) => {
                 let error_msg = e.to_string();
-                // Handle "INSERT INTO table" (index 2), "INSERT OR REPLACE INTO table" (index 4), and "REPLACE INTO table" (index 2)
                 let words: Vec<&str> = cmdtext.split_whitespace().collect();
                 let table_name = if words.len() > 2 && words[0].to_uppercase() == "REPLACE" {
-                    // REPLACE INTO table ...
                     words.get(2).unwrap_or(&"unknown")
                 } else if words.len() > 4 && words[1].to_uppercase() == "OR" {
-                    // INSERT OR REPLACE INTO table ...
                     words.get(4).unwrap_or(&"unknown")
                 } else {
-                    // INSERT INTO table ...
                     words.get(2).unwrap_or(&"unknown")
                 };
-                self.add_warn(&format!("{} c:{}", error_msg, cmdtext), &format!("err_{}", up.apimicro), up).await?;
                 self.logger.error(&format!("sqlite_doMAdd error: {} (table: {})", error_msg, table_name));
                 Ok(InsertResult {
                     insert_id: 0,
-                    error: Some(error_msg),
+                    error: Some(error_msg.clone()),
                 })
             }
+        };
+
+        let elapsed = dstart.elapsed().as_millis() as i64;
+        let affected = result.as_ref().map(|r| if r.error.is_none() { 1i64 } else { 0i64 }).unwrap_or(0);
+        let insert_id = result.as_ref().map(|r| r.insert_id).unwrap_or(0);
+
+        drop(conn_guard);
+
+        if up.debug {
+            let info = format!("insertId:{} c:{}", insert_id, cmdtext);
+            self.add_warn(&info, &format!("debug_{}", up.apimicro), up).await?;
         }
+
+        if let Ok(ref r) = result {
+            if r.error.is_none() {
+                self.save_log(cmdtext, elapsed, affected, up).await?;
+            }
+        }
+
+        if let Ok(ref r) = result {
+            if let Some(ref err) = r.error {
+                self.add_warn(&format!("{} c:{}", err, cmdtext), &format!("err_{}", up.apimicro), up).await?;
+            }
+        }
+
+        result
     }
 
     /// 执行事务
@@ -328,9 +356,9 @@ impl Sqlite78 {
 
         let conn = self.get_conn()?;
         let dstart = std::time::Instant::now();
-        let mut conn = conn.lock().await;
+        let mut conn_guard = conn.lock().await;
 
-        let tx = conn.transaction()
+        let tx = conn_guard.transaction()
             .map_err(|e| format!("开始事务失败: {}", e))?;
 
         for (i, cmd) in cmds.iter().enumerate() {
@@ -344,7 +372,11 @@ impl Sqlite78 {
         tx.commit()
             .map_err(|e| format!("提交事务失败: {}", e))?;
 
-        self.save_log(logtext, dstart.elapsed().as_millis() as i64, 1, up).await?;
+        let elapsed = dstart.elapsed().as_millis() as i64;
+
+        drop(conn_guard);
+
+        self.save_log(logtext, elapsed, 1, up).await?;
 
         Ok("ok".to_string())
     }

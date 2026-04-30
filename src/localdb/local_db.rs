@@ -1004,7 +1004,7 @@ impl LocalDB {
     ) -> Result<i32, String> {
         use base::http::HttpHelper;
 
-        let sid = self.get_sid();
+        let sid = Self::get_sid_sync();
         if sid.is_empty() {
             return Err("配置文件未找到 SID".to_string());
         }

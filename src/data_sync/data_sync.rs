@@ -1359,8 +1359,8 @@ impl DataSync {
     /// 上传到 Rust API（JSON 格式，与 logsvc 兼容）
     async fn upload_to_rust_api(&self, api_url: &str, items: &[SynclogItem]) -> SyncResult {
         let api_url = api_url.to_string();
+        let items_count = items.len();
         let items = items.to_vec();
-        let items_clone = items.clone();
         let db = self.db.clone();
         
         let result = tokio::task::spawn_blocking(move || {
@@ -1393,7 +1393,6 @@ impl DataSync {
                     for err in &errors {
                         if !err.id.is_empty() {
                             let _ = synclog.mark_failed_by_id(&err.id, &err.error).await;
-                            // UPDATE 失败且错误包含"没有找到匹配的记录"或"affectedRows=0"，尝试转为 INSERT
                             if err.error.contains("没有找到匹配的记录") || err.error.contains("affectedRows=0") {
                                 let _ = synclog.convert_update_to_insert(&err.id).await;
                             }
@@ -1402,15 +1401,11 @@ impl DataSync {
                         }
                     }
                 } else {
-                    let success_id_set: std::collections::HashSet<&str> = success_ids.iter().map(|s| s.as_str()).collect();
-                    
-                    for item in items_clone {
-                        if success_id_set.contains(item.id.as_str()) {
-                            let _ = self.db.execute(&format!(
-                                "UPDATE synclog SET synced = 1 WHERE id = '{}'",
-                                item.id
-                            )).await;
-                        }
+                    for id in &success_ids {
+                        let _ = self.db.execute(&format!(
+                            "UPDATE synclog SET synced = 1 WHERE id = '{}'",
+                            id
+                        )).await;
                     }
                     
                     for err in &errors {
@@ -1421,7 +1416,6 @@ impl DataSync {
                                 escaped_err,
                                 err.id
                             )).await;
-                            // UPDATE 失败且错误包含"没有找到匹配的记录"或"affectedRows=0"，尝试转为 INSERT
                             if err.error.contains("没有找到匹配的记录") || err.error.contains("affectedRows=0") {
                                 if let Ok(synclog) = get_synclog() {
                                     let _ = synclog.convert_update_to_insert(&err.id);
@@ -1453,7 +1447,7 @@ impl DataSync {
                         updated: 0,
                         skipped: 0,
                         failed: Some(failed_count),
-                        total: Some(items.len() as i32),
+                        total: Some(items_count as i32),
                         errors: if error_messages.is_empty() { None } else { Some(error_messages) },
                     },
                 }
@@ -1472,8 +1466,8 @@ impl DataSync {
     async fn upload_to_logsvc(&self, synclog_url: &str, items: &[SynclogItem]) -> SyncResult {
         eprintln!("[upload_to_logsvc] 开始上传 {} 条记录", items.len());
         let synclog_url = synclog_url.to_string();
+        let items_count = items.len();
         let items = items.to_vec();
-        let items_clone = items.clone();
         let db = self.db.clone();
         
         let result = tokio::task::spawn_blocking(move || {
@@ -1493,26 +1487,21 @@ impl DataSync {
 
         match result {
             Ok((inserted, success_ids, errors)) => {
-                // errors 包含失败的记录信息（idrow 和 error）
                 let failed_count = errors.len() as i32;
                 let success_count = inserted;
                 
-                // 尝试使用 Synclog 分表管理类
                 let synclog_result = get_synclog();
                 
                 if let Ok(synclog) = synclog_result {
                     eprintln!("[upload_to_logsvc] get_synclog() 成功，处理 {} 个错误", errors.len());
-                    // 使用服务器返回的 successIds 标记同步状态
                     if !success_ids.is_empty() {
                         let _ = synclog.mark_synced_by_ids(&success_ids).await;
                     }
                     
-                    // 标记失败的记录（优先使用 id，其次使用 idrow）
                     for err in &errors {
                         eprintln!("[upload_to_logsvc] 处理错误: id={}, error={}", err.id, &err.error[..err.error.len().min(100)]);
                         if !err.id.is_empty() {
                             let _ = synclog.mark_failed_by_id(&err.id, &err.error).await;
-                            // UPDATE 失败且错误包含"没有找到匹配的记录"或"affectedRows=0"，尝试转为 INSERT
                             if err.error.contains("没有找到匹配的记录") || err.error.contains("affectedRows=0") {
                                 eprintln!("[upload_to_logsvc] 匹配到转换条件，调用 convert_update_to_insert");
                                 let _ = synclog.convert_update_to_insert(&err.id).await;
@@ -1523,20 +1512,13 @@ impl DataSync {
                     }
                 } else {
                     eprintln!("[upload_to_logsvc] get_synclog() 失败: {:?}", synclog_result.err());
-                    // 回退到旧方式
-                    let success_id_set: std::collections::HashSet<&str> = success_ids.iter().map(|s| s.as_str()).collect();
-                    
-                    // 标记成功的记录
-                    for item in items {
-                        if success_id_set.contains(item.id.as_str()) {
-                            let _ = self.db.execute(&format!(
-                                "UPDATE synclog SET synced = 1 WHERE id = '{}'",
-                                item.id
-                            )).await;
-                        }
+                    for id in &success_ids {
+                        let _ = self.db.execute(&format!(
+                            "UPDATE synclog SET synced = 1 WHERE id = '{}'",
+                            id
+                        )).await;
                     }
                     
-                    // 标记失败的记录（优先使用 id，其次使用 idrow）
                     for err in &errors {
                         let escaped_err = truncate_errinfo(&err.error);
                         if !err.id.is_empty() {
@@ -1545,7 +1527,6 @@ impl DataSync {
                                 escaped_err,
                                 err.id
                             )).await;
-                            // UPDATE 失败且错误是"affectedRows=0"或"未影响任何行"，尝试转为 INSERT
                             if err.error.contains("affectedRows=0") || err.error.contains("未影响任何行") {
                                 if let Ok(synclog) = get_synclog() {
                                     let _ = synclog.convert_update_to_insert(&err.id);
@@ -1561,7 +1542,6 @@ impl DataSync {
                     }
                 }
                 
-                // 构建错误信息列表
                 let error_messages: Vec<String> = errors.iter().map(|e| {
                     if !e.id.is_empty() {
                         format!("{}: {}", e.id, e.error)
@@ -1578,7 +1558,7 @@ impl DataSync {
                         updated: 0,
                         skipped: 0,
                         failed: Some(failed_count),
-                        total: Some(items.len() as i32),
+                        total: Some(items_count as i32),
                         errors: if error_messages.is_empty() { None } else { Some(error_messages) },
                     },
                 }
@@ -1936,24 +1916,24 @@ impl DataSync {
         if let Some(id_value) = record.get("id") {
             if let Some(id) = id_value.as_str() {
                 if !id.is_empty() {
-                    let table_name = table_name.to_string();
+                    let table_name_for_check = table_name.to_string();
+                    let table_name_for_update = table_name.to_string();
                     let id_string = id.to_string();
                     let db = self.db.clone();
                     
                     let exists = tokio::task::spawn_blocking(move || {
-                        let sql = format!("SELECT id FROM {} WHERE id = ?", table_name);
+                        let sql = format!("SELECT id FROM {} WHERE id = ?", table_name_for_check);
                         db.query_sync(&sql, &[&id_string as &dyn rusqlite::ToSql])
                     }).await.map_err(|e| format!("spawn_blocking error: {}", e))?;
                     
                     match exists {
                         Ok(exists) => {
                             if !exists.is_empty() {
-                                self.m_update_to_table(table_name, id, record).await?;
+                                self.m_update_to_table(&table_name_for_update, id, record).await?;
                                 return Ok(id.to_string());
                             }
                         }
                         Err(_) => {
-                            // 表不存在，直接执行 INSERT
                         }
                     }
                 }

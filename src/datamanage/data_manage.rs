@@ -270,10 +270,12 @@ impl DataManage {
         match crate::data_sync::get_synclog() {
             Ok(synclog) => {
                 let synclog: crate::data_sync::Synclog = synclog;
-                match synclog.get_pending_count_by_tbname(&table_name) {
-                    Ok(count) => count,
-                    Err(_) => 0,
-                }
+                tokio::task::block_in_place(|| {
+                    match tokio::runtime::Handle::current().block_on(synclog.get_pending_count_by_tbname(&table_name)) {
+                        Ok(count) => count,
+                        Err(_) => 0,
+                    }
+                })
             }
             Err(_) => 0,
         }
@@ -479,15 +481,16 @@ impl DataManage {
 
     /// 启动后台同步任务
     /// 每10秒检测上传下载
-    pub async fn run(&self) -> tokio::task::JoinHandle<()> {
+    pub fn run(&self) -> tokio::task::JoinHandle<()> {
         let manager = self.clone();
         
         tokio::spawn(async move {
             let logger = mylogger!();
             logger.info("[DataManage] 后台同步线程启动");
             
-            // 启动时立即执行一次同步
-            let result = manager.sync_once().await;
+            let result = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(manager.sync_once())
+            });
             if result.datawf.inserted > 0 || result.datawf.updated > 0 {
                 logger.info(&format!(
                     "[DataManage] 初始同步完成: inserted={}, updated={}",
@@ -496,11 +499,11 @@ impl DataManage {
             }
             
             loop {
-                // 每10秒循环一次
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 
-                // 执行一次同步检测
-                let result = manager.sync_once().await;
+                let result = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(manager.sync_once())
+                });
                 if result.datawf.inserted > 0 || result.datawf.updated > 0 {
                     logger.info(&format!(
                         "[DataManage] 同步完成: inserted={}, updated={}",
