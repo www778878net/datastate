@@ -687,15 +687,8 @@ impl LocalDB {
     }
 
     /// 执行带参数的 SQL
-    pub async fn execute_with_params(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<(), String> {
-        let conn = self.conn.lock().await;
-        conn.execute(sql, params)
-            .map_err(|e| format!("执行失败: {}", e))?;
-        Ok(())
-    }
-
-    /// 执行带参数的 SQL，返回影响行数
-    pub async fn execute_with_params_affected(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<usize, String> {
+    pub fn execute_with_params<'a>(&'a self, sql: &'a str, params: &'a [&'a dyn rusqlite::ToSql]) -> impl std::future::Future<Output = Result<(), String>> + Send + 'a {
+        let sql_owned = sql.to_string();
         let params_vec: Vec<rusqlite::types::Value> = params.iter().map(|p| {
             match p.to_sql() {
                 Ok(output) => match output {
@@ -706,7 +699,42 @@ impl LocalDB {
                 Err(_) => rusqlite::types::Value::Null,
             }
         }).collect();
-        self.execute_with_params_affected_owned(sql, params_vec).await
+        
+        async move {
+            let conn = self.conn.clone();
+            tokio::task::spawn_blocking(move || {
+                let conn_guard = conn.blocking_lock();
+                let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+                conn_guard.execute(&sql_owned, params_refs.as_slice())
+                    .map_err(|e| format!("执行失败: {}", e))
+            }).await.map_err(|e| format!("spawn_blocking error: {}", e))??;
+            Ok(())
+        }
+    }
+
+    /// 执行带参数的 SQL，返回影响行数
+    pub fn execute_with_params_affected<'a>(&'a self, sql: &'a str, params: &'a [&'a dyn rusqlite::ToSql]) -> impl std::future::Future<Output = Result<usize, String>> + Send + 'a {
+        let sql_owned = sql.to_string();
+        let params_vec: Vec<rusqlite::types::Value> = params.iter().map(|p| {
+            match p.to_sql() {
+                Ok(output) => match output {
+                    rusqlite::types::ToSqlOutput::Owned(v) => v,
+                    rusqlite::types::ToSqlOutput::Borrowed(v) => v.into(),
+                    _ => rusqlite::types::Value::Null,
+                },
+                Err(_) => rusqlite::types::Value::Null,
+            }
+        }).collect();
+        
+        async move {
+            let conn = self.conn.clone();
+            tokio::task::spawn_blocking(move || {
+                let conn_guard = conn.blocking_lock();
+                let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+                conn_guard.execute(&sql_owned, params_refs.as_slice())
+                    .map_err(|e| format!("执行失败: {}", e))
+            }).await.map_err(|e| format!("spawn_blocking error: {}", e))?
+        }
     }
     
     /// 执行带参数的 SQL，返回影响行数（使用 owned 参数）

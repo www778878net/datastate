@@ -2039,7 +2039,7 @@ impl DataSync {
 
     /// 查询记录
     /// where_clause 可以是条件（如 "id = ?"）或完整子句（如 "ORDER BY idpk DESC LIMIT 10"）
-    pub async fn get(&self, where_clause: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<std::collections::HashMap<String, serde_json::Value>>, String> {
+    pub fn get<'a>(&'a self, where_clause: &'a str, params: &'a [&'a dyn rusqlite::ToSql]) -> impl std::future::Future<Output = Result<Vec<std::collections::HashMap<String, serde_json::Value>>, String>> + Send + 'a {
         let sql = if where_clause.trim_start().to_uppercase().starts_with("ORDER") {
             format!("SELECT * FROM {} {}", self.table_name, where_clause)
         } else {
@@ -2055,7 +2055,10 @@ impl DataSync {
                 Err(_) => rusqlite::types::Value::Null,
             }
         }).collect();
-        self.db.query_owned(&sql, params_vec).await
+        
+        async move {
+            self.db.query_owned(&sql, params_vec).await
+        }
     }
 
     /// 查询单条记录
@@ -2071,7 +2074,8 @@ impl DataSync {
     }
 
     /// 执行任意 SQL 查询（支持完整 SQL 拼接）
-    pub async fn do_get(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<std::collections::HashMap<String, serde_json::Value>>, String> {
+    pub fn do_get<'a>(&'a self, sql: &'a str, params: &'a [&'a dyn rusqlite::ToSql]) -> impl std::future::Future<Output = Result<Vec<std::collections::HashMap<String, serde_json::Value>>, String>> + Send + 'a {
+        let sql_owned = sql.to_string();
         let params_vec: Vec<rusqlite::types::Value> = params.iter().map(|p| {
             match p.to_sql() {
                 Ok(output) => match output {
@@ -2082,12 +2086,16 @@ impl DataSync {
                 Err(_) => rusqlite::types::Value::Null,
             }
         }).collect();
-        self.db.query_owned(sql, params_vec).await
+        
+        async move {
+            self.db.query_owned(&sql_owned, params_vec).await
+        }
     }
 
     /// 执行任意 SQL 更新（支持完整 SQL 拼接）
     /// 返回影响的行数
-    pub async fn do_m(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<usize, String> {
+    pub fn do_m<'a>(&'a self, sql: &'a str, params: &'a [&'a dyn rusqlite::ToSql]) -> impl std::future::Future<Output = Result<usize, String>> + Send + 'a {
+        let sql_owned = sql.to_string();
         let params_vec: Vec<rusqlite::types::Value> = params.iter().map(|p| {
             match p.to_sql() {
                 Ok(output) => match output {
@@ -2098,7 +2106,10 @@ impl DataSync {
                 Err(_) => rusqlite::types::Value::Null,
             }
         }).collect();
-        self.db.execute_with_params_affected_owned(sql, params_vec).await
+        
+        async move {
+            self.db.execute_with_params_affected_owned(&sql_owned, params_vec).await
+        }
     }
 
     // ========== 从数据中心同步其他客户端的修改内容 ==========
