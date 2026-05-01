@@ -14,7 +14,6 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 use base::mylogger;
-use ontology::OntologySync;
 
 type AfterSyncCallback = Arc<dyn Fn() + Send + Sync>;
 
@@ -41,8 +40,6 @@ pub struct DataManage {
     after_sync_callback: Arc<RwLock<Option<AfterSyncCallback>>>,
     /// 用户数据（可选，由 bin 入口注入，如 OntologySync 实例）
     user_data: Arc<RwLock<Option<Arc<dyn Any + Send + Sync>>>>,
-    /// 本体图同步实例（可选）
-    ontology_sync: Arc<RwLock<Option<OntologySync>>>,
 }
 
 impl DataManage {
@@ -58,7 +55,6 @@ impl DataManage {
             logger,
             after_sync_callback: Arc::new(RwLock::new(None)),
             user_data: Arc::new(RwLock::new(None)),
-            ontology_sync: Arc::new(RwLock::new(None)),
         };
         Ok(manager)
     }
