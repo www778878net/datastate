@@ -457,6 +457,18 @@ impl LocalDB {
         let sql_owned = sql.to_string();
         let params_str = Self::params_to_string(params);
         
+        // 将参数转换为 owned 类型
+        let params_owned: Vec<rusqlite::types::Value> = params.iter().map(|p| {
+            match p.to_sql() {
+                Ok(output) => match output {
+                    rusqlite::types::ToSqlOutput::Owned(v) => v,
+                    rusqlite::types::ToSqlOutput::Borrowed(v) => v.into(),
+                    _ => rusqlite::types::Value::Null,
+                },
+                Err(_) => rusqlite::types::Value::Null,
+            }
+        }).collect();
+        
         let conn = self.conn.clone();
         let config = self.config.clone();
         
@@ -471,7 +483,8 @@ impl LocalDB {
                 .map(|s| s.to_string())
                 .collect();
 
-            let rows = stmt.query(params)
+            let params_refs: Vec<&dyn rusqlite::ToSql> = params_owned.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            let rows = stmt.query(params_refs.as_slice())
                 .map_err(|e| format!("查询失败: {}", e))?;
 
             Self::process_rows(rows, &column_names)
