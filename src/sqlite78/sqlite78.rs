@@ -148,15 +148,32 @@ impl Sqlite78 {
         Ok("ok".to_string())
     }
 
+    /// 查询数据（便捷方法，接受 ToSql 参数）
+    pub async fn do_get_tosql(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
+        let params_vec: Vec<rusqlite::types::Value> = values.iter().map(|p| {
+            match p.to_sql() {
+                Ok(output) => match output {
+                    rusqlite::types::ToSqlOutput::Owned(v) => v,
+                    rusqlite::types::ToSqlOutput::Borrowed(v) => v.into(),
+                    _ => rusqlite::types::Value::Null,
+                },
+                Err(_) => rusqlite::types::Value::Null,
+            }
+        }).collect();
+        self.do_get(cmdtext, &params_vec, up).await
+    }
+
     /// 查询数据
-    pub async fn do_get(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
-        let conn = self.get_conn()?;
-        let dstart = std::time::Instant::now();
-
-        let conn_guard = conn.lock().await;
-
-        let result = {
-            let mut stmt = conn_guard.prepare(cmdtext)
+    pub async fn do_get(&self, cmdtext: &str, values: &[rusqlite::types::Value], up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
+        let cmdtext_owned = cmdtext.to_string();
+        let up_owned = up.clone();
+        let values_owned = values.to_vec();
+        let conn = self.get_conn()?.clone();
+        
+        let result = tokio::task::block_in_place(|| {
+            let conn_guard = conn.blocking_lock();
+            
+            let mut stmt = conn_guard.prepare(&cmdtext_owned)
                 .map_err(|e| format!("准备语句失败: {}", e))?;
 
             let column_names: Vec<String> = stmt.column_names()
@@ -164,23 +181,22 @@ impl Sqlite78 {
                 .map(|s| s.to_string())
                 .collect();
 
-            let rows = stmt.query(values)
+            let params_refs: Vec<&dyn rusqlite::ToSql> = values_owned.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            let rows = stmt.query(params_refs.as_slice())
                 .map_err(|e| format!("查询失败: {}", e))?;
 
-            Self::process_rows(rows, &column_names)?
-        };
-
-        drop(conn_guard);
+            Self::process_rows(rows, &column_names)
+        })?;
 
         let lendown = serde_json::to_string(&result).unwrap_or_default().len();
-        let elapsed = dstart.elapsed().as_millis() as i64;
+        let elapsed = std::time::Instant::now().elapsed().as_millis() as i64;
 
-        if up.debug {
-            let info = format!("{} c:{} rows={}", serde_json::to_string(&result).unwrap_or_default(), cmdtext, result.len());
-            self.add_warn(&info, &format!("debug_{}", up.apimicro), up).await?;
+        if up_owned.debug {
+            let info = format!("{} c:{} rows={}", serde_json::to_string(&result).unwrap_or_default(), cmdtext_owned, result.len());
+            self.add_warn(&info, &format!("debug_{}", up_owned.apimicro), &up_owned).await?;
         }
 
-        self.save_log(cmdtext, elapsed, lendown as i64, up).await?;
+        self.save_log(&cmdtext_owned, elapsed, lendown as i64, &up_owned).await?;
 
         Ok(result)
     }
@@ -221,120 +237,162 @@ impl Sqlite78 {
         Value::Null
     }
 
+    /// 更新数据（便捷方法，接受 ToSql 参数）
+    pub async fn do_m_tosql(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<UpdateResult, String> {
+        let params_vec: Vec<rusqlite::types::Value> = values.iter().map(|p| {
+            match p.to_sql() {
+                Ok(output) => match output {
+                    rusqlite::types::ToSqlOutput::Owned(v) => v,
+                    rusqlite::types::ToSqlOutput::Borrowed(v) => v.into(),
+                    _ => rusqlite::types::Value::Null,
+                },
+                Err(_) => rusqlite::types::Value::Null,
+            }
+        }).collect();
+        self.do_m(cmdtext, &params_vec, up).await
+    }
+
     /// 更新数据
-    pub async fn do_m(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<UpdateResult, String> {
-        let conn = self.get_conn()?;
+    pub async fn do_m(&self, cmdtext: &str, values: &[rusqlite::types::Value], up: &UpInfo) -> Result<UpdateResult, String> {
+        let cmdtext_owned = cmdtext.to_string();
+        let up_owned = up.clone();
+        let values_owned = values.to_vec();
+        let conn = self.get_conn()?.clone();
+        let logger = self.logger.clone();
+        
         let dstart = std::time::Instant::now();
-
-        let conn_guard = conn.lock().await;
-
-        let result = match conn_guard.execute(cmdtext, values) {
-            Ok(rows_affected) => {
-                Ok(UpdateResult {
-                    affected_rows: rows_affected as i64,
-                    error: if rows_affected == 0 {
-                        Some(format!("更新失败，没有找到匹配的记录 (cmdtext: {})", cmdtext))
-                    } else {
-                        None
-                    },
-                })
-            }
-            Err(e) => {
-                let error_msg = e.to_string();
-                if error_msg.contains("no such table") {
-                    self.logger.detail(&format!("sqlite_doM: {}", error_msg));
-                } else {
-                    self.logger.error(&format!("sqlite_doM error: {}", error_msg));
+        
+        let result = tokio::task::block_in_place(|| {
+            let conn_guard = conn.blocking_lock();
+            
+            let params_refs: Vec<&dyn rusqlite::ToSql> = values_owned.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            match conn_guard.execute(&cmdtext_owned, params_refs.as_slice()) {
+                Ok(rows_affected) => {
+                    Ok(UpdateResult {
+                        affected_rows: rows_affected as i64,
+                        error: if rows_affected == 0 {
+                            Some(format!("更新失败，没有找到匹配的记录 (cmdtext: {})", cmdtext_owned))
+                        } else {
+                            None
+                        },
+                    })
                 }
-                Ok(UpdateResult {
-                    affected_rows: 0,
-                    error: Some(error_msg.clone()),
-                })
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    if error_msg.contains("no such table") {
+                        logger.detail(&format!("sqlite_doM: {}", error_msg));
+                    } else {
+                        logger.error(&format!("sqlite_doM error: {}", error_msg));
+                    }
+                    Ok(UpdateResult {
+                        affected_rows: 0,
+                        error: Some(error_msg.clone()),
+                    })
+                }
             }
-        };
+        });
 
         let elapsed = dstart.elapsed().as_millis() as i64;
         let affected = result.as_ref().map(|r| r.affected_rows).unwrap_or(0);
 
-        drop(conn_guard);
-
-        if up.debug {
-            let info = format!("affected:{} c:{}", affected, cmdtext);
-            self.add_warn(&info, &format!("debug_{}", up.apimicro), up).await?;
+        if up_owned.debug {
+            let info = format!("affected:{} c:{}", affected, cmdtext_owned);
+            self.add_warn(&info, &format!("debug_{}", up_owned.apimicro), &up_owned).await?;
         }
 
         if let Ok(ref r) = result {
             if r.error.is_none() {
-                self.save_log(cmdtext, elapsed, affected, up).await?;
+                self.save_log(&cmdtext_owned, elapsed, affected, &up_owned).await?;
             }
         }
 
         if let Ok(ref r) = result {
             if let Some(ref err) = r.error {
-                self.add_warn(&format!("{} c:{}", err, cmdtext), &format!("err_{}", up.apimicro), up).await?;
+                self.add_warn(&format!("{} c:{}", err, cmdtext_owned), &format!("err_{}", up_owned.apimicro), &up_owned).await?;
             }
         }
 
         result
     }
 
+    /// 插入数据（便捷方法，接受 ToSql 参数）
+    pub async fn do_m_add_tosql(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<InsertResult, String> {
+        let params_vec: Vec<rusqlite::types::Value> = values.iter().map(|p| {
+            match p.to_sql() {
+                Ok(output) => match output {
+                    rusqlite::types::ToSqlOutput::Owned(v) => v,
+                    rusqlite::types::ToSqlOutput::Borrowed(v) => v.into(),
+                    _ => rusqlite::types::Value::Null,
+                },
+                Err(_) => rusqlite::types::Value::Null,
+            }
+        }).collect();
+        self.do_m_add(cmdtext, &params_vec, up).await
+    }
+
     /// 插入数据
-    pub async fn do_m_add(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql], up: &UpInfo) -> Result<InsertResult, String> {
-        let conn = self.get_conn()?;
+    pub async fn do_m_add(&self, cmdtext: &str, values: &[rusqlite::types::Value], up: &UpInfo) -> Result<InsertResult, String> {
+        let cmdtext_owned = cmdtext.to_string();
+        let up_owned = up.clone();
+        let values_owned = values.to_vec();
+        let conn = self.get_conn()?.clone();
+        let logger = self.logger.clone();
+        
         let dstart = std::time::Instant::now();
-
-        let conn_guard = conn.lock().await;
-
-        let result = match conn_guard.execute(cmdtext, values) {
-            Ok(rows_affected) => {
-                let insert_id = conn_guard.last_insert_rowid();
-                Ok(InsertResult {
-                    insert_id,
-                    error: if rows_affected == 0 {
-                        Some(format!("插入失败 (cmdtext: {})", cmdtext))
+        
+        let result = tokio::task::block_in_place(|| {
+            let conn_guard = conn.blocking_lock();
+            
+            let params_refs: Vec<&dyn rusqlite::ToSql> = values_owned.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            match conn_guard.execute(&cmdtext_owned, params_refs.as_slice()) {
+                Ok(rows_affected) => {
+                    let insert_id = conn_guard.last_insert_rowid();
+                    Ok(InsertResult {
+                        insert_id,
+                        error: if rows_affected == 0 {
+                            Some(format!("插入失败 (cmdtext: {})", cmdtext_owned))
+                        } else {
+                            None
+                        },
+                    })
+                }
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    let words: Vec<&str> = cmdtext_owned.split_whitespace().collect();
+                    let table_name = if words.len() > 2 && words[0].to_uppercase() == "REPLACE" {
+                        words.get(2).unwrap_or(&"unknown")
+                    } else if words.len() > 4 && words[1].to_uppercase() == "OR" {
+                        words.get(4).unwrap_or(&"unknown")
                     } else {
-                        None
-                    },
-                })
+                        words.get(2).unwrap_or(&"unknown")
+                    };
+                    logger.error(&format!("sqlite_doMAdd error: {} (table: {})", error_msg, table_name));
+                    Ok(InsertResult {
+                        insert_id: 0,
+                        error: Some(error_msg.clone()),
+                    })
+                }
             }
-            Err(e) => {
-                let error_msg = e.to_string();
-                let words: Vec<&str> = cmdtext.split_whitespace().collect();
-                let table_name = if words.len() > 2 && words[0].to_uppercase() == "REPLACE" {
-                    words.get(2).unwrap_or(&"unknown")
-                } else if words.len() > 4 && words[1].to_uppercase() == "OR" {
-                    words.get(4).unwrap_or(&"unknown")
-                } else {
-                    words.get(2).unwrap_or(&"unknown")
-                };
-                self.logger.error(&format!("sqlite_doMAdd error: {} (table: {})", error_msg, table_name));
-                Ok(InsertResult {
-                    insert_id: 0,
-                    error: Some(error_msg.clone()),
-                })
-            }
-        };
+        });
 
         let elapsed = dstart.elapsed().as_millis() as i64;
         let affected = result.as_ref().map(|r| if r.error.is_none() { 1i64 } else { 0i64 }).unwrap_or(0);
         let insert_id = result.as_ref().map(|r| r.insert_id).unwrap_or(0);
 
-        drop(conn_guard);
-
-        if up.debug {
-            let info = format!("insertId:{} c:{}", insert_id, cmdtext);
-            self.add_warn(&info, &format!("debug_{}", up.apimicro), up).await?;
+        if up_owned.debug {
+            let info = format!("insertId:{} c:{}", insert_id, cmdtext_owned);
+            self.add_warn(&info, &format!("debug_{}", up_owned.apimicro), &up_owned).await?;
         }
 
         if let Ok(ref r) = result {
             if r.error.is_none() {
-                self.save_log(cmdtext, elapsed, affected, up).await?;
+                self.save_log(&cmdtext_owned, elapsed, affected, &up_owned).await?;
             }
         }
 
         if let Ok(ref r) = result {
             if let Some(ref err) = r.error {
-                self.add_warn(&format!("{} c:{}", err, cmdtext), &format!("err_{}", up.apimicro), up).await?;
+                self.add_warn(&format!("{} c:{}", err, cmdtext_owned), &format!("err_{}", up_owned.apimicro), &up_owned).await?;
             }
         }
 

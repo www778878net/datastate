@@ -313,7 +313,7 @@ impl WorkflowTask {
             table_name
         );
 
-        self.db.do_m_add(
+        self.db.do_m_add_tosql(
             &sql,
             &[
                 &id as &dyn rusqlite::ToSql,
@@ -365,7 +365,7 @@ impl WorkflowTask {
         self.create_today_table().await?;
         let table_name = self.get_table_name();
         let sql = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = self.db.do_get(&sql, &[&id as &dyn rusqlite::ToSql], up).await?;
+        let rows = self.db.do_get_tosql(&sql, &[&id as &dyn rusqlite::ToSql], up).await?;
         Ok(rows.into_iter().next())
     }
 
@@ -374,7 +374,7 @@ impl WorkflowTask {
         self.create_today_table().await?;
         let table_name = self.get_table_name();
         let sql = format!("UPDATE {} SET state = ? WHERE id = ?", table_name);
-        self.db.do_m(
+        self.db.do_m_tosql(
             &sql,
             &[&state as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql],
             up,
@@ -391,7 +391,7 @@ impl WorkflowTask {
             "UPDATE {} SET state = 2, lastoktime = ?, lastokinfo = ? WHERE id = ?",
             table_name
         );
-        self.db.do_m(
+        self.db.do_m_tosql(
             &sql,
             &[
                 &now as &dyn rusqlite::ToSql,
@@ -412,7 +412,7 @@ impl WorkflowTask {
             "UPDATE {} SET state = 3, lasterrortime = ?, lasterrinfo = ? WHERE id = ?",
             table_name
         );
-        self.db.do_m(
+        self.db.do_m_tosql(
             &sql,
             &[
                 &now as &dyn rusqlite::ToSql,
@@ -437,7 +437,7 @@ impl WorkflowTask {
             table_name
         );
         self.db
-            .do_get(&sql, &[&idworkflowinstance as &dyn rusqlite::ToSql], up).await
+            .do_get_tosql(&sql, &[&idworkflowinstance as &dyn rusqlite::ToSql], up).await
     }
 
     /// 查询指定状态的任务
@@ -452,7 +452,7 @@ impl WorkflowTask {
             "SELECT * FROM {} WHERE state = ? ORDER BY priority DESC, starttime ASC",
             table_name
         );
-        self.db.do_get(&sql, &[&state as &dyn rusqlite::ToSql], up).await
+        self.db.do_get_tosql(&sql, &[&state as &dyn rusqlite::ToSql], up).await
     }
 
     /// 获取底层数据库引用
@@ -520,7 +520,7 @@ impl WorkflowTask {
         let sql = format!("UPDATE {} SET {} WHERE id = ?", table_name, set_clauses.join(", "));
         params.push(&id as &dyn rusqlite::ToSql);
 
-        self.db.do_m(&sql, &params, &up).await?;
+        self.db.do_m_tosql(&sql, &params, &up).await?;
         Ok(())
     }
 
@@ -533,7 +533,7 @@ impl WorkflowTask {
         } else {
             format!("SELECT * FROM {} WHERE {}", table_name, condition)
         };
-        self.db.do_get(&sql, params, &up).await
+        self.db.do_get_tosql(&sql, params, &up).await
     }
 
     /// 删除记录
@@ -541,7 +541,7 @@ impl WorkflowTask {
         let up = UpInfo::new();
         let table_name = self.get_table_name();
         let sql = format!("DELETE FROM {} WHERE id = ?", table_name);
-        self.db.do_m(&sql, &[&id as &dyn rusqlite::ToSql], &up).await?;
+        self.db.do_m_tosql(&sql, &[&id as &dyn rusqlite::ToSql], &up).await?;
         Ok(())
     }
 }

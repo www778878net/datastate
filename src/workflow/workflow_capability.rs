@@ -135,7 +135,7 @@ impl WorkflowCapability {
             .map(|v| v as &dyn rusqlite::ToSql)
             .collect();
 
-        let result = self.db.do_m_add(&sql, params_vec.as_slice(), up).await?;
+        let result = self.db.do_m_add_tosql(&sql, params_vec.as_slice(), up).await?;
         if let Some(e) = result.error {
             return Err(format!("插入失败: {}", e));
         }
@@ -146,14 +146,14 @@ impl WorkflowCapability {
     /// 根据 ID 查询能力定义
     pub async fn get(&self, id: &str, up: &UpInfo) -> Result<Option<HashMap<String, Value>>, String> {
         let sql = "SELECT * FROM workflow_capability WHERE id = ?";
-        let rows = self.db.do_get(sql, &[&id as &dyn rusqlite::ToSql], up).await?;
+        let rows = self.db.do_get_tosql(sql, &[&id as &dyn rusqlite::ToSql], up).await?;
         Ok(rows.into_iter().next())
     }
 
     /// 更新能力状态
     pub async fn update_state(&self, id: &str, state: i32, up: &UpInfo) -> Result<(), String> {
         let sql = "UPDATE workflow_capability SET state = ? WHERE id = ?";
-        self.db.do_m(sql, &[&state as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql], up).await?;
+        self.db.do_m_tosql(sql, &[&state as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql], up).await?;
         Ok(())
     }
 

@@ -71,10 +71,10 @@ impl SysSqlSqliteState {
             &data.uptime,
         ];
 
-        self.db.do_m_add(insert_sql, &params, up).await?;
+        self.db.do_m_add_tosql(insert_sql, &params, up).await?;
 
         let update_sql = "UPDATE sys_sql SET num=num+1,dlong=dlong+?,downlen=downlen+? WHERE cmdtextmd5=?";
-        self.db.do_m(update_sql, rusqlite::params![data.dlong, data.downlen, data.cmdtextmd5], up).await?;
+        self.db.do_m_tosql(update_sql, rusqlite::params![data.dlong, data.downlen, data.cmdtextmd5], up).await?;
 
         Ok(())
     }
@@ -83,7 +83,7 @@ impl SysSqlSqliteState {
     pub async fn get_slow_sql(&self, min_dlong: i64, limit: i32, up: &UpInfo) -> Result<Vec<SysSqlData>, String> {
         let sql = "SELECT id,cid,apisys,apimicro,apiobj,cmdtext,uname,num,dlong,downlen,upby,cmdtextmd5,uptime FROM sys_sql WHERE dlong > ? ORDER BY dlong DESC LIMIT ?";
 
-        let rows = self.db.do_get(sql, &[&min_dlong as &dyn rusqlite::ToSql, &limit as &dyn rusqlite::ToSql], up).await?;
+        let rows = self.db.do_get_tosql(sql, &[&min_dlong as &dyn rusqlite::ToSql, &limit as &dyn rusqlite::ToSql], up).await?;
 
         Ok(rows.iter().map(|row| SysSqlData {
             id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
@@ -107,7 +107,7 @@ impl SysSqlSqliteState {
     pub async fn get_hot_sql(&self, min_num: i64, limit: i32, up: &UpInfo) -> Result<Vec<SysSqlData>, String> {
         let sql = "SELECT id,cid,apisys,apimicro,apiobj,cmdtext,uname,num,dlong,downlen,upby,cmdtextmd5,uptime FROM sys_sql WHERE num > ? ORDER BY num DESC LIMIT ?";
 
-        let rows = self.db.do_get(sql, &[&min_num as &dyn rusqlite::ToSql, &limit as &dyn rusqlite::ToSql], up).await?;
+        let rows = self.db.do_get_tosql(sql, &[&min_num as &dyn rusqlite::ToSql, &limit as &dyn rusqlite::ToSql], up).await?;
 
         Ok(rows.iter().map(|row| SysSqlData {
             id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),

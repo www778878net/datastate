@@ -273,7 +273,7 @@ impl Synclog {
             table_name
         );
 
-        self.db.do_m_add(
+        self.db.do_m_add_tosql(
             &sql,
             &[
                 &apisys as &dyn rusqlite::ToSql,
@@ -310,7 +310,7 @@ impl Synclog {
 
         for table_name in tables {
             let sql = format!("SELECT * FROM {} WHERE synced = 0 ORDER BY idpk ASC LIMIT ?", table_name);
-            match self.db.do_get(&sql, &[&limit as &dyn rusqlite::ToSql], &up).await {
+            match self.db.do_get_tosql(&sql, &[&limit as &dyn rusqlite::ToSql], &up).await {
                 Ok(mut items) => {
                     all_items.append(&mut items);
                     if all_items.len() >= limit as usize {
@@ -337,7 +337,7 @@ impl Synclog {
 
         for table_name in tables {
             let sql = format!("SELECT * FROM {} WHERE synced = 0 ORDER BY idpk ASC LIMIT ?", table_name);
-            match self.db.do_get(&sql, &[&limit as &dyn rusqlite::ToSql], &up).await {
+            match self.db.do_get_tosql(&sql, &[&limit as &dyn rusqlite::ToSql], &up).await {
                 Ok(mut items) => {
                     all_items.append(&mut items);
                     if all_items.len() >= limit as usize {
@@ -435,7 +435,7 @@ impl Synclog {
                 params.push(id);
             }
 
-            let _ = self.db.do_m(&sql, &params, &up).await;
+            let _ = self.db.do_m_tosql(&sql, &params, &up).await;
         }
 
         Ok(())
@@ -466,7 +466,7 @@ impl Synclog {
 
         for synclog_table in &synclog_tables {
             let sql = format!("SELECT COUNT(*) as cnt FROM {} WHERE tbname = ? AND synced = 0", synclog_table);
-            if let Ok(rows) = self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql], &up).await {
+            if let Ok(rows) = self.db.do_get_tosql(&sql, &[&tbname as &dyn rusqlite::ToSql], &up).await {
                 if let Some(row) = rows.first() {
                     if let Some(cnt) = row.get("cnt").and_then(|v: &serde_json::Value| v.as_i64()) {
                         total += cnt as i32;
@@ -509,7 +509,7 @@ impl Synclog {
             if remaining == 0 {
                 break;
             }
-            match self.db.do_get(&sql, &[&tbname as &dyn rusqlite::ToSql, &(remaining as i32) as &dyn rusqlite::ToSql], &up).await {
+            match self.db.do_get_tosql(&sql, &[&tbname as &dyn rusqlite::ToSql, &(remaining as i32) as &dyn rusqlite::ToSql], &up).await {
                 Ok(mut items) => {
                     all_items.append(&mut items);
                     if all_items.len() >= limit as usize {
@@ -646,7 +646,7 @@ impl Synclog {
             for id in idpk_list {
                 params.push(id);
             }
-            let _ = self.db.do_m(&sql, &params, &up).await;
+            let _ = self.db.do_m_tosql(&sql, &params, &up).await;
         }
 
         Ok(())
@@ -672,7 +672,7 @@ impl Synclog {
             for id in id_list {
                 params.push(id);
             }
-            let _ = self.db.do_m(&sql, &params, &up).await;
+            let _ = self.db.do_m_tosql(&sql, &params, &up).await;
         }
 
         Ok(())
@@ -727,7 +727,7 @@ impl Synclog {
                 table_name
             );
             
-            if let Ok(rows) = self.db.do_get(&select_sql, &[&id as &dyn rusqlite::ToSql], &up).await {
+            if let Ok(rows) = self.db.do_get_tosql(&select_sql, &[&id as &dyn rusqlite::ToSql], &up).await {
                 if let Some(row) = rows.first() {
                     let idpk: i64 = row.get("idpk").and_then(|v| v.as_i64()).unwrap_or(0);
                     let tbname: String = row.get("tbname").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -740,7 +740,7 @@ impl Synclog {
                     if idpk > 0 && !tbname.is_empty() && !idrow.is_empty() {
                         // 从本地数据库查询原始数据
                         let data_sql = format!("SELECT * FROM `{}` WHERE id = ? LIMIT 1", tbname);
-                        if let Ok(data_rows) = self.db.do_get(&data_sql, &[&idrow as &dyn rusqlite::ToSql], &up).await {
+                        if let Ok(data_rows) = self.db.do_get_tosql(&data_sql, &[&idrow as &dyn rusqlite::ToSql], &up).await {
                             if let Some(data_row) = data_rows.first() {
                                 // 构建 INSERT SQL
                                 let (cmdtext, params) = Self::build_insert_sql_from_row(&tbname, data_row);
@@ -752,7 +752,7 @@ impl Synclog {
                                     "UPDATE {} SET action = 'insert', cmdtext = ?, params = ?, cmdtextmd5 = ?, synced = 0, lasterrinfo = '' WHERE idpk = ?",
                                     table_name
                                 );
-                                let _ = self.db.do_m(
+                                let _ = self.db.do_m_tosql(
                                     &update_sql,
                                     &[
                                         &cmdtext as &dyn rusqlite::ToSql,
@@ -828,7 +828,7 @@ impl Synclog {
             for idrow in idrow_list {
                 params.push(idrow);
             }
-            let _ = self.db.do_m(&sql, &params, &up).await;
+            let _ = self.db.do_m_tosql(&sql, &params, &up).await;
         }
 
         Ok(())
@@ -864,7 +864,10 @@ impl Synclog {
             );
             let result = self.db.do_get(
                 &check_sql,
-                &[&tbname as &dyn rusqlite::ToSql, &record_id as &dyn rusqlite::ToSql],
+                &[
+                    rusqlite::types::Value::Text(tbname.to_string()),
+                    rusqlite::types::Value::Text(record_id.to_string()),
+                ],
                 &up,
             ).await;
             if let Ok(rows) = result {
@@ -890,13 +893,13 @@ impl Synclog {
                 let result = self.db.do_m(
                     &update_sql,
                     &[
-                        &action as &dyn rusqlite::ToSql,
-                        &cmdtext as &dyn rusqlite::ToSql,
-                        &params as &dyn rusqlite::ToSql,
-                        &cmdtextmd5 as &dyn rusqlite::ToSql,
-                        &worker as &dyn rusqlite::ToSql,
-                        &uptime as &dyn rusqlite::ToSql,
-                        &idpk as &dyn rusqlite::ToSql,
+                        rusqlite::types::Value::Text(action.to_string()),
+                        rusqlite::types::Value::Text(cmdtext.to_string()),
+                        rusqlite::types::Value::Text(params.to_string()),
+                        rusqlite::types::Value::Text(cmdtextmd5.to_string()),
+                        rusqlite::types::Value::Text(worker.to_string()),
+                        rusqlite::types::Value::Text(uptime.to_string()),
+                        rusqlite::types::Value::Integer(idpk),
                     ],
                     &up,
                 ).await;
@@ -924,17 +927,17 @@ impl Synclog {
             self.db.do_m_add(
                 &insert_sql,
                 &[
-                    &id as &dyn rusqlite::ToSql,
-                    &tbname as &dyn rusqlite::ToSql,
-                    &action as &dyn rusqlite::ToSql,
-                    &cmdtext as &dyn rusqlite::ToSql,
-                    &params as &dyn rusqlite::ToSql,
-                    &record_id as &dyn rusqlite::ToSql,
-                    &worker as &dyn rusqlite::ToSql,
-                    &cmdtextmd5 as &dyn rusqlite::ToSql,
-                    &cid as &dyn rusqlite::ToSql,
-                    &worker as &dyn rusqlite::ToSql,
-                    &uptime as &dyn rusqlite::ToSql,
+                    rusqlite::types::Value::Text(id.to_string()),
+                    rusqlite::types::Value::Text(tbname.to_string()),
+                    rusqlite::types::Value::Text(action.to_string()),
+                    rusqlite::types::Value::Text(cmdtext.to_string()),
+                    rusqlite::types::Value::Text(params.to_string()),
+                    rusqlite::types::Value::Text(record_id.to_string()),
+                    rusqlite::types::Value::Text(worker.to_string()),
+                    rusqlite::types::Value::Text(cmdtextmd5.to_string()),
+                    rusqlite::types::Value::Text(cid.to_string()),
+                    rusqlite::types::Value::Text(worker.to_string()),
+                    rusqlite::types::Value::Text(uptime.to_string()),
                 ],
                 &up,
             ).await?;

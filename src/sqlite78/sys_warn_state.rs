@@ -70,7 +70,7 @@ impl SysWarnSqliteState {
             &data.remark6,
         ];
 
-        let result = self.db.do_m_add(sql, &params, up).await?;
+        let result = self.db.do_m_add_tosql(sql, &params, up).await?;
         if let Some(err) = result.error {
             return Err(err);
         }
@@ -81,7 +81,7 @@ impl SysWarnSqliteState {
     pub async fn get_by_kind(&self, kind: &str, up: &UpInfo) -> Result<Vec<SysWarnData>, String> {
         let sql = "SELECT id,uid,kind,apimicro,apiobj,content,upid,upby,uptime,remark,remark2,remark3,remark4,remark5,remark6 FROM sys_warn WHERE kind = ?";
 
-        let rows = self.db.do_get(sql, &[&kind as &dyn rusqlite::ToSql], up).await?;
+        let rows = self.db.do_get_tosql(sql, &[&kind as &dyn rusqlite::ToSql], up).await?;
 
         Ok(rows.iter().map(|row| SysWarnData {
             id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
@@ -106,7 +106,7 @@ impl SysWarnSqliteState {
     pub async fn clean_old(&self, keep_count: i32, up: &UpInfo) -> Result<i64, String> {
         let sql = "DELETE FROM sys_warn WHERE idpk NOT IN (SELECT idpk FROM sys_warn ORDER BY idpk DESC LIMIT ?)";
 
-        let result = self.db.do_m(sql, &[&keep_count as &dyn rusqlite::ToSql], up).await?;
+        let result = self.db.do_m_tosql(sql, &[&keep_count as &dyn rusqlite::ToSql], up).await?;
         Ok(result.affected_rows)
     }
 }

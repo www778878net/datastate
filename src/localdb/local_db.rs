@@ -449,76 +449,7 @@ impl LocalDB {
         Ok(rows_affected > 0)
     }
 
-    /// 查询数据
-    pub async fn query(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<HashMap<String, Value>>, String> {
-        use std::time::Instant;
-        let start = Instant::now();
-
-        let sql_owned = sql.to_string();
-        let params_str = Self::params_to_string(params);
-        
-        // 将参数转换为 owned 类型
-        let params_owned: Vec<rusqlite::types::Value> = params.iter().map(|p| {
-            match p.to_sql() {
-                Ok(output) => match output {
-                    rusqlite::types::ToSqlOutput::Owned(v) => v,
-                    rusqlite::types::ToSqlOutput::Borrowed(v) => v.into(),
-                    _ => rusqlite::types::Value::Null,
-                },
-                Err(_) => rusqlite::types::Value::Null,
-            }
-        }).collect();
-        
-        let config = self.config.clone();
-        let conn = self.conn.clone();
-        
-        let result = tokio::task::spawn_blocking(move || {
-            let conn_guard = conn.blocking_lock();
-            
-            let mut stmt = match conn_guard.prepare(&sql_owned) {
-                Ok(s) => s,
-                Err(e) => return Err(format!("准备语句失败: {}", e)),
-            };
-
-            let column_names: Vec<String> = stmt.column_names()
-                .into_iter()
-                .map(|s| s.to_string())
-                .collect();
-
-            let rows = match stmt.query(rusqlite::params_from_iter(params_owned.iter())) {
-                Ok(r) => r,
-                Err(e) => return Err(format!("查询失败: {}", e)),
-            };
-
-            Self::process_rows(rows, &column_names)
-        }).await.map_err(|e| format!("spawn_blocking error: {}", e))??;
-
-        let elapsed = start.elapsed().as_millis() as i64;
-        let downlen = result.len() as i64;
-
-        // 记录 SQL 统计
-        if config.is_count {
-            let apiobj = Self::parse_table_name(sql);
-            let conn = self.conn.blocking_lock();
-            if let Err(e) = Self::do_save_sql_log(&conn, &config.cid, &config.apisys, &config.apimicro, &apiobj, sql, elapsed, downlen, &config.upby) {
-                let logger = mylogger!();
-                logger.error(&format!("[LocalDB] save_sql_log 失败: {}", e));
-            }
-        }
-
-        // 记录调试日志
-        if config.is_log {
-            let apiobj = Self::parse_table_name(sql);
-            let result_json = serde_json::to_string(&result).unwrap_or_default();
-            let content = format!("{} c:{} v{}", result_json, sql, params_str);
-            let conn = self.conn.blocking_lock();
-            let _ = Self::do_add_warn(&conn, &config.cid, "debug_local", &config.apisys, &config.apimicro, &apiobj, &content, &config.upby);
-        }
-
-        Ok(result)
-    }
-
-    /// 查询数据（同步版本，用于 spawn_blocking）
+    /// 查询数据（同步版本）
     pub fn query_sync(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<HashMap<String, Value>>, String> {
         use std::time::Instant;
         let start = Instant::now();
@@ -560,6 +491,40 @@ impl LocalDB {
         }
 
         Ok(result)
+    }
+
+    /// 查询数据（异步包装器，使用 block_in_place）
+    pub fn query<'a>(&'a self, sql: &'a str, params: &'a [&'a dyn rusqlite::ToSql]) -> impl std::future::Future<Output = Result<Vec<HashMap<String, Value>>, String>> + Send + 'a {
+        let sql_owned = sql.to_string();
+        let params_vec: Vec<rusqlite::types::Value> = params.iter().map(|p| {
+            match p.to_sql() {
+                Ok(output) => match output {
+                    rusqlite::types::ToSqlOutput::Owned(v) => v,
+                    rusqlite::types::ToSqlOutput::Borrowed(v) => v.into(),
+                    _ => rusqlite::types::Value::Null,
+                },
+                Err(_) => rusqlite::types::Value::Null,
+            }
+        }).collect();
+        
+        async move {
+            let db = self.clone();
+            
+            tokio::task::spawn_blocking(move || {
+                let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+                db.query_sync(&sql_owned, &params_refs)
+            }).await.map_err(|e| format!("spawn_blocking error: {}", e))?
+        }
+    }
+    
+    /// 查询数据（使用 owned 参数）
+    pub async fn query_owned(&self, sql: &str, params: Vec<rusqlite::types::Value>) -> Result<Vec<HashMap<String, Value>>, String> {
+        let sql_owned = sql.to_string();
+        let db = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            db.query_sync(&sql_owned, &params_refs)
+        }).await.map_err(|e| format!("spawn_blocking error: {}", e))?
     }
 
     /// 将参数转换为字符串
@@ -731,10 +696,30 @@ impl LocalDB {
 
     /// 执行带参数的 SQL，返回影响行数
     pub async fn execute_with_params_affected(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<usize, String> {
-        let conn = self.conn.lock().await;
-        let rows_affected = conn.execute(sql, params)
-            .map_err(|e| format!("执行失败: {}", e))?;
-        Ok(rows_affected)
+        let params_vec: Vec<rusqlite::types::Value> = params.iter().map(|p| {
+            match p.to_sql() {
+                Ok(output) => match output {
+                    rusqlite::types::ToSqlOutput::Owned(v) => v,
+                    rusqlite::types::ToSqlOutput::Borrowed(v) => v.into(),
+                    _ => rusqlite::types::Value::Null,
+                },
+                Err(_) => rusqlite::types::Value::Null,
+            }
+        }).collect();
+        self.execute_with_params_affected_owned(sql, params_vec).await
+    }
+    
+    /// 执行带参数的 SQL，返回影响行数（使用 owned 参数）
+    pub async fn execute_with_params_affected_owned(&self, sql: &str, params: Vec<rusqlite::types::Value>) -> Result<usize, String> {
+        let sql_owned = sql.to_string();
+        let conn = self.conn.clone();
+        
+        tokio::task::spawn_blocking(move || {
+            let conn_guard = conn.blocking_lock();
+            let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            conn_guard.execute(&sql_owned, params_refs.as_slice())
+                .map_err(|e| format!("执行失败: {}", e))
+        }).await.map_err(|e| format!("spawn_blocking error: {}", e))?
     }
 
     /// 获取表记录数

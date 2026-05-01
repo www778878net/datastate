@@ -281,7 +281,7 @@ impl WorkflowInstance {
             table_name
         );
 
-        self.db.do_m_add(
+        self.db.do_m_add_tosql(
             &sql,
             &[
                 &id as &dyn rusqlite::ToSql,
@@ -335,7 +335,7 @@ impl WorkflowInstance {
         self.create_today_table().await?;
         let table_name = self.get_table_name();
         let sql = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = self.db.do_get(&sql, &[&id as &dyn rusqlite::ToSql], up).await?;
+        let rows = self.db.do_get_tosql(&sql, &[&id as &dyn rusqlite::ToSql], up).await?;
         Ok(rows.into_iter().next())
     }
 
@@ -343,7 +343,7 @@ impl WorkflowInstance {
     pub async fn update_state(&self, id: &str, state: i32, up: &UpInfo) -> Result<(), String> {
         let table_name = self.get_table_name();
         let sql = format!("UPDATE {} SET state = ? WHERE id = ?", table_name);
-        self.db.do_m(&sql, &[&state as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql], up).await?;
+        self.db.do_m_tosql(&sql, &[&state as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql], up).await?;
         Ok(())
     }
 
@@ -355,7 +355,7 @@ impl WorkflowInstance {
             "UPDATE {} SET state = 2, lastoktime = ?, lastokinfo = ?, endtime = ? WHERE id = ?",
             table_name
         );
-        self.db.do_m(
+        self.db.do_m_tosql(
             &sql,
             &[&now as &dyn rusqlite::ToSql, &info as &dyn rusqlite::ToSql, &now as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql],
             up
@@ -371,7 +371,7 @@ impl WorkflowInstance {
             "UPDATE {} SET state = 3, lasterrortime = ?, lasterrinfo = ?, endtime = ? WHERE id = ?",
             table_name
         );
-        self.db.do_m(
+        self.db.do_m_tosql(
             &sql,
             &[&now as &dyn rusqlite::ToSql, &errinfo as &dyn rusqlite::ToSql, &now as &dyn rusqlite::ToSql, &id as &dyn rusqlite::ToSql],
             up
@@ -383,7 +383,7 @@ impl WorkflowInstance {
     pub async fn get_running(&self, up: &UpInfo) -> Result<Vec<HashMap<String, Value>>, String> {
         let table_name = self.get_table_name();
         let sql = format!("SELECT * FROM {} WHERE state = 1 ORDER BY priority DESC", table_name);
-        self.db.do_get(&sql, &[], up).await
+        self.db.do_get_tosql(&sql, &[], up).await
     }
 
     /// 查询指定工作流定义的所有实例
@@ -393,7 +393,7 @@ impl WorkflowInstance {
             "SELECT * FROM {} WHERE idworkflowdefinition = ? ORDER BY starttime DESC",
             table_name
         );
-        self.db.do_get(&sql, &[&idworkflowdefinition as &dyn rusqlite::ToSql], up).await
+        self.db.do_get_tosql(&sql, &[&idworkflowdefinition as &dyn rusqlite::ToSql], up).await
     }
 
     /// 获取底层数据库引用
@@ -405,7 +405,7 @@ impl WorkflowInstance {
     pub async fn get_by_id(&self, id: &str, up: &UpInfo) -> Result<Option<HashMap<String, Value>>, String> {
         let table_name = self.get_table_name();
         let sql = format!("SELECT * FROM {} WHERE id = ?", table_name);
-        let rows = self.db.do_get(&sql, &[&id as &dyn rusqlite::ToSql], up).await?;
+        let rows = self.db.do_get_tosql(&sql, &[&id as &dyn rusqlite::ToSql], up).await?;
         Ok(rows.into_iter().next())
     }
 
@@ -464,7 +464,7 @@ impl WorkflowInstance {
         let sql = format!("UPDATE {} SET {} WHERE id = ?", table_name, set_clauses.join(", "));
         params.push(&id as &dyn rusqlite::ToSql);
 
-        self.db.do_m(&sql, &params, up).await?;
+        self.db.do_m_tosql(&sql, &params, up).await?;
         Ok(())
     }
 
@@ -476,7 +476,7 @@ impl WorkflowInstance {
         } else {
             format!("SELECT * FROM {} WHERE {}", table_name, condition)
         };
-        self.db.do_get(&sql, params, up).await
+        self.db.do_get_tosql(&sql, params, up).await
     }
 
     /// 分页查询
@@ -493,7 +493,7 @@ impl WorkflowInstance {
         all_params.push(&limit as &dyn rusqlite::ToSql);
         all_params.push(&offset as &dyn rusqlite::ToSql);
 
-        let records = self.db.do_get(&sql, &all_params, up).await?;
+        let records = self.db.do_get_tosql(&sql, &all_params, up).await?;
 
         // 查询总数
         let count_sql = if condition.is_empty() {
@@ -501,7 +501,7 @@ impl WorkflowInstance {
         } else {
             format!("SELECT COUNT(*) as cnt FROM {} WHERE {}", table_name, condition)
         };
-        let count_rows = self.db.do_get(&count_sql, params, up).await?;
+        let count_rows = self.db.do_get_tosql(&count_sql, params, up).await?;
         let total = count_rows.first()
             .and_then(|row| row.get("cnt").and_then(|v: &serde_json::Value| v.as_i64()))
             .unwrap_or(0) as i32;
@@ -513,7 +513,7 @@ impl WorkflowInstance {
     pub async fn delete(&self, id: &str, up: &UpInfo) -> Result<(), String> {
         let table_name = self.get_table_name();
         let sql = format!("DELETE FROM {} WHERE id = ?", table_name);
-        self.db.do_m(&sql, &[&id as &dyn rusqlite::ToSql], up).await?;
+        self.db.do_m_tosql(&sql, &[&id as &dyn rusqlite::ToSql], up).await?;
         Ok(())
     }
 }
