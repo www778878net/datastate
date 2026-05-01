@@ -10,9 +10,13 @@ use crate::sync_config::TableConfig;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use serde_json::Value;
+use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 use base::mylogger;
+use ontology::OntologySync;
+
+type AfterSyncCallback = Arc<dyn Fn() + Send + Sync>;
 
 /// DataManage 单例
 static DATA_MANAGE: Lazy<DataManage> = Lazy::new(|| {
@@ -33,6 +37,12 @@ pub struct DataManage {
     registered_tables: Arc<RwLock<HashMap<String, TableConfig>>>,
     /// 日志记录器
     logger: Arc<base::mylogger::MyLogger>,
+    /// 同步后回调（可选，由 bin 入口注入，用于图同步等）
+    after_sync_callback: Arc<RwLock<Option<AfterSyncCallback>>>,
+    /// 用户数据（可选，由 bin 入口注入，如 OntologySync 实例）
+    user_data: Arc<RwLock<Option<Arc<dyn Any + Send + Sync>>>>,
+    /// 本体图同步实例（可选）
+    ontology_sync: Arc<RwLock<Option<OntologySync>>>,
 }
 
 impl DataManage {
@@ -46,6 +56,9 @@ impl DataManage {
             db: Arc::new(db),
             registered_tables: Arc::new(RwLock::new(HashMap::new())),
             logger,
+            after_sync_callback: Arc::new(RwLock::new(None)),
+            user_data: Arc::new(RwLock::new(None)),
+            ontology_sync: Arc::new(RwLock::new(None)),
         };
         Ok(manager)
     }
@@ -243,9 +256,34 @@ impl DataManage {
         &self.db
     }
 
+    /// 获取数据库路径（用于创建 OntologySync 等）
+    pub fn db_path(&self) -> String {
+        self.db.get_db_path().to_string_lossy().to_string()
+    }
+
     /// 获取数据库 Arc 引用
     pub fn db_arc(&self) -> Arc<LocalDB> {
         self.db.clone()
+    }
+
+    /// 设置同步后回调（由 bin 入口注入，用于图同步等）
+    pub fn set_after_sync_callback(&self, callback: AfterSyncCallback) {
+        let mut guard = self.after_sync_callback.write();
+        *guard = Some(callback);
+    }
+
+    /// 设置用户数据（由 bin 入口注入，如 OntologySync 实例）
+    pub fn set_user_data(&self, data: Arc<dyn Any + Send + Sync>) {
+        let mut guard = self.user_data.write();
+        *guard = Some(data);
+    }
+
+    /// 获取用户数据（需调用方 downcast 到具体类型）
+    pub fn get_user_data<T: 'static + Send + Sync>(&self) -> Option<Arc<T>> {
+        let guard = self.user_data.read();
+        guard.as_ref().and_then(|data| {
+            data.clone().downcast::<T>().ok()
+        })
     }
 
     /// 从 sync_key 提取表名
@@ -497,6 +535,7 @@ impl DataManage {
                     result.datawf.inserted, result.datawf.updated
                 ));
             }
+            manager.invoke_after_sync();
             
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
@@ -510,8 +549,16 @@ impl DataManage {
                         result.datawf.inserted, result.datawf.updated
                     ));
                 }
+                manager.invoke_after_sync();
             }
         })
+    }
+
+    fn invoke_after_sync(&self) {
+        let guard = self.after_sync_callback.read();
+        if let Some(callback) = guard.as_ref() {
+            callback();
+        }
     }
 }
 
