@@ -2,7 +2,8 @@
 
 use datastate::data_sync::Synclog;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== 测试 synclog 分表写入功能 ===\n");
 
     // 1. 使用 Synclog 直接插入
@@ -16,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "[\"test_001\", \"测试数据1\"]",
         "test_worker",
         "cid-001",
-    )?;
+    ).await?;
     println!("✓ Synclog 插入1成功，idpk: {}", idpk1);
 
     let idpk2 = synclog.add_to_synclog(
@@ -27,26 +28,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "[\"test_002\", \"测试数据2\"]",
         "test_worker",
         "cid-002",
-    )?;
+    ).await?;
     println!("✓ Synclog 插入2成功，idpk: {}", idpk2);
 
     // 2. 查询所有分表
     println!("\n查询现有的 synclog 分表...");
-    let tables = synclog.get_all_shard_tables()?;
+    let tables = synclog.get_all_shard_tables().await?;
     println!("✓ 找到 {} 个 synclog 分表:", tables.len());
     for table in tables {
         println!("  - {}", table);
     }
 
     // 3. 查询待同步记录数
-    let count1 = synclog.get_pending_count_by_tbname("test_table1")?;
-    let count2 = synclog.get_pending_count_by_tbname("test_table2")?;
+    let count1 = synclog.get_pending_count_by_tbname("test_table1").await?;
+    let count2 = synclog.get_pending_count_by_tbname("test_table2").await?;
     println!("\ntest_table1 待同步记录数: {}", count1);
     println!("test_table2 待同步记录数: {}", count2);
 
     // 4. 查询待同步记录
-    let pending1 = synclog.get_pending_items_by_tbname("test_table1", 10)?;
-    let pending2 = synclog.get_pending_items_by_tbname("test_table2", 10)?;
+    let pending1 = synclog.get_pending_items_by_tbname("test_table1", 10).await?;
+    let pending2 = synclog.get_pending_items_by_tbname("test_table2", 10).await?;
     println!("\ntest_table1 待同步记录: {}", pending1.len());
     for item in pending1 {
         println!("  - idpk: {:?}, tbname: {:?}, idrow: {:?}",

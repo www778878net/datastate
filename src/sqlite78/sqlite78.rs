@@ -37,6 +37,7 @@ pub struct InsertResult {
 pub type WarnHandler = Box<dyn Fn(&str, &str, &UpInfo) -> Result<(), String> + Send + Sync>;
 
 /// Sqlite78 - SQLite 数据库操作类
+#[derive(Clone)]
 pub struct Sqlite78 {
     conn: Option<Arc<Mutex<Connection>>>,
     filename: String,
@@ -338,6 +339,87 @@ impl Sqlite78 {
         }
 
         result
+    }
+
+    /// 插入数据（同步版本，用于 spawn_blocking）
+    pub fn do_m_add_sync(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql]) -> Result<InsertResult, String> {
+        let conn = self.get_conn()?;
+        let dstart = std::time::Instant::now();
+
+        let conn_guard = conn.blocking_lock();
+
+        let result = match conn_guard.execute(cmdtext, values) {
+            Ok(rows_affected) => {
+                let insert_id = conn_guard.last_insert_rowid();
+                Ok(InsertResult {
+                    insert_id,
+                    error: if rows_affected == 0 {
+                        Some(format!("插入失败 (cmdtext: {})", cmdtext))
+                    } else {
+                        None
+                    },
+                })
+            }
+            Err(e) => {
+                let error_msg = e.to_string();
+                let words: Vec<&str> = cmdtext.split_whitespace().collect();
+                let table_name = if words.len() > 2 && words[0].to_uppercase() == "REPLACE" {
+                    words.get(2).unwrap_or(&"unknown")
+                } else if words.len() > 4 && words[1].to_uppercase() == "OR" {
+                    words.get(4).unwrap_or(&"unknown")
+                } else {
+                    words.get(2).unwrap_or(&"unknown")
+                };
+                self.logger.error(&format!("sqlite_doMAdd error: {} (table: {})", error_msg, table_name));
+                Ok(InsertResult {
+                    insert_id: 0,
+                    error: Some(error_msg.clone()),
+                })
+            }
+        };
+
+        result
+    }
+
+    /// 查询数据（同步版本，用于 spawn_blocking）
+    pub fn do_get_sync(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql]) -> Result<Vec<HashMap<String, Value>>, String> {
+        let conn = self.get_conn()?;
+        let dstart = std::time::Instant::now();
+
+        let conn_guard = conn.blocking_lock();
+
+        let mut stmt = conn_guard.prepare(cmdtext)
+            .map_err(|e| format!("准备语句失败: {}", e))?;
+
+        let column_names: Vec<String> = stmt.column_names()
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        let rows = stmt.query(values)
+            .map_err(|e| format!("查询失败: {}", e))?;
+
+        let result = Self::process_rows(rows, &column_names)?;
+
+        let lendown = serde_json::to_string(&result).unwrap_or_default().len();
+        let elapsed = dstart.elapsed().as_millis() as i64;
+
+        Ok(result)
+    }
+
+    /// 执行 SQL（同步版本，用于 spawn_blocking）
+    pub fn do_m_sync(&self, cmdtext: &str, values: &[&dyn rusqlite::ToSql]) -> Result<i64, String> {
+        let conn = self.get_conn()?;
+        let dstart = std::time::Instant::now();
+
+        let conn_guard = conn.blocking_lock();
+
+        let rows_affected = conn_guard.execute(cmdtext, values)
+            .map_err(|e| format!("执行失败: {} - {}", cmdtext, e))?;
+
+        let elapsed = dstart.elapsed().as_millis() as i64;
+
+        Ok(rows_affected as i64)
     }
 
     /// 执行事务
