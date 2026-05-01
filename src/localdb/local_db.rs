@@ -454,40 +454,49 @@ impl LocalDB {
         use std::time::Instant;
         let start = Instant::now();
 
-        let conn = self.conn.lock().await;
+        let sql_owned = sql.to_string();
+        
+        let conn = self.conn.clone();
+        let config = self.config.clone();
+        
+        let result = tokio::task::block_in_place(|| {
+            let conn_guard = conn.blocking_lock();
+            
+            let mut stmt = conn_guard.prepare(&sql_owned)
+                .map_err(|e| format!("准备语句失败: {}", e))?;
 
-        let mut stmt = conn.prepare(sql)
-            .map_err(|e| format!("准备语句失败: {}", e))?;
+            let column_names: Vec<String> = stmt.column_names()
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect();
 
-        let column_names: Vec<String> = stmt.column_names()
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect();
+            let rows = stmt.query(params)
+                .map_err(|e| format!("查询失败: {}", e))?;
 
-        let rows = stmt.query(params)
-            .map_err(|e| format!("查询失败: {}", e))?;
-
-        let result = Self::process_rows(rows, &column_names)?;
+            Self::process_rows(rows, &column_names)
+        })?;
 
         let elapsed = start.elapsed().as_millis() as i64;
         let downlen = result.len() as i64;
 
         // 记录 SQL 统计
-        if self.config.is_count {
-            let apiobj = Self::parse_table_name(sql);
-            if let Err(e) = Self::do_save_sql_log(&conn, &self.config.cid, &self.config.apisys, &self.config.apimicro, &apiobj, sql, elapsed, downlen, &self.config.upby) {
+        if config.is_count {
+            let apiobj = Self::parse_table_name(&sql_owned);
+            let conn = self.conn.blocking_lock();
+            if let Err(e) = Self::do_save_sql_log(&conn, &config.cid, &config.apisys, &config.apimicro, &apiobj, &sql_owned, elapsed, downlen, &config.upby) {
                 let logger = mylogger!();
                 logger.error(&format!("[LocalDB] save_sql_log 失败: {}", e));
             }
         }
 
         // 记录调试日志
-        if self.config.is_log {
-            let apiobj = Self::parse_table_name(sql);
+        if config.is_log {
+            let apiobj = Self::parse_table_name(&sql_owned);
             let result_json = serde_json::to_string(&result).unwrap_or_default();
             let params_str = Self::params_to_string(params);
-            let content = format!("{} c:{} v{}", result_json, sql, params_str);
-            let _ = Self::do_add_warn(&conn, &self.config.cid, "debug_local", &self.config.apisys, &self.config.apimicro, &apiobj, &content, &self.config.upby);
+            let content = format!("{} c:{} v{}", result_json, sql_owned, params_str);
+            let conn = self.conn.blocking_lock();
+            let _ = Self::do_add_warn(&conn, &config.cid, "debug_local", &config.apisys, &config.apimicro, &apiobj, &content, &config.upby);
         }
 
         Ok(result)
