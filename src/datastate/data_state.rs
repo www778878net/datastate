@@ -149,29 +149,9 @@ impl DataState {
     /// 查询记录
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
-    pub fn get<'a>(&'a self, where_clause: &'a str, params: &'a [&'a dyn rusqlite::ToSql], caller: &'a str, summary: &'a str) -> impl std::future::Future<Output = Result<Vec<HashMap<String, Value>>, String>> + Send + 'a {
-        let caller_owned = caller.to_string();
-        let summary_owned = summary.to_string();
-        let params_vec: Vec<rusqlite::types::Value> = params.iter().map(|p| {
-            match p.to_sql() {
-                Ok(output) => match output {
-                    rusqlite::types::ToSqlOutput::Owned(v) => v,
-                    rusqlite::types::ToSqlOutput::Borrowed(v) => v.into(),
-                    _ => rusqlite::types::Value::Null,
-                },
-                Err(_) => rusqlite::types::Value::Null,
-            }
-        }).collect();
-        let sql = if where_clause.trim_start().to_uppercase().starts_with("ORDER") {
-            format!("SELECT * FROM {} {}", self.datasync.table_name, where_clause)
-        } else {
-            format!("SELECT * FROM {} WHERE {}", self.datasync.table_name, where_clause)
-        };
-        
-        async move {
-            self.audit.check_permission("get", &caller_owned, &summary_owned).await?;
-            self.datasync.db.query_owned(&sql, params_vec).await
-        }
+    pub async fn get(&self, where_clause: &str, params: Vec<rusqlite::types::Value>, caller: &str, summary: &str) -> Result<Vec<HashMap<String, Value>>, String> {
+        self.audit.check_permission("get", caller, summary).await?;
+        self.datasync.get(where_clause, params).await
     }
 
     /// 查询单条记录
@@ -193,50 +173,18 @@ impl DataState {
     /// 执行任意 SQL 查询（支持完整 SQL 拼接）
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
-    pub fn do_get<'a>(&'a self, sql: &'a str, params: &'a [&'a dyn rusqlite::ToSql], caller: &'a str, summary: &'a str) -> impl std::future::Future<Output = Result<Vec<HashMap<String, Value>>, String>> + Send + 'a {
-        let sql_owned = sql.to_string();
-        let caller_owned = caller.to_string();
-        let summary_owned = summary.to_string();
-        let params_vec: Vec<rusqlite::types::Value> = params.iter().map(|p| {
-            match p.to_sql() {
-                Ok(output) => match output {
-                    rusqlite::types::ToSqlOutput::Owned(v) => v,
-                    rusqlite::types::ToSqlOutput::Borrowed(v) => v.into(),
-                    _ => rusqlite::types::Value::Null,
-                },
-                Err(_) => rusqlite::types::Value::Null,
-            }
-        }).collect();
-        
-        async move {
-            self.audit.check_permission("do_get", &caller_owned, &summary_owned).await?;
-            self.datasync.db.query_owned(&sql_owned, params_vec).await
-        }
+    pub async fn do_get(&self, sql: &str, params: Vec<rusqlite::types::Value>, caller: &str, summary: &str) -> Result<Vec<HashMap<String, Value>>, String> {
+        self.audit.check_permission("do_get", caller, summary).await?;
+        self.datasync.db.do_get(sql, params).await
     }
 
     /// 执行任意 SQL 更新（支持完整 SQL 拼接）
     /// - 权限检查：验证caller是否有权限调用此方法
     /// - 审计日志：通过log_action_with_count记录操作摘要
     /// - 返回影响的行数
-    pub fn do_m<'a>(&'a self, sql: &'a str, params: &'a [&'a dyn rusqlite::ToSql], caller: &'a str, summary: &'a str) -> impl std::future::Future<Output = Result<usize, String>> + Send + 'a {
-        let sql_owned = sql.to_string();
-        let caller_owned = caller.to_string();
-        let summary_owned = summary.to_string();
-        let params_vec: Vec<rusqlite::types::Value> = params.iter().map(|p| {
-            match p.to_sql() {
-                Ok(output) => match output {
-                    rusqlite::types::ToSqlOutput::Owned(v) => v,
-                    rusqlite::types::ToSqlOutput::Borrowed(v) => v.into(),
-                    _ => rusqlite::types::Value::Null,
-                },
-                Err(_) => rusqlite::types::Value::Null,
-            }
-        }).collect();
-        
-        async move {
-            self.audit.check_permission("do_m", &caller_owned, &summary_owned).await?;
-            self.datasync.db.execute_with_params_affected_owned(&sql_owned, params_vec).await
-        }
+    pub async fn do_m(&self, sql: &str, params: Vec<rusqlite::types::Value>, caller: &str, summary: &str) -> Result<usize, String> {
+        self.audit.check_permission("do_m", caller, summary).await?;
+        self.datasync.db.execute_with_params_affected(sql, params).await
     }
 }
 
