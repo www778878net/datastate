@@ -455,6 +455,7 @@ impl LocalDB {
         let start = Instant::now();
 
         let sql_owned = sql.to_string();
+        let params_str = Self::params_to_string(params);
         
         let conn = self.conn.clone();
         let config = self.config.clone();
@@ -493,7 +494,6 @@ impl LocalDB {
         if config.is_log {
             let apiobj = Self::parse_table_name(&sql_owned);
             let result_json = serde_json::to_string(&result).unwrap_or_default();
-            let params_str = Self::params_to_string(params);
             let content = format!("{} c:{} v{}", result_json, sql_owned, params_str);
             let conn = self.conn.blocking_lock();
             let _ = Self::do_add_warn(&conn, &config.cid, "debug_local", &config.apisys, &config.apimicro, &apiobj, &content, &config.upby);
