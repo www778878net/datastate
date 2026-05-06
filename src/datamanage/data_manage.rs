@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use base::mylogger;
 
-type AfterSyncCallback = Arc<dyn Fn() + Send + Sync>;
+type AfterSyncCallback = Arc<dyn Fn(&[String]) + Send + Sync>;
 
 /// DataManage 单例
 static DATA_MANAGE: Lazy<DataManage> = Lazy::new(|| {
@@ -397,10 +397,11 @@ impl DataManage {
     }
 
     /// 执行一次同步检查
-    pub async fn sync_once(&self) -> SyncResult {
+    pub async fn sync_once(&self) -> (SyncResult, Vec<String>) {
         let mut total_inserted = 0i64;
         let mut total_updated = 0i64;
         let mut total_errors = 0i64;
+        let mut affected_tables: Vec<String> = Vec::new();
 
         let state_keys: Vec<String> = {
             let states = self.states.read();
@@ -457,6 +458,9 @@ impl DataManage {
                         if result.res == 0 {
                             state.datasync.last_download = DataSync::current_time();
                             state.base.set_idle();
+                            if result.datawf.inserted > 0 || result.datawf.updated > 0 {
+                                affected_tables.push(table_name.clone());
+                            }
                         } else {
                             state.base.set_error();
                             state.datasync.error_message = result.errmsg;
@@ -499,7 +503,7 @@ impl DataManage {
             }
         }
 
-        SyncResult {
+        (SyncResult {
             res: 0,
             errmsg: String::new(),
             datawf: crate::data_sync::SyncData {
@@ -510,7 +514,7 @@ impl DataManage {
                 total: None,
                 errors: None,
             },
-        }
+        }, affected_tables)
     }
 
     /// 启动后台同步任务
@@ -522,7 +526,7 @@ impl DataManage {
             let logger = mylogger!();
             logger.info("[DataManage] 后台同步线程启动");
             
-            let result = tokio::task::block_in_place(|| {
+            let (result, affected) = tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(manager.sync_once())
             });
             if result.datawf.inserted > 0 || result.datawf.updated > 0 {
@@ -531,12 +535,12 @@ impl DataManage {
                     result.datawf.inserted, result.datawf.updated
                 ));
             }
-            manager.invoke_after_sync();
+            manager.invoke_after_sync(&affected);
             
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 
-                let result = tokio::task::block_in_place(|| {
+                let (result, affected) = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(manager.sync_once())
                 });
                 if result.datawf.inserted > 0 || result.datawf.updated > 0 {
@@ -545,15 +549,15 @@ impl DataManage {
                         result.datawf.inserted, result.datawf.updated
                     ));
                 }
-                manager.invoke_after_sync();
+                manager.invoke_after_sync(&affected);
             }
         })
     }
 
-    fn invoke_after_sync(&self) {
+    fn invoke_after_sync(&self, affected_tables: &[String]) {
         let guard = self.after_sync_callback.read();
         if let Some(callback) = guard.as_ref() {
-            callback();
+            callback(affected_tables);
         }
     }
 }
@@ -724,7 +728,7 @@ mod tests {
 
         // 9. 执行同步，下载数据
         logger.detail("开始执行 dm.sync_once() 自动同步...");
-        let sync_result = dm.sync_once().await;
+        let (sync_result, _) = dm.sync_once().await;
         logger.detail(&format!("sync_once() 结果: res={}, inserted={}, updated={}, errmsg={}",
             sync_result.res,
             sync_result.datawf.inserted,

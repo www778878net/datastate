@@ -173,7 +173,7 @@ fn test_sync_once() {
     
     // 执行一次同步（可能因为时间间隔不够而跳过）
     mylogger!().detail(&format!("\n执行 sync_once..."));
-    let result = dm.sync_once();
+    let (result, _) = dm.sync_once();
     mylogger!().detail(&format!("sync_once 完成!"));
     mylogger!().detail(&format!("  res: {}", result.res));
     mylogger!().detail(&format!("  errmsg: {}", result.errmsg));
