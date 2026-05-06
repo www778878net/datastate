@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use base::mylogger;
 
-type AfterSyncCallback = Arc<dyn Fn(&[String]) + Send + Sync>;
+type AfterSyncCallback = Arc<dyn Fn() + Send + Sync>;
 
 /// DataManage 单例
 static DATA_MANAGE: Lazy<DataManage> = Lazy::new(|| {
@@ -215,6 +215,16 @@ impl DataManage {
         states.keys().cloned().collect()
     }
 
+    /// 获取所有已注册的表名（不含 hash 后缀）
+    pub fn list_table_names(&self) -> Vec<String> {
+        let states = self.states.read();
+        let mut names: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for key in states.keys() {
+            names.insert(self.extract_table_name(key));
+        }
+        names.into_iter().collect()
+    }
+
     /// 获取所有状态摘要
     pub async fn list_summary(&self) -> Vec<serde_json::Value> {
         let states = self.states.read();
@@ -397,11 +407,10 @@ impl DataManage {
     }
 
     /// 执行一次同步检查
-    pub async fn sync_once(&self) -> (SyncResult, Vec<String>) {
+    pub async fn sync_once(&self) -> SyncResult {
         let mut total_inserted = 0i64;
         let mut total_updated = 0i64;
         let mut total_errors = 0i64;
-        let mut affected_tables: Vec<String> = Vec::new();
 
         let state_keys: Vec<String> = {
             let states = self.states.read();
@@ -458,9 +467,6 @@ impl DataManage {
                         if result.res == 0 {
                             state.datasync.last_download = DataSync::current_time();
                             state.base.set_idle();
-                            if result.datawf.inserted > 0 || result.datawf.updated > 0 {
-                                affected_tables.push(table_name.clone());
-                            }
                         } else {
                             state.base.set_error();
                             state.datasync.error_message = result.errmsg;
@@ -503,7 +509,7 @@ impl DataManage {
             }
         }
 
-        (SyncResult {
+        SyncResult {
             res: 0,
             errmsg: String::new(),
             datawf: crate::data_sync::SyncData {
@@ -514,7 +520,7 @@ impl DataManage {
                 total: None,
                 errors: None,
             },
-        }, affected_tables)
+        }
     }
 
     /// 启动后台同步任务
@@ -526,7 +532,7 @@ impl DataManage {
             let logger = mylogger!();
             logger.info("[DataManage] 后台同步线程启动");
             
-            let (result, affected) = tokio::task::block_in_place(|| {
+            let result = tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(manager.sync_once())
             });
             if result.datawf.inserted > 0 || result.datawf.updated > 0 {
@@ -535,12 +541,12 @@ impl DataManage {
                     result.datawf.inserted, result.datawf.updated
                 ));
             }
-            manager.invoke_after_sync(&affected);
+            manager.invoke_after_sync();
             
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 
-                let (result, affected) = tokio::task::block_in_place(|| {
+                let result = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(manager.sync_once())
                 });
                 if result.datawf.inserted > 0 || result.datawf.updated > 0 {
@@ -549,15 +555,15 @@ impl DataManage {
                         result.datawf.inserted, result.datawf.updated
                     ));
                 }
-                manager.invoke_after_sync(&affected);
+                manager.invoke_after_sync();
             }
         })
     }
 
-    fn invoke_after_sync(&self, affected_tables: &[String]) {
+    fn invoke_after_sync(&self) {
         let guard = self.after_sync_callback.read();
         if let Some(callback) = guard.as_ref() {
-            callback(affected_tables);
+            callback();
         }
     }
 }
@@ -728,7 +734,7 @@ mod tests {
 
         // 9. 执行同步，下载数据
         logger.detail("开始执行 dm.sync_once() 自动同步...");
-        let (sync_result, _) = dm.sync_once().await;
+        let sync_result = dm.sync_once().await;
         logger.detail(&format!("sync_once() 结果: res={}, inserted={}, updated={}, errmsg={}",
             sync_result.res,
             sync_result.datawf.inserted,
