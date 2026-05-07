@@ -97,11 +97,11 @@ CREATE TABLE IF NOT EXISTS synclog (
 )
 "#;
 
-/// sync_download_progress 表 - 同步下载进度表
+/// sync_progress 表 - 同步下载进度表
 /// 记录每个表的最后下载 idpk，用于增量同步
 /// 不存储完整的 synclog 记录，只记录进度
-pub const SYNC_DOWNLOAD_PROGRESS_CREATE_SQL: &str = r#"
-CREATE TABLE IF NOT EXISTS sync_download_progress (
+pub const SYNC_PROGRESS_CREATE_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS sync_progress (
     id TEXT NOT NULL DEFAULT '',
     tbname TEXT NOT NULL UNIQUE,
     lastidpk INTEGER NOT NULL DEFAULT 0,
@@ -436,7 +436,7 @@ impl DataSync {
 
         // 创建同步下载进度表
         conn_guard
-            .execute(SYNC_DOWNLOAD_PROGRESS_CREATE_SQL, [])
+            .execute(SYNC_PROGRESS_CREATE_SQL, [])
             .map_err(|e| format!("创建同步下载进度表失败: {}", e))?;
 
         // 创建状态变更日志表
@@ -2018,17 +2018,17 @@ impl DataSync {
         let conn = self.db.get_conn();
         let conn_guard = conn.lock().await;
         conn_guard
-            .execute(SYNC_DOWNLOAD_PROGRESS_CREATE_SQL, [])
+            .execute(SYNC_PROGRESS_CREATE_SQL, [])
             .map_err(|e| format!("创建同步下载进度表失败: {}", e))?;
         Ok(())
     }
 
     /// 获取上次同步的最大服务端 idpk
-    /// 从 sync_download_progress 表中查询 lastidpk
+    /// 从 sync_progress 表中查询 lastidpk
     pub async fn get_last_server_id(&self) -> Result<i64, String> {
         self.ensure_download_progress_table().await?;
         
-        let sql = "SELECT lastidpk FROM sync_download_progress WHERE tbname = ?";
+        let sql = "SELECT lastidpk FROM sync_progress WHERE tbname = ?";
         let rows = self.db.query(&sql, &[&self.table_name]).await?;
         let lastidpk = rows
             .first()
@@ -2044,7 +2044,7 @@ impl DataSync {
         
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let sql = r#"
-            INSERT INTO sync_download_progress (tbname, lastidpk, uptime)
+            INSERT INTO sync_progress (tbname, lastidpk, uptime)
             VALUES (?, ?, ?)
             ON CONFLICT(tbname) DO UPDATE SET lastidpk = ?, uptime = ?
         "#;
@@ -2506,7 +2506,7 @@ mod tests {
         DataSync::init_tables(&db).expect("初始化表失败");
         logger.detail("1. 初始化同步表成功");
 
-        let cleanup = "DELETE FROM sync_download_progress WHERE tbname = 'testtb'";
+        let cleanup = "DELETE FROM sync_progress WHERE tbname = 'testtb'";
         db.execute(cleanup).await.ok();
         let cleanup2 = "DELETE FROM testtb";
         db.execute(cleanup2).await.ok();
@@ -2599,7 +2599,7 @@ mod tests {
         let db = LocalDB::new(None).expect("创建数据库失败");
 
         DataSync::init_tables(&db).expect("初始化表失败");
-        let cleanup = "DELETE FROM sync_download_progress WHERE tbname = 'testtb'";
+        let cleanup = "DELETE FROM sync_progress WHERE tbname = 'testtb'";
         db.execute(cleanup).await.ok();
         let cleanup2 = "DELETE FROM testtb";
         db.execute(cleanup2).await.ok();
@@ -2685,7 +2685,7 @@ mod tests {
         DataSync::init_tables(&db).expect("初始化表失败");
         logger.detail("1. 初始化同步表成功");
 
-        let cleanup = "DELETE FROM sync_download_progress";
+        let cleanup = "DELETE FROM sync_progress";
         db.execute(cleanup).await.ok();
         logger.detail("2. 清理测试数据");
 
@@ -2710,7 +2710,7 @@ mod tests {
         assert_eq!(id3, 300, "table3应该是300");
 
         // Step4: 验证表中只有3条记录
-        let count_sql = "SELECT COUNT(*) as cnt FROM sync_download_progress";
+        let count_sql = "SELECT COUNT(*) as cnt FROM sync_progress";
         let rows = db.query(count_sql, &[]).await.unwrap();
         let count: i64 = rows.first().and_then(|r| r.get("cnt")).and_then(|v| v.as_i64()).unwrap_or(0);
         logger.detail(&format!("5. 进度表中记录数 = {}", count));
