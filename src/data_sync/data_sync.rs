@@ -915,10 +915,15 @@ impl DataSync {
                 self.download_paginated(i32::MAX, self.getnumber).await
             }
         } else {
-            // 定时下载：本地已有数据，下载最新数据
-            // 注意：即使 last_download == 0.0 也要执行定时下载
+             // 定时下载：本地已有数据，下载最新数据
+            // 如果配置了 rust_api_url，使用增量下载；否则使用分页下载（兼容旧版 JSON API）
             let getnumber = if self.getnumber > 0 { self.getnumber } else { 50 };
-            self.download_single_page(getnumber, 0).await
+            if self.use_rust_synclog && !self.rust_api_url.is_empty() {
+                self.download_single_page(getnumber, 0).await
+            } else {
+                // 兼容旧版 JSON API：使用分页下载，每次只下载 getnumber 条
+                self.download_paginated(getnumber, getnumber).await
+            }
         }
     }
 
