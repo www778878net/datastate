@@ -831,6 +831,23 @@ impl LocalDB {
         String::new()
     }
 
+    /// 从配置文件读取 CID（同步版本）
+    pub fn get_cid_sync() -> String {
+        if let Ok(cid) = std::env::var("CID") {
+            if !cid.is_empty() {
+                return cid;
+            }
+        }
+        if let Ok(path) = ProjectPath::find() {
+            if let Some(cid) = path.read_ini_value("user7788", "cid") {
+                if !cid.starts_with("{{") && !cid.is_empty() {
+                    return cid;
+                }
+            }
+        }
+        String::new()
+    }
+
     /// 从服务器下载数据到本地（支持分页，兼容 JSON 和 protobuf 格式）
     ///
     /// - 如果 api_url 指向 synclog_mysql，使用 protobuf 格式
@@ -1125,8 +1142,11 @@ impl LocalDB {
             pars.push(Value::Number(item.downlen.into()));
         }
 
+        let cid = Self::get_cid_sync();
+
         let request_payload = serde_json::json!({
             "sid": sid,
+            "cid": cid,
             "pars": pars,
             "cols": cols
         });

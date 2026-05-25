@@ -1576,16 +1576,26 @@ impl DataSync {
 
     // ========== 基础 CRUD 方法（自动写 sync_queue） ==========
 
-    /// 从配置文件读取 cid（通过 ProjectPath 统一接口，支持环境变量优先）
+    /// 从配置文件读取 cid（优先读取环境变量 CID）
     fn get_cid() -> String {
+        if let Ok(cid) = std::env::var("CID") {
+            if !cid.is_empty() {
+                return cid;
+            }
+        }
         ProjectPath::find()
             .ok()
             .and_then(|p| p.read_ini_value("user7788", "cid"))
             .unwrap_or_else(|| "GUEST000-8888-8888-8888-GUEST00GUEST".to_string())
     }
 
-    /// 从配置文件读取 uid（通过 ProjectPath 统一接口，支持环境变量优先）
+    /// 从配置文件读取 uid（优先读取环境变量 USER_UID）
     fn get_uid() -> String {
+        if let Ok(uid) = std::env::var("USER_UID") {
+            if !uid.is_empty() {
+                return uid;
+            }
+        }
         ProjectPath::find()
             .ok()
             .and_then(|p| p.read_ini_value("user7788", "uid"))
@@ -1662,14 +1672,11 @@ impl DataSync {
         let user_cid = Self::get_cid();
         let user_uid = Self::get_uid();
         
-        // 管理员帐套不需要验证
         let admin_cid = "d4856531-e9d3-20f3-4c22-fe3c65fb009c";
         if user_cid != admin_cid {
-            // 只查询 uidcid 指定的字段进行验证
             let sql = format!("SELECT {} FROM {} WHERE id = ? LIMIT 1", self.uidcid, self.table_name);
             let rows = self.db.do_get(&sql, vec![rusqlite::types::Value::Text(id.to_string())]).await?;
             if let Some(row) = rows.first() {
-                // 根据 uidcid 配置验证
                 if self.uidcid == "uid" {
                     if let Some(record_uid) = row.get("uid").and_then(|v| v.as_str()) {
                         if !record_uid.is_empty() && record_uid != user_uid {
@@ -1678,7 +1685,8 @@ impl DataSync {
                     }
                 } else {
                     if let Some(record_cid) = row.get("cid").and_then(|v| v.as_str()) {
-                        if !record_cid.is_empty() && record_cid != user_cid {
+                        if record_cid == admin_cid {
+                        } else if !record_cid.is_empty() && record_cid != user_cid {
                             return Err(format!("cid不匹配，期望{}，实际{}", user_cid, record_cid));
                         }
                     }
