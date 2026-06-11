@@ -1236,7 +1236,15 @@ impl DataSync {
                                     .unwrap_or("");
 
                                 if remote_uptime > local_uptime {
-                                    match self.db.update(&self.table_name, id_str, record).await {
+                                    // 过滤掉 idpk 字段，避免更新不存在的列
+                                    let update_data: std::collections::HashMap<String, serde_json::Value> =
+                                        record
+                                            .iter()
+                                            .filter(|(k, _)| k != &"idpk")
+                                            .map(|(k, v)| (k.clone(), v.clone()))
+                                            .collect();
+
+                                    match self.db.update(&self.table_name, id_str, &update_data).await {
                                         Ok(true) => updated += 1,
                                         Err(e) => {
                                             skipped += 1;
