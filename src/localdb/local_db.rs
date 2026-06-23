@@ -383,9 +383,9 @@ impl LocalDB {
         let columns: Vec<&str> = ordered_columns.iter().map(|s| s.as_str()).collect();
         let placeholders: Vec<&str> = (0..columns.len()).map(|_| "?").collect();
         let sql = format!(
-            "INSERT INTO {} ({}) VALUES ({})",
+            "INSERT INTO `{}` ({}) VALUES ({})",
             table,
-            columns.join(", "),
+            columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<_>>().join(", "),
             placeholders.join(", ")
         );
 
@@ -420,10 +420,10 @@ impl LocalDB {
         let conn = self.conn.lock().await;
 
         let set_clause: Vec<String> = data.keys()
-            .map(|k| format!("{} = ?", k))
+            .map(|k| format!("`{}` = ?", k))
             .collect();
         let sql = format!(
-            "UPDATE {} SET {} WHERE id = ?",
+            "UPDATE `{}` SET {} WHERE `id` = ?",
             table,
             set_clause.join(", ")
         );

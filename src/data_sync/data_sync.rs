@@ -1315,7 +1315,11 @@ impl DataSync {
         let items_count = items.len();
         let items = items.to_vec();
         let db = self.db.clone();
-        
+
+        // 统计 insert 和 update 的数量
+        let insert_count = items.iter().filter(|item| item.action == "insert").count() as i32;
+        let update_count = items.iter().filter(|item| item.action == "update").count() as i32;
+
         let result = tokio::task::spawn_blocking(move || {
             db.upload_batch_to_server(&api_url, &items)
         }).await;
@@ -1396,8 +1400,8 @@ impl DataSync {
                     res: 0,
                     errmsg: String::new(),
                     datawf: SyncData {
-                        inserted: success_count,
-                        updated: 0,
+                        inserted: insert_count,
+                        updated: update_count,
                         skipped: 0,
                         failed: Some(failed_count),
                         total: Some(items_count as i32),
@@ -1422,7 +1426,11 @@ impl DataSync {
         let items_count = items.len();
         let items = items.to_vec();
         let db = self.db.clone();
-        
+
+        // 统计 insert 和 update 的数量
+        let insert_count = items.iter().filter(|item| item.action == "insert").count() as i32;
+        let update_count = items.iter().filter(|item| item.action == "update").count() as i32;
+
         let result = tokio::task::spawn_blocking(move || {
             db.upload_batch_to_server(&synclog_url, &items)
         }).await;
@@ -1507,8 +1515,8 @@ impl DataSync {
                     res: 0,
                     errmsg: String::new(),
                     datawf: SyncData {
-                        inserted: success_count,
-                        updated: 0,
+                        inserted: insert_count,
+                        updated: update_count,
                         skipped: 0,
                         failed: Some(failed_count),
                         total: Some(items_count as i32),
