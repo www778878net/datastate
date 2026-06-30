@@ -1144,11 +1144,11 @@ impl LocalDB {
 
         let cid = Self::get_cid_sync();
 
+        // cols 一般不传，有需要才传（服务器从 up.cols 读取，默认 []）
         let request_payload = serde_json::json!({
             "sid": sid,
             "cid": cid,
-            "pars": pars,
-            "cols": cols
+            "pars": pars
         });
 
         let url = format!("{}/mAddMany", api_url.trim_end_matches('/'));

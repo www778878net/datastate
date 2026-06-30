@@ -1217,7 +1217,14 @@ impl DataSync {
                     match existing {
                         Ok(rows) => {
                             if rows.is_empty() {
-                                match self.db.insert(&self.table_name, record).await {
+                                // INSERT 时也要过滤 idpk，让 SQLite 自己分配主键
+                                let insert_data: std::collections::HashMap<String, serde_json::Value> =
+                                    record
+                                        .iter()
+                                        .filter(|(k, _)| k != &"idpk")
+                                        .map(|(k, v)| (k.clone(), v.clone()))
+                                        .collect();
+                                match self.db.insert(&self.table_name, &insert_data).await {
                                     Ok(_) => inserted += 1,
                                     Err(e) => {
                                         skipped += 1;
