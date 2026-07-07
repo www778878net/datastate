@@ -1678,7 +1678,14 @@ impl DataSync {
         if !cid_value.is_empty() {
             record_with_meta.insert("cid".to_string(), serde_json::json!(cid_value));
         }
-        record_with_meta.insert("upby".to_string(), serde_json::json!(upby.clone()));
+        // 如果 record 中已有 upby，保留原值；否则使用配置文件中的 uname
+        let has_upby = record_with_meta.get("upby")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .is_some();
+        if !has_upby {
+            record_with_meta.insert("upby".to_string(), serde_json::json!(upby.clone()));
+        }
         record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
 
         self.db.insert(&self.table_name, &record_with_meta).await?;
@@ -1724,7 +1731,10 @@ impl DataSync {
         let mut record_with_meta = record.clone();
         record_with_meta.insert("id".to_string(), serde_json::json!(id));
         // cid/uid 不在 UPDATE 时修改，只用于验证
-        // upby 不在 UPDATE 时修改，只用于记录操作者
+        // upby: 如果 record 中已有，保留原值（由调用方设定）；否则不修改
+        if !record_with_meta.contains_key("upby") {
+            // record 没带 upby，不强制覆盖，保留数据库原有值
+        }
         record_with_meta.insert("uptime".to_string(), serde_json::json!(uptime));
 
         let updated = self.db.update(&self.table_name, id, &record_with_meta).await?;
