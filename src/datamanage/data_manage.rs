@@ -13,6 +13,7 @@ use serde_json::Value;
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use base::mylogger;
 
 type AfterSyncCallback = Arc<dyn Fn() + Send + Sync>;
@@ -387,14 +388,21 @@ impl DataManage {
         }
 
         if need_upload {
-            let upload_result = state.datasync.upload_once().await;
-            state.datasync.last_upload = DataSync::current_time();
-            result.datawf.inserted += upload_result.datawf.inserted;
-            result.datawf.updated += upload_result.datawf.updated;
-            if upload_result.res != 0 && result.res == 0 {
-                result.res = upload_result.res;
-                result.errmsg = upload_result.errmsg;
+            loop {
+                let upload_result = state.datasync.upload_once().await;
+                let processed = upload_result.datawf.inserted + upload_result.datawf.updated;
+                result.datawf.inserted += upload_result.datawf.inserted;
+                result.datawf.updated += upload_result.datawf.updated;
+                if upload_result.res != 0 && result.res == 0 {
+                    result.res = upload_result.res;
+                    result.errmsg = upload_result.errmsg;
+                }
+                if processed == 0 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
+            state.datasync.last_upload = DataSync::current_time();
         }
 
         state.base.set_idle();
@@ -479,21 +487,30 @@ impl DataManage {
                         }
                     }
                     if need_upload {
-                        // 调用 DataSync 组件的上传方法
-                        let result = state.datasync.upload_once().await;
-                        if result.res == 0 {
-                            state.datasync.last_upload = DataSync::current_time();
-                            state.base.set_idle();
-                        } else {
-                            state.base.set_error();
-                            state.datasync.error_message = result.errmsg;
-                            state.datasync.error_time = DataSync::current_time();
+                        // Drain 循环：每批100条，5秒间隔，直到清空
+                        loop {
+                            let result = state.datasync.upload_once().await;
+                            let processed = result.datawf.inserted + result.datawf.updated;
+                            if processed == 0 {
+                                state.datasync.last_upload = DataSync::current_time();
+                                state.base.set_idle();
+                                break;
+                            }
+                            if result.res != 0 {
+                                state.base.set_error();
+                                state.datasync.error_message = result.errmsg;
+                                state.datasync.error_time = DataSync::current_time();
+                                state.datasync.last_upload = DataSync::current_time();
+                                break;
+                            }
+                            inserted += result.datawf.inserted as i64;
+                            updated += result.datawf.updated as i64;
+                            if let Some(e) = result.datawf.failed {
+                                errors += e as i64;
+                            }
+                            tokio::time::sleep(Duration::from_secs(5)).await;
                         }
-                        inserted += result.datawf.inserted as i64;
-                        updated += result.datawf.updated as i64;
-                        if let Some(e) = result.datawf.failed {
-                            errors += e as i64;
-                        }
+                        state.datasync.last_upload = DataSync::current_time();
                     }
 
                     total_inserted += inserted;
