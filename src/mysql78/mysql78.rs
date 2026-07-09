@@ -211,7 +211,7 @@ impl Mysql78 {
             `upid` varchar(36) NOT NULL DEFAULT '',
             `upby` varchar(50) DEFAULT '',
             `uptime` datetime NOT NULL,
-            `idpk` int(11) NOT NULL AUTO_INCREMENT,
+
             `id` varchar(36) NOT NULL,
             `remark` varchar(200) NOT NULL DEFAULT '',
             `remark2` varchar(200) NOT NULL DEFAULT '',
@@ -219,8 +219,7 @@ impl Mysql78 {
             `remark4` varchar(200) NOT NULL DEFAULT '',
             `remark5` varchar(200) NOT NULL DEFAULT '',
             `remark6` varchar(200) NOT NULL DEFAULT '',
-            PRIMARY KEY (`idpk`),
-            UNIQUE KEY `u_id` (`id`)
+
         ) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=utf8"#;
 
         let cmdtext2 = r#"CREATE TABLE IF NOT EXISTS `sys_sql` (
@@ -236,7 +235,7 @@ impl Mysql78 {
             `upby` varchar(50) NOT NULL DEFAULT '',
             `cmdtextmd5` varchar(50) NOT NULL DEFAULT '',
             `uptime` datetime NOT NULL,
-            `idpk` int(11) NOT NULL AUTO_INCREMENT,
+
             `id` varchar(36) NOT NULL,
             `remark` varchar(200) NOT NULL DEFAULT '',
             `remark2` varchar(200) NOT NULL DEFAULT '',
@@ -244,9 +243,9 @@ impl Mysql78 {
             `remark4` varchar(200) NOT NULL DEFAULT '',
             `remark5` varchar(200) NOT NULL DEFAULT '',
             `remark6` varchar(200) NOT NULL DEFAULT '',
-            PRIMARY KEY (`idpk`),
+
             UNIQUE KEY `u_v_sys_obj_cmdtext` (`apisys`,`apimicro`,`apiobj`,`cmdtext`) USING BTREE,
-            UNIQUE KEY `u_id` (`id`)
+
         ) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=utf8"#;
 
         conn.query_drop(cmdtext1)

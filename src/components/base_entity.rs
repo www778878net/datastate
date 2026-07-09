@@ -13,9 +13,6 @@ pub struct BaseEntity {
     /// 全局唯一ID
     #[serde(default)]
     pub id: String,
-    /// 自增主键
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub idpk: Option<i64>,
     /// 公司标识
     #[serde(default)]
     pub cid: String,
@@ -94,7 +91,7 @@ impl Default for BaseEntity {
     fn default() -> Self {
         Self {
             id: String::new(),
-            idpk: None,
+
             cid: String::new(),
             state: 1,
             priority: 0,
@@ -125,9 +122,6 @@ impl BaseEntity {
     pub fn load_from_dict(&mut self, data: &HashMap<String, Value>) {
         if let Some(v) = data.get("id").and_then(|v: &serde_json::Value| v.as_str()) {
             self.id = v.to_string();
-        }
-        if let Some(v) = data.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()) {
-            self.idpk = Some(v);
         }
         if let Some(v) = data.get("cid").and_then(|v: &serde_json::Value| v.as_str()) {
             self.cid = v.to_string();
@@ -198,9 +192,6 @@ impl BaseEntity {
     pub fn to_dict(&self) -> HashMap<String, Value> {
         let mut map = HashMap::new();
         map.insert("id".to_string(), Value::String(self.id.clone()));
-        if let Some(idpk) = self.idpk {
-            map.insert("idpk".to_string(), Value::Number(idpk.into()));
-        }
         map.insert("cid".to_string(), Value::String(self.cid.clone()));
         map.insert("state".to_string(), Value::Number(self.state.into()));
         map.insert("priority".to_string(), Value::Number(self.priority.into()));
@@ -240,7 +231,7 @@ mod tests {
         assert_eq!(entity.state, 1);
         assert_eq!(entity.apisys, "apitmp");
         assert_eq!(entity.priority, 0);
-        assert!(entity.idpk.is_none());
+
     }
 
     /// 测试2：字典加载

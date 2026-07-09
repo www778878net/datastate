@@ -21,9 +21,8 @@ CREATE TABLE IF NOT EXISTS sys_warn (
     upid TEXT NOT NULL DEFAULT '',
     upby TEXT DEFAULT '',
     uptime TEXT NOT NULL DEFAULT '',
-    idpk INTEGER PRIMARY KEY AUTOINCREMENT,
-    id TEXT NOT NULL,
-    UNIQUE(id)
+
+    id TEXT NOT NULL PRIMARY KEY,
 )
 "#;
 
@@ -104,7 +103,7 @@ impl SysWarnSqliteState {
 
     /// 删除旧记录（保留最近N条）
     pub async fn clean_old(&self, keep_count: i32, up: &UpInfo) -> Result<i64, String> {
-        let sql = "DELETE FROM sys_warn WHERE idpk NOT IN (SELECT idpk FROM sys_warn ORDER BY idpk DESC LIMIT ?)";
+        let sql = "DELETE FROM sys_warn WHERE id NOT IN (SELECT id FROM sys_warn ORDER BY id DESC LIMIT ?)";
 
         let result = self.db.do_m_tosql(sql, &[&keep_count as &dyn rusqlite::ToSql], up).await?;
         Ok(result.affected_rows)

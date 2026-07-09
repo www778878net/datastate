@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// data_ability_log 表 - 能力调用日志
 pub const DATA_ABILITY_LOG_CREATE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS data_ability_log (
-    idpk INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     ability_name TEXT NOT NULL,
     caller TEXT NOT NULL DEFAULT '',
     action TEXT NOT NULL DEFAULT '',
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS data_ability_log (
 /// 能力调用日志记录
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AbilityLog {
-    pub idpk: i64,
+    pub id: i64,
     pub ability_name: String,
     pub caller: String,
     pub action: String,
@@ -100,7 +100,7 @@ impl DataAudit {
     /// 获取能力调用日志
     pub async fn get_ability_logs(db: &LocalDB, ability_name: &str, limit: i32) -> Vec<AbilityLog> {
         let sql = format!(
-            "SELECT idpk, ability_name, caller, action, input_params, created_at FROM data_ability_log WHERE ability_name = ? ORDER BY created_at DESC LIMIT {}",
+            "SELECT id, ability_name, caller, action, input_params, created_at FROM data_ability_log WHERE ability_name = ? ORDER BY created_at DESC LIMIT {}",
             limit
         );
 
@@ -108,7 +108,7 @@ impl DataAudit {
             Ok(results) => results
                 .iter()
                 .map(|row| AbilityLog {
-                    idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+                    id: row.get("id").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
                     ability_name: row.get("ability_name").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                     caller: row.get("caller").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                     action: row.get("action").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),

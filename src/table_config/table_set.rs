@@ -79,7 +79,7 @@ impl TableSet {
 
     /// 获取系统列
     pub fn system_cols() -> &'static [&'static str] {
-        &["id", "idpk", "upby", "uptime"]
+        &["id", "upby", "uptime"]
     }
 
     /// 获取 INSERT 语句的列部分
@@ -246,7 +246,7 @@ mod tests {
     fn test_system_cols() {
         let cols = TableSet::system_cols();
         assert!(cols.contains(&"id"));
-        assert!(cols.contains(&"idpk"));
+
         assert!(cols.contains(&"uptime"));
     }
 }

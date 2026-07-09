@@ -12,7 +12,7 @@ pub struct BaseSchema {
     /// 业务主键 (UUID)
     pub id: String,
     /// 自增主键
-    pub idpk: i64,
+
     /// 操作人
     pub upby: String,
     /// 操作时间
@@ -24,7 +24,7 @@ impl BaseSchema {
     pub fn new() -> Self {
         Self {
             id: crate::snowflake::next_id_string(),
-            idpk: 0,
+
             upby: String::new(),
             uptime: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         }
@@ -37,7 +37,7 @@ impl BaseSchema {
 
     /// 获取所有系统字段名
     pub fn system_fields() -> &'static [&'static str] {
-        &["id", "idpk", "upby", "uptime"]
+        &["id", "upby", "uptime"]
     }
 }
 
@@ -122,14 +122,14 @@ mod tests {
     fn test_base_schema_new() {
         let schema = BaseSchema::new();
         assert!(!schema.id.is_empty());
-        assert_eq!(schema.idpk, 0);
+
     }
 
     #[test]
     fn test_base_schema_system_fields() {
         let fields = BaseSchema::system_fields();
         assert!(fields.contains(&"id"));
-        assert!(fields.contains(&"idpk"));
+
         assert!(fields.contains(&"upby"));
         assert!(fields.contains(&"uptime"));
     }
@@ -159,7 +159,7 @@ mod tests {
         let schema = BaseSchema::new();
         let json = serde_json::to_string(&schema).unwrap();
         assert!(json.contains("\"id\":"));
-        assert!(json.contains("\"idpk\":"));
+        assert!(json.contains("\"id\":"));
     }
 
     #[test]

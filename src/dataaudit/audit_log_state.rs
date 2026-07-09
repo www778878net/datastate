@@ -28,9 +28,9 @@ CREATE TABLE IF NOT EXISTS data_audit_log (
     id TEXT NOT NULL DEFAULT '',
     upby TEXT NOT NULL DEFAULT '',
     uptime TEXT NOT NULL DEFAULT '',
-    idpk INTEGER PRIMARY KEY AUTOINCREMENT,
+
     UNIQUE(apisys, apimicro, apiobj, ability, caller),
-    UNIQUE(id)
+
 )
 "#;
 
@@ -49,7 +49,7 @@ pub struct AuditLogRecord {
     pub id: String,
     pub upby: String,
     pub uptime: String,
-    pub idpk: i64,
+
 }
 
 /// AuditLogDataState - 审计日志数据状态机
@@ -177,7 +177,7 @@ impl AuditLogDataState {
         apiobj: Option<&str>,
         days: i32,
     ) -> Vec<AuditLogRecord> {
-        let fields = "cid, apisys, apimicro, apiobj, ability, caller, num, dlong, downlen, id, upby, uptime, idpk";
+        let fields = "cid, apisys, apimicro, apiobj, ability, caller, num, dlong, downlen, id, upby, uptime";
         
         let map_row = |row: &HashMap<String, Value>| AuditLogRecord {
             cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
@@ -192,7 +192,7 @@ impl AuditLogDataState {
             id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
             upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
             uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-            idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+
         };
 
         if let Some(obj) = apiobj {
@@ -222,7 +222,7 @@ impl AuditLogDataState {
         start_date: &str,
         end_date: &str,
     ) -> Vec<AuditLogRecord> {
-        let fields = "cid, apisys, apimicro, apiobj, ability, caller, num, dlong, downlen, id, upby, uptime, idpk";
+        let fields = "cid, apisys, apimicro, apiobj, ability, caller, num, dlong, downlen, id, upby, uptime";
         let sql = format!(
             "SELECT {} FROM data_audit_log WHERE uptime BETWEEN ? AND ? ORDER BY uptime DESC",
             fields
@@ -244,7 +244,7 @@ impl AuditLogDataState {
                     id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                     upby: row.get("upby").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                     uptime: row.get("uptime").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
-                    idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+
                 })
                 .collect(),
             _ => Vec::new(),

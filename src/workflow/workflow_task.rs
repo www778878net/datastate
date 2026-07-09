@@ -18,8 +18,8 @@ use std::collections::HashMap;
 pub const SQL_CREATE_WORKFLOW_TASK: &str = r#"
 CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
     -- 主键
-    idpk INTEGER PRIMARY KEY AUTOINCREMENT,
-    id TEXT NOT NULL UNIQUE,
+
+    id TEXT NOT NULL PRIMARY KEY,
     cid TEXT NOT NULL DEFAULT '',
 
     -- 任务名称

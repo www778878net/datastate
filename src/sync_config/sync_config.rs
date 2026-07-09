@@ -121,7 +121,6 @@ fn default_uidcid() -> String { "cid".to_string() }
 /// 获取系统字段（所有表都有的基础字段）
 pub fn get_system_columns() -> HashMap<String, String> {
     let mut cols = HashMap::new();
-    cols.insert("idpk".to_string(), "INTEGER NOT NULL DEFAULT 0".to_string());
     cols.insert("id".to_string(), "TEXT NOT NULL PRIMARY KEY".to_string());
     cols.insert("cid".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
     cols.insert("upby".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
@@ -171,7 +170,6 @@ impl TableConfig {
     /// 获取系统字段（固定，所有表都有）
     pub fn system_columns() -> HashMap<String, String> {
         let mut cols = HashMap::new();
-        cols.insert("idpk".to_string(), "INTEGER NOT NULL DEFAULT 0".to_string());
         cols.insert("id".to_string(), "TEXT NOT NULL PRIMARY KEY".to_string());
         cols.insert("upby".to_string(), "TEXT NOT NULL DEFAULT ''".to_string());
         cols
@@ -292,7 +290,7 @@ mod tests {
     fn test_system_columns() {
         let cols = TableConfig::system_columns();
         assert!(cols.contains_key("id"));
-        assert!(cols.contains_key("idpk"));
+
         assert!(cols.contains_key("upby"));
     }
 }

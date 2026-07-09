@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS `sys_warn` (
     `upid` varchar(36) NOT NULL DEFAULT '',
     `upby` varchar(50) DEFAULT '',
     `uptime` datetime NOT NULL,
-    `idpk` int(11) NOT NULL AUTO_INCREMENT,
+
     `id` varchar(36) NOT NULL,
     `remark` varchar(200) NOT NULL DEFAULT '',
     `remark2` varchar(200) NOT NULL DEFAULT '',
@@ -27,8 +27,7 @@ CREATE TABLE IF NOT EXISTS `sys_warn` (
     `remark4` varchar(200) NOT NULL DEFAULT '',
     `remark5` varchar(200) NOT NULL DEFAULT '',
     `remark6` varchar(200) NOT NULL DEFAULT '',
-    PRIMARY KEY (`idpk`),
-    UNIQUE KEY `u_id` (`id`)
+
 ) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=utf8
 "#;
 
@@ -106,7 +105,7 @@ impl SysWarnMysqlState {
 
     /// 删除旧记录（保留最近N条）
     pub fn clean_old(&self, keep_count: i32, up: &MysqlUpInfo) -> Result<i64, String> {
-        let sql = "DELETE FROM sys_warn WHERE idpk NOT IN (SELECT idpk FROM (SELECT idpk FROM sys_warn ORDER BY idpk DESC LIMIT ?) AS tmp)";
+        let sql = "DELETE FROM sys_warn WHERE id NOT IN (SELECT id FROM (SELECT id FROM sys_warn ORDER BY id DESC LIMIT ?) AS tmp)";
 
         let result = self.db.do_m(sql, vec![serde_json::json!(keep_count)], up)?;
         Ok(result.affected_rows)

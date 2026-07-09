@@ -23,10 +23,10 @@ CREATE TABLE IF NOT EXISTS sys_sql (
     upby TEXT NOT NULL DEFAULT '',
     cmdtextmd5 TEXT NOT NULL DEFAULT '',
     uptime TEXT NOT NULL DEFAULT '',
-    idpk INTEGER PRIMARY KEY AUTOINCREMENT,
+
     id TEXT NOT NULL,
     UNIQUE(cmdtextmd5),
-    UNIQUE(id)
+
 )
 "#;
 

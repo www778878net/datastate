@@ -751,11 +751,11 @@ impl LocalDB {
         Ok(false)
     }
 
-    /// 将id字段设置为主键（如果当前主键是idpk）
+    /// 将 id 字段设置为主键
     /// 
     /// 重建表结构：
     /// - id 为主键（使用雪花算法生成）
-    /// - idpk 保留用于兼容（自增，但不是主键）
+    /// - id 为主键（雪花算法生成）
     pub async fn ensure_id_is_primary_key(&self, table: &str) -> Result<bool, String> {
         let is_pk = self.is_id_primary_key(table).await?;
         if is_pk {
@@ -772,7 +772,7 @@ impl LocalDB {
             DROP TABLE {table};
             CREATE TABLE {table} (
                 id TEXT NOT NULL PRIMARY KEY,
-                idpk INTEGER,
+
                 cid TEXT NOT NULL DEFAULT '',
                 kind TEXT NOT NULL DEFAULT '',
                 item TEXT NOT NULL DEFAULT '',

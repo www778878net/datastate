@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 pub const TESTTB_CREATE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS testtb (
     id TEXT NOT NULL PRIMARY KEY,
-    idpk INTEGER,
+
     cid TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL DEFAULT '',
     item TEXT NOT NULL DEFAULT '',
@@ -30,14 +30,14 @@ CREATE TABLE IF NOT EXISTS testtb (
     remark4 TEXT NOT NULL DEFAULT '',
     remark5 TEXT NOT NULL DEFAULT '',
     remark6 TEXT NOT NULL DEFAULT '',
-    UNIQUE(id)
+
 )
 "#;
 
 /// TestTb 记录
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestTbRecord {
-    pub idpk: i64,
+
     pub id: String,
     pub cid: String,
     pub kind: String,
@@ -137,7 +137,7 @@ impl TestTb {
             Ok(rows) if !rows.is_empty() => {
                 let row = &rows[0];
                 Ok(Some(TestTbRecord {
-                    idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+
                     id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                     cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                     kind: row.get("kind").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
@@ -160,13 +160,13 @@ impl TestTb {
         self.check_caller("mlist", caller)?;
         self.audit.check_permission("mlist", caller, summary).await?;
         
-        let sql = format!("SELECT * FROM testtb ORDER BY idpk DESC LIMIT {}", limit);
+        let sql = format!("SELECT * FROM testtb ORDER BY id DESC LIMIT {}", limit);
         match self.db.query(&sql, &[]).await {
             Ok(rows) => {
                 let result: Vec<TestTbRecord> = rows
                     .iter()
                     .map(|row| TestTbRecord {
-                        idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+
                         id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                         cid: row.get("cid").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                         kind: row.get("kind").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),

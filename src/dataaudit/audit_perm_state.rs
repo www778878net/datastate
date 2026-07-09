@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 /// 权限表创建SQL
 pub const AUDIT_PERM_CREATE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS datastate_audit (
-    idpk INTEGER PRIMARY KEY AUTOINCREMENT,
+
     id TEXT NOT NULL,                 -- 业务主键 UUID
     tablename TEXT NOT NULL,          -- 表名（DataState 标识）
     ability TEXT NOT NULL,            -- 方法名（如 "getone", "mlist", "*" 表示全部）
@@ -22,14 +22,14 @@ CREATE TABLE IF NOT EXISTS datastate_audit (
     uid TEXT NOT NULL DEFAULT '',     -- 用户 ID
     uptime TEXT NOT NULL DEFAULT '',  -- 更新时间（同步用）
     UNIQUE(tablename, ability, caller),
-    UNIQUE(id)
+
 )
 "#;
 
 /// 权限记录
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditPermRecord {
-    pub idpk: i64,
+
     pub id: String,
     pub tablename: String,
     pub ability: String,
@@ -165,7 +165,7 @@ impl AuditPermDataState {
         tablename: &str,
         ability: &str,
     ) -> Option<AuditPermRecord> {
-        let sql = "SELECT idpk, id, tablename, ability, caller, description, upby, cid, uid, uptime FROM datastate_audit WHERE tablename = ? AND ability = ?";
+        let sql = "SELECT id, tablename, ability, caller, description, upby, cid, uid, uptime FROM datastate_audit WHERE tablename = ? AND ability = ?";
 
         match self.datasync.db.query(
             sql,
@@ -175,7 +175,7 @@ impl AuditPermDataState {
                 let rows: Vec<AuditPermRecord> = results
                     .iter()
                     .map(|row| AuditPermRecord {
-                        idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+
                         id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                         tablename: row.get("tablename").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                         ability: row.get("ability").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
@@ -195,13 +195,13 @@ impl AuditPermDataState {
 
     /// 列出所有权限
     pub async fn list_permissions(&self) -> Vec<AuditPermRecord> {
-        let sql = "SELECT idpk, id, tablename, ability, caller, description, upby, cid, uid, uptime FROM datastate_audit ORDER BY idpk DESC";
+        let sql = "SELECT id, tablename, ability, caller, description, upby, cid, uid, uptime FROM datastate_audit ORDER BY id DESC";
 
         match self.datasync.db.query(sql, &[]).await {
             Ok(results) => results
                 .iter()
                 .map(|row| AuditPermRecord {
-                    idpk: row.get("idpk").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0),
+
                     id: row.get("id").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                     tablename: row.get("tablename").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),
                     ability: row.get("ability").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("").to_string(),

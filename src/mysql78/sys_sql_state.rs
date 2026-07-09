@@ -23,11 +23,11 @@ CREATE TABLE IF NOT EXISTS `sys_sql` (
     `upby` varchar(50) NOT NULL DEFAULT '',
     `cmdtextmd5` varchar(50) NOT NULL DEFAULT '',
     `uptime` datetime NOT NULL,
-    `idpk` int(11) NOT NULL AUTO_INCREMENT,
+
     `id` varchar(36) NOT NULL,
-    PRIMARY KEY (`idpk`),
+
     UNIQUE KEY `u_v_sys_obj_cmdtext` (`apisys`,`apimicro`,`apiobj`,`cmdtext`(255)) USING BTREE,
-    UNIQUE KEY `u_id` (`id`)
+
 ) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=utf8
 "#;
 
