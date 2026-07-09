@@ -17,7 +17,6 @@
 ```rust
 let schema = BaseSchema::new();
 assert!(!schema.id.is_empty());
-assert_eq!(schema.idpk, 0);
 ```
 
 ### ✅ 创建 CidSchema（公司级隔离）
@@ -53,7 +52,7 @@ assert_eq!(schema.uid, "user-456");
 | BaseSchema 创建 | new() | 有 UUID | assert!(!schema.id.is_empty()) |
 | CidSchema 创建 | new("cid") | 有 cid 字段 | assert_eq!(schema.cid, "cid") |
 | UidSchema 创建 | new("uid") | 有 uid 字段 | assert_eq!(schema.uid, "uid") |
-| 系统字段 | system_fields() | 包含 id, idpk | assert!(fields.contains(&"id")) |
+| 系统字段 | system_fields() | 包含 id | assert!(fields.contains(&"id")) |
 
 ---
 
@@ -73,7 +72,6 @@ assert_eq!(schema.uid, "user-456");
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | String | 业务主键 (UUID) |
-| idpk | i64 | 自增主键 |
 | upby | String | 操作人 |
 | uptime | String | 操作时间 |
 

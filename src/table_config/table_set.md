@@ -84,7 +84,7 @@ let config = manager.get("user_table");
 ```
 输入：TableSet::system_cols()
 步骤：检查返回值
-预期：包含 ["id", "idpk", "upby", "uptime"]
+预期：包含 ["id", "upby", "uptime"]
 ```
 
 #### 测试7：不存在的表配置

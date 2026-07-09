@@ -29,31 +29,14 @@ DataAudit 提供数据层统一的权限审计能力。流程：1）init_tables 
 
 ### 表结构
 ```sql
--- 能力权限注册表
-CREATE TABLE data_ability_perm (
-    idpk INTEGER PRIMARY KEY,
-    id TEXT NOT NULL,
-    micro_name TEXT NOT NULL,
-    ability TEXT NOT NULL,
-    caller TEXT DEFAULT '',
-    description TEXT DEFAULT ''
-);
-
--- 能力调用日志
+-- 能力调用日志（自增主键 id）
 CREATE TABLE data_ability_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     ability_name TEXT NOT NULL,
     caller TEXT DEFAULT '',
     action TEXT DEFAULT '',
     input_params TEXT DEFAULT '',
     created_at REAL
-);
-
--- 每日唯一调用
-CREATE TABLE data_ability_daily (
-    ability_name TEXT,
-    caller TEXT,
-    input_hash TEXT,
-    stat_date TEXT
 );
 ```
 

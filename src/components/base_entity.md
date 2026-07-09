@@ -11,7 +11,7 @@
 ## 第一性目的
 
 BaseEntity 是所有实体类的基类组件，负责：
-- 身份标识（id、idpk、cid）
+- 身份标识（id、cid）
 - 能力接口定义（inputjson、outputjson）
 - 分类索引（apisys、apimicro、apiobj）
 - 会话信息（sid、uname、uid）
@@ -65,8 +65,7 @@ BaseEntity 是所有实体类的基类组件，负责：
 ### 字段说明
 
 #### 身份标识
-- `id: String` - 全局唯一ID
-- `idpk: Option<i64>` - 自增主键
+- `id: String` - 全局唯一ID（雪花算法主键）
 - `cid: String` - 公司标识
 - `state: i32` - 状态（0=待执行, 1=运行中, 2=已完成, 3=失败, 4=已取消, 5=暂停, 6=警告）
 - `priority: i32` - 优先级

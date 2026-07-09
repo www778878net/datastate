@@ -108,8 +108,7 @@ pub struct UpdateResult {
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| idpk | INTEGER | 自增主键 |
-| id | TEXT | 业务ID |
+| id | TEXT | 业务ID（主键） |
 | uid | TEXT | 用户ID |
 | kind | TEXT | 类型 |
 | apimicro | TEXT | 微服务 |
@@ -123,8 +122,7 @@ SQL 记录表，用于记录 SQL 执行日志。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| idpk | INTEGER | 自增主键 |
-| id | TEXT | 业务ID |
+| id | TEXT | 业务ID（主键） |
 | apisys | TEXT | 系统 |
 | apimicro | TEXT | 微服务 |
 | apiobj | TEXT | 对象 |

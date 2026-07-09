@@ -30,8 +30,7 @@ TestTb 是用于演示权限控制使用方式的测试表 DataState 实现。
 ### TestTbRecord
 
 测试表记录：
-- `idpk` - 自增主键
-- `id` - 业务主键
+- `id` - 业务主键（雪花算法）
 - `cid` - 公司ID
 - `kind` - 类型
 - `item` - 项目
