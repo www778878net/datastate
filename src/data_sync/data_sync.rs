@@ -1293,7 +1293,7 @@ impl DataSync {
             };
         }
 
-        let pending_items = self.get_pending_items(100).await;
+        let pending_items = self.get_pending_items(10).await;
 
         if pending_items.is_empty() {
             return SyncResult {

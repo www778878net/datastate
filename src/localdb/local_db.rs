@@ -1153,7 +1153,8 @@ impl LocalDB {
 
         let url = format!("{}/mAddMany", api_url.trim_end_matches('/'));
 
-        let response = HttpHelper::post(&url, None, Some(&request_payload), None, false, None, 30, 2);
+        let headers: &[(&str, &str)] = &[("Host", "log.778878.net")];
+        let response = HttpHelper::post(&url, None, Some(&request_payload), Some(headers), false, None, 120, 2);
 
         let logger = mylogger!();
         logger.info(&format!("[upload_batch_to_server] mAddMany 响应: res={}, errmsg={}", 
