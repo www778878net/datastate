@@ -449,8 +449,12 @@ fn mysql_value_to_json(value: mysql::Value) -> Value {
         mysql::Value::NULL => Value::Null,
         mysql::Value::Bytes(b) => {
             if let Ok(s) = String::from_utf8(b.clone()) {
-                if let Ok(json) = serde_json::from_str(&s) {
-                    return json;
+                // 只在字符串以 JSON 结构字符开头时才尝试解析为 JSON
+                // 避免 "7788780001" 这类数字字符串被转成 Value::Number → as_str() 返回 None
+                if s.starts_with('{') || s.starts_with('[') || s.starts_with('"') {
+                    if let Ok(json) = serde_json::from_str(&s) {
+                        return json;
+                    }
                 }
                 Value::String(s)
             } else {
