@@ -10,6 +10,7 @@
 mod data_sync;
 pub mod data_sync_mysql;
 pub mod synclog;
+pub mod synclog_mysql;
 
 // SQLite 版本导出
 pub use data_sync::{
