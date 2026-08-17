@@ -861,7 +861,7 @@ impl LocalDB {
         download_condition: Option<&Value>,
         download_cols: Option<&[String]>,
     ) -> Result<Vec<HashMap<String, Value>>, String> {
-        use base::http::HttpHelper;
+        use svccn::httphelper::HttpHelper;
         use base64::{Engine as _, engine::general_purpose};
 
         let sid = Self::get_sid_sync();
@@ -1019,7 +1019,7 @@ impl LocalDB {
         data: &HashMap<String, Value>,
         cols: Option<&[String]>,
     ) -> Result<i32, String> {
-        use base::http::HttpHelper;
+        use svccn::httphelper::HttpHelper;
 
         let sid = Self::get_sid_sync();
         if sid.is_empty() {
@@ -1105,7 +1105,7 @@ impl LocalDB {
         api_url: &str,
         items: &[crate::data_sync::SynclogItem],
     ) -> Result<(i32, Vec<String>, Vec<crate::data_sync::SyncValidationError>), String> {
-        use base::http::HttpHelper;
+        use svccn::httphelper::HttpHelper;
 
         let sid = Self::get_sid_sync();
         if sid.is_empty() {

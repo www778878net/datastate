@@ -9,7 +9,7 @@ use base::mylogger::mylogger;
 use datastate::{DataManage, TableConfig, get_system_columns, LocalDB};
 use std::collections::HashMap;
 use serde_json::Value;
-use base::http::HttpHelper;
+use svccn::httphelper::HttpHelper;
 
 fn get_test_config() -> TableConfig {
     let mut columns = get_system_columns();
