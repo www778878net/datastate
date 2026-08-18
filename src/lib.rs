@@ -72,6 +72,9 @@ pub use sqlite78::{
 // shared 导出
 pub use shared::{SysWarnData, SysSqlData};
 
+// 重导出整个 base crate（rustbase），使 `datastate::base::*` 可用
+pub use base;
+
 // 重导出 base::UpInfo
 pub use base::UpInfo;
 
