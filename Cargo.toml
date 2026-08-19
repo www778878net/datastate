@@ -9,7 +9,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 base = { path = "../rustbase" }
-svccn = { path = "../svccn" }
+svccn = { path = "../svcbase/cn" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 mysql = "25"
 serde = { version = "1.0", features = ["derive"] }
